@@ -1,0 +1,273 @@
+import { useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { ChevronLeft, Plus, X, Link2 } from 'lucide-react'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import {
+  useWorkout,
+  useAddSet,
+  useUpdateSet,
+  useDeleteSet,
+  useUpdateExercise,
+  useDeleteExercise,
+  useLastExerciseNote,
+} from '@/features/strength/useStrength'
+import { estimated1RM } from '@/lib/calc'
+import { dateLabel } from '@/lib/date'
+import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
+
+export function WorkoutPage() {
+  const { id } = useParams()
+  const nav = useNavigate()
+  const { data } = useWorkout(id)
+  const workout = data?.workout
+  const exercises = data?.exercises ?? []
+  const sets = data?.sets ?? []
+
+  const blocks: { group: number | null; exercises: WorkoutExercise[] }[] = []
+  const seen = new Set<number>()
+  for (const ex of exercises) {
+    if (ex.superset_group == null) {
+      blocks.push({ group: null, exercises: [ex] })
+    } else if (!seen.has(ex.superset_group)) {
+      seen.add(ex.superset_group)
+      blocks.push({
+        group: ex.superset_group,
+        exercises: exercises.filter((e) => e.superset_group === ex.superset_group),
+      })
+    }
+  }
+  const setsFor = (weId: string) =>
+    sets.filter((s) => s.workout_exercise_id === weId)
+
+  return (
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+      <PageHeader
+        title={workout?.name || 'Workout'}
+        subtitle={workout ? dateLabel(workout.workout_date) : ''}
+        left={
+          <Button variant="ghost" size="icon" onClick={() => nav('/strength')}>
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+        }
+      />
+      <div className="space-y-4 p-4 pb-24">
+        {blocks.map((b, bi) =>
+          b.group != null ? (
+            <div
+              key={bi}
+              className="space-y-2 rounded-xl border-2 border-primary/30 p-2"
+            >
+              <div className="px-1 text-xs font-semibold uppercase tracking-wide text-primary">
+                Superset
+              </div>
+              {b.exercises.map((ex, i) => (
+                <ExerciseCard
+                  key={ex.id}
+                  ex={ex}
+                  sets={setsFor(ex.id)}
+                  workoutId={id!}
+                  label={`${i + 1}`}
+                />
+              ))}
+            </div>
+          ) : (
+            <ExerciseCard
+              key={b.exercises[0].id}
+              ex={b.exercises[0]}
+              sets={setsFor(b.exercises[0].id)}
+              workoutId={id!}
+            />
+          ),
+        )}
+
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => nav(`/workout/${id}/add-exercise`)}
+        >
+          <Plus className="h-4 w-4" /> Add exercise
+        </Button>
+        <Button className="w-full" onClick={() => nav('/strength')}>
+          Done
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ExerciseCard({
+  ex,
+  sets,
+  workoutId,
+  label,
+}: {
+  ex: WorkoutExercise
+  sets: WorkoutSet[]
+  workoutId: string
+  label?: string
+}) {
+  const nav = useNavigate()
+  const addSet = useAddSet()
+  const updateEx = useUpdateExercise()
+  const delEx = useDeleteExercise()
+  const lastNote = useLastExerciseNote(ex.exercise_key, workoutId)
+  const [notes, setNotes] = useState(ex.notes ?? '')
+
+  const best = sets.reduce(
+    (m, s) => Math.max(m, estimated1RM(s.weight_lb ?? 0, s.reps ?? 0)),
+    0,
+  )
+
+  const addSetRow = () => {
+    const last = sets[sets.length - 1]
+    addSet.mutate({
+      workout_id: workoutId,
+      workout_exercise_id: ex.id,
+      exercise_key: ex.exercise_key,
+      exercise_name: ex.exercise_name,
+      set_number: sets.length + 1,
+      reps: last?.reps ?? null,
+      weight_lb: last?.weight_lb ?? null,
+    })
+  }
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border p-3">
+        {label && (
+          <span className="flex h-5 w-5 items-center justify-center rounded bg-primary/15 text-xs font-bold text-primary">
+            {label}
+          </span>
+        )}
+        <button
+          className="flex-1 text-left font-semibold"
+          onClick={() => nav(`/lift/exercise/${ex.exercise_key}`)}
+        >
+          {ex.exercise_name}
+        </button>
+        {best > 0 && (
+          <span className="text-xs text-muted-foreground">
+            e1RM {Math.round(best)}
+          </span>
+        )}
+        <button
+          onClick={() => {
+            if (confirm(`Remove ${ex.exercise_name}?`))
+              delEx.mutate({ id: ex.id, workoutId })
+          }}
+          className="text-muted-foreground active:text-destructive"
+          aria-label="Remove exercise"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="p-2">
+        <div className="grid grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem] gap-2 px-1 pb-1 text-xs text-muted-foreground">
+          <span className="text-center">Set</span>
+          <span>lb</span>
+          <span>Reps</span>
+          <span className="text-center">RPE</span>
+          <span />
+        </div>
+        {sets.map((s, i) => (
+          <SetRow key={s.id} set={s} index={i + 1} workoutId={workoutId} />
+        ))}
+        <button
+          onClick={addSetRow}
+          className="mt-1 w-full rounded-md py-2 text-sm font-medium text-primary active:bg-accent"
+        >
+          + Add set
+        </button>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          onBlur={() => {
+            if (notes !== (ex.notes ?? ''))
+              updateEx.mutate({ id: ex.id, workoutId, notes: notes || null })
+          }}
+          placeholder={
+            lastNote.data ? `Last time: ${lastNote.data}` : 'Notes for this session…'
+          }
+          rows={2}
+          className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        {label == null && (
+          <button
+            onClick={() =>
+              nav(`/workout/${workoutId}/add-exercise?supersetWith=${ex.id}`)
+            }
+            className="mt-1 flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs font-medium text-muted-foreground active:bg-accent"
+          >
+            <Link2 className="h-3.5 w-3.5" /> Superset
+          </button>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+function SetRow({
+  set,
+  index,
+  workoutId,
+}: {
+  set: WorkoutSet
+  index: number
+  workoutId: string
+}) {
+  const [weight, setWeight] = useState(
+    set.weight_lb != null ? String(set.weight_lb) : '',
+  )
+  const [reps, setReps] = useState(set.reps != null ? String(set.reps) : '')
+  const update = useUpdateSet()
+  const del = useDeleteSet()
+  const save = (patch: Partial<WorkoutSet>) =>
+    update.mutate({ id: set.id, workout_id: workoutId, ...patch })
+
+  return (
+    <div className="grid grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem] items-center gap-2 py-1">
+      <span className="text-center text-sm text-muted-foreground">{index}</span>
+      <Input
+        className="h-9"
+        type="number"
+        inputMode="decimal"
+        value={weight}
+        onChange={(e) => setWeight(e.target.value)}
+        onBlur={() => save({ weight_lb: weight ? parseFloat(weight) : null })}
+      />
+      <Input
+        className="h-9"
+        type="number"
+        inputMode="numeric"
+        value={reps}
+        onChange={(e) => setReps(e.target.value)}
+        onBlur={() => save({ reps: reps ? parseFloat(reps) : null })}
+      />
+      <Select
+        className="h-9 px-1"
+        value={set.effort != null ? String(set.effort) : ''}
+        onChange={(e) =>
+          save({ effort: e.target.value ? parseInt(e.target.value) : null })
+        }
+      >
+        <option value="">–</option>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </Select>
+      <button
+        onClick={() => del.mutate({ id: set.id, workout_id: workoutId })}
+        className="text-muted-foreground active:text-destructive"
+        aria-label="Delete set"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}

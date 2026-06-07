@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
+import { supabase } from '@/lib/supabase'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
 import {
   useLatestWeight,
@@ -69,6 +70,12 @@ export function ProfilePage() {
   const [carbMode, setCarbMode] = useState<MacroMode>('remainder')
   const [carbVal, setCarbVal] = useState('40')
   const [saved, setSaved] = useState(false)
+  const [pw1, setPw1] = useState('')
+  const [pw2, setPw2] = useState('')
+  const [pwStatus, setPwStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle')
+  const [pwError, setPwError] = useState('')
 
   useEffect(() => {
     if (!profile) return
@@ -162,6 +169,31 @@ export function ProfilePage() {
     }
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
+  }
+
+  const updatePassword = async () => {
+    setPwError('')
+    if (pw1.length < 6) {
+      setPwError('Password must be at least 6 characters.')
+      setPwStatus('error')
+      return
+    }
+    if (pw1 !== pw2) {
+      setPwError('Passwords do not match.')
+      setPwStatus('error')
+      return
+    }
+    setPwStatus('saving')
+    const { error } = await supabase.auth.updateUser({ password: pw1 })
+    if (error) {
+      setPwError(error.message)
+      setPwStatus('error')
+    } else {
+      setPwStatus('saved')
+      setPw1('')
+      setPw2('')
+      setTimeout(() => setPwStatus('idle'), 2500)
+    }
   }
 
   if (isLoading) {
@@ -432,6 +464,55 @@ export function ProfilePage() {
         >
           {updateProfile.isPending ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
         </Button>
+
+        {/* Password */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Password</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Set a password to sign in without the email link. The email link
+              still works anytime as a backup.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="pw1">New password</Label>
+              <Input
+                id="pw1"
+                type="password"
+                autoComplete="new-password"
+                placeholder="At least 6 characters"
+                value={pw1}
+                onChange={(e) => setPw1(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pw2">Confirm password</Label>
+              <Input
+                id="pw2"
+                type="password"
+                autoComplete="new-password"
+                value={pw2}
+                onChange={(e) => setPw2(e.target.value)}
+              />
+            </div>
+            {pwStatus === 'error' && (
+              <p className="text-sm text-destructive">{pwError}</p>
+            )}
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={updatePassword}
+              disabled={pwStatus === 'saving' || !pw1 || !pw2}
+            >
+              {pwStatus === 'saving'
+                ? 'Saving…'
+                : pwStatus === 'saved'
+                  ? 'Password updated ✓'
+                  : 'Update password'}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

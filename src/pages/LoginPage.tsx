@@ -7,13 +7,34 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function LoginPage() {
+  const [mode, setMode] = useState<'password' | 'magic'>('password')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>(
     'idle',
   )
   const [error, setError] = useState('')
 
-  const onSubmit = async (e: FormEvent) => {
+  const switchMode = (m: 'password' | 'magic') => {
+    setMode(m)
+    setStatus('idle')
+    setError('')
+  }
+
+  const signInPassword = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!email || !password) return
+    setStatus('sending')
+    setError('')
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setError(error.message)
+      setStatus('error')
+    }
+    // on success, onAuthStateChange flips the app to the signed-in view
+  }
+
+  const sendMagicLink = async (e: FormEvent) => {
     e.preventDefault()
     if (!email) return
     setStatus('sending')
@@ -64,13 +85,58 @@ export function LoginPage() {
               <Button
                 variant="link"
                 className="mt-2 h-auto p-0"
-                onClick={() => setStatus('idle')}
+                onClick={() => switchMode('password')}
               >
-                Use a different email
+                Back to password sign-in
               </Button>
             </div>
+          ) : mode === 'password' ? (
+            <form onSubmit={signInPassword} className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="Your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              {status === 'error' && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={status === 'sending'}
+              >
+                {status === 'sending' ? 'Signing in…' : 'Sign in'}
+              </Button>
+              <button
+                type="button"
+                onClick={() => switchMode('magic')}
+                className="block w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline"
+              >
+                Email me a sign-in link instead
+              </button>
+            </form>
           ) : (
-            <form onSubmit={onSubmit} className="space-y-3">
+            <form onSubmit={sendMagicLink} className="space-y-3">
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -94,9 +160,13 @@ export function LoginPage() {
               >
                 {status === 'sending' ? 'Sending…' : 'Send magic link'}
               </Button>
-              <p className="text-center text-xs text-muted-foreground">
-                No password — we email you a one-tap sign-in link.
-              </p>
+              <button
+                type="button"
+                onClick={() => switchMode('password')}
+                className="block w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline"
+              >
+                Sign in with a password instead
+              </button>
             </form>
           )}
         </CardContent>

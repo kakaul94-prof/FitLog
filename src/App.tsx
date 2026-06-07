@@ -1,8 +1,9 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { LoginPage } from '@/pages/LoginPage'
 
 const lazyPage = <T extends Record<string, React.ComponentType>>(
@@ -45,30 +46,32 @@ function Spinner() {
 function Routed() {
   return (
     <BrowserRouter>
-      <Suspense fallback={<Spinner />}>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route index element={<DiaryPage />} />
-            <Route path="strength" element={<StrengthPage />} />
-            <Route path="progress" element={<ProgressPage />} />
-            <Route path="more" element={<MorePage />} />
-            <Route path="profile" element={<ProfilePage />} />
-            <Route path="foods" element={<FoodsPage />} />
-            <Route path="foods/new" element={<FoodFormPage />} />
-            <Route path="foods/:id" element={<FoodFormPage />} />
-            <Route path="recipes" element={<RecipesPage />} />
-          </Route>
-          <Route path="/diary/add" element={<FoodPickerPage />} />
-          <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />
-          <Route path="/diary/nutrients" element={<DiaryNutrientsPage />} />
-          <Route path="/exercise/add" element={<ExerciseAddPage />} />
-          <Route path="/workout/:id" element={<WorkoutPage />} />
-          <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
-          <Route path="/lift/exercise/:key" element={<ExerciseProgressPage />} />
-          <Route path="/routines/:id" element={<RoutineEditPage />} />
-          <Route path="/recipes/:id" element={<RecipeEditPage />} />
-        </Routes>
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<Spinner />}>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route index element={<DiaryPage />} />
+              <Route path="strength" element={<StrengthPage />} />
+              <Route path="progress" element={<ProgressPage />} />
+              <Route path="more" element={<MorePage />} />
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="foods" element={<FoodsPage />} />
+              <Route path="foods/new" element={<FoodFormPage />} />
+              <Route path="foods/:id" element={<FoodFormPage />} />
+              <Route path="recipes" element={<RecipesPage />} />
+            </Route>
+            <Route path="/diary/add" element={<FoodPickerPage />} />
+            <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />
+            <Route path="/diary/nutrients" element={<DiaryNutrientsPage />} />
+            <Route path="/exercise/add" element={<ExerciseAddPage />} />
+            <Route path="/workout/:id" element={<WorkoutPage />} />
+            <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
+            <Route path="/lift/exercise/:key" element={<ExerciseProgressPage />} />
+            <Route path="/routines/:id" element={<RoutineEditPage />} />
+            <Route path="/recipes/:id" element={<RecipeEditPage />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </BrowserRouter>
   )
 }
@@ -80,6 +83,19 @@ function Gate() {
 }
 
 function App() {
+  // Once the app has rendered stably, clear the one-shot chunk-reload guard so a
+  // future deploy can auto-recover again (see ErrorBoundary).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        sessionStorage.removeItem('fitlog:chunk-reload')
+      } catch {
+        /* ignore */
+      }
+    }, 5000)
+    return () => clearTimeout(t)
+  }, [])
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

@@ -1,0 +1,2 @@
+- the nutrition does not update when i change the serving size. I would like this to be fixed. Go over what fixes we could implement.
+- when i search for chicken breast - boneless, skinless and raw - it is giving me 0 calories but 22 grams of protein. This makes me think that the food logging is incorrect. Before making any changes - how can we ensure that the food macro nutrients are accurate?

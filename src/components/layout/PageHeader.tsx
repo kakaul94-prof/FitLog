@@ -7,7 +7,7 @@ export function PageHeader({
   left,
 }: {
   title: string
-  subtitle?: string
+  subtitle?: ReactNode
   action?: ReactNode
   left?: ReactNode
 }) {

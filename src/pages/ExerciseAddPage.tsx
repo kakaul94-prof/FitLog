@@ -53,7 +53,7 @@ export function ExerciseAddPage() {
       distance_mi: act.distanceBased && dist ? dist : null,
       calories,
     })
-    nav('/exercise')
+    nav('/')
   }
 
   return (
@@ -61,7 +61,7 @@ export function ExerciseAddPage() {
       <PageHeader
         title="Add exercise"
         left={
-          <Button variant="ghost" size="icon" onClick={() => nav('/exercise')}>
+          <Button variant="ghost" size="icon" onClick={() => nav('/')}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }

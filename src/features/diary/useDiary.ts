@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { todayISO, addDaysISO } from '@/lib/date'
 import type { DiaryEntry, Food, Meal } from '@/lib/database.types'
 
 export function useDiary(date: string) {
@@ -39,8 +40,10 @@ export function useLogFood() {
       })
       if (error) throw error
     },
-    onSuccess: (_d, v) =>
-      qc.invalidateQueries({ queryKey: ['diary', v.entry_date] }),
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['diary', v.entry_date] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+    },
   })
 }
 
@@ -68,7 +71,10 @@ export function useDeleteDiaryEntry() {
         .eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['diary'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['diary'] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+    },
   })
 }
 
@@ -104,6 +110,35 @@ export function useUpdateDiaryEntry() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['diary'] })
       qc.invalidateQueries({ queryKey: ['diaryEntry'] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+    },
+  })
+}
+
+/**
+ * Food-logging streak: consecutive days (ending today, or yesterday if today
+ * isn't logged yet) that have >=1 food entry. Computed fresh from the data each
+ * time, so backfilling a missed day heals the gap and the streak resumes.
+ */
+export function useStreak() {
+  return useQuery({
+    queryKey: ['streak'],
+    queryFn: async (): Promise<number> => {
+      const since = addDaysISO(todayISO(), -800)
+      const { data, error } = await supabase
+        .from('diary_entries')
+        .select('entry_date')
+        .gte('entry_date', since)
+      if (error) throw error
+      const logged = new Set((data ?? []).map((r) => r.entry_date as string))
+      let day = todayISO()
+      if (!logged.has(day)) day = addDaysISO(day, -1) // morning grace
+      let count = 0
+      while (logged.has(day)) {
+        count++
+        day = addDaysISO(day, -1)
+      }
+      return count
     },
   })
 }

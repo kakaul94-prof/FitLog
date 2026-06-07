@@ -11,7 +11,6 @@ const lazyPage = <T extends Record<string, React.ComponentType>>(
 ) => lazy(() => loader().then((m) => ({ default: m[name] })))
 
 const DiaryPage = lazyPage(() => import('@/pages/DiaryPage'), 'DiaryPage')
-const ExercisePage = lazyPage(() => import('@/pages/ExercisePage'), 'ExercisePage')
 const StrengthPage = lazyPage(() => import('@/pages/StrengthPage'), 'StrengthPage')
 const ProgressPage = lazyPage(() => import('@/pages/ProgressPage'), 'ProgressPage')
 const MorePage = lazyPage(() => import('@/pages/MorePage'), 'MorePage')
@@ -50,7 +49,6 @@ function Routed() {
         <Routes>
           <Route element={<AppLayout />}>
             <Route index element={<DiaryPage />} />
-            <Route path="exercise" element={<ExercisePage />} />
             <Route path="strength" element={<StrengthPage />} />
             <Route path="progress" element={<ProgressPage />} />
             <Route path="more" element={<MorePage />} />

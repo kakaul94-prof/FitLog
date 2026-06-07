@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Search, Loader2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NutrientFields } from '@/components/NutrientFields'
 import { useFood, useSaveFood } from '@/features/foods/useFoods'
+import { useAddIngredient } from '@/features/recipes/useRecipes'
 import {
   searchUsdaFoods,
   getUsdaFood,
@@ -20,8 +21,13 @@ import type { Food, NutrientKey, Nutrients } from '@/lib/database.types'
 export function FoodFormPage() {
   const nav = useNavigate()
   const { id } = useParams()
+  const [params] = useSearchParams()
+  const addToRecipe = params.get('addToRecipe')
+  const returnTo = params.get('returnTo')
+  const backTo = returnTo || (addToRecipe ? `/recipes/${addToRecipe}` : '/foods')
   const { data: existing } = useFood(id)
   const saveFood = useSaveFood()
+  const addIng = useAddIngredient()
 
   const [name, setName] = useState('')
   const [brand, setBrand] = useState('')
@@ -131,7 +137,7 @@ export function FoodFormPage() {
     const r = scaleToServing()
     setNutrients(r.nutrients)
     setServingGrams(r.servingGrams)
-    await saveFood.mutateAsync({
+    const saved = await saveFood.mutateAsync({
       id,
       name: name.trim(),
       brand: brand.trim() || null,
@@ -143,7 +149,14 @@ export function FoodFormPage() {
       recipe_servings: null,
       nutrients: r.nutrients,
     })
-    nav('/foods')
+    if (addToRecipe && !id) {
+      await addIng.mutateAsync({
+        recipeFoodId: addToRecipe,
+        ingredientFoodId: saved.id,
+        servings: 1,
+      })
+    }
+    nav(backTo)
   }
 
   return (
@@ -151,7 +164,7 @@ export function FoodFormPage() {
       <PageHeader
         title={id ? 'Edit food' : 'Add food'}
         left={
-          <Button variant="ghost" size="icon" onClick={() => nav('/foods')}>
+          <Button variant="ghost" size="icon" onClick={() => nav(backTo)}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }
@@ -279,9 +292,13 @@ export function FoodFormPage() {
           className="w-full"
           size="lg"
           onClick={onSave}
-          disabled={saveFood.isPending || !name.trim()}
+          disabled={saveFood.isPending || addIng.isPending || !name.trim()}
         >
-          {saveFood.isPending ? 'Saving…' : 'Save to my foods'}
+          {saveFood.isPending || addIng.isPending
+            ? 'Saving…'
+            : addToRecipe
+              ? 'Save & add to recipe'
+              : 'Save to my foods'}
         </Button>
       </div>
     </div>

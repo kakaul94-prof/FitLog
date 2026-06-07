@@ -168,10 +168,17 @@ export function RecipeEditPage() {
               ))}
               {options.length === 0 && (
                 <div className="p-2 text-center text-xs text-muted-foreground">
-                  No foods found. Add foods first (My Foods).
+                  No matching foods. Tap “Create a new food” below.
                 </div>
               )}
             </div>
+            <Button
+              variant="outline"
+              className="mt-1 w-full"
+              onClick={() => nav(`/foods/new?addToRecipe=${id}`)}
+            >
+              <Plus className="h-4 w-4" /> Create a new food
+            </Button>
             <Button
               variant="ghost"
               className="mt-1 w-full"

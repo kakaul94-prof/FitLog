@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft,
   Search,
@@ -7,7 +7,7 @@ import {
   ListChecks,
   CheckCircle2,
   Circle,
-  X,
+  Pencil,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -24,6 +24,7 @@ type Pick = { food: Food; servings: string }
 
 export function FoodPickerPage() {
   const nav = useNavigate()
+  const location = useLocation()
   const [params] = useSearchParams()
   const date = params.get('date') || todayISO()
   const meal = (params.get('meal') || 'breakfast') as Meal
@@ -62,13 +63,10 @@ export function FoodPickerPage() {
     )
   }
 
-  const setPickServings = (id: string, v: string) =>
-    setPicks((prev) =>
-      prev.map((p) => (p.food.id === id ? { ...p, servings: v } : p)),
-    )
-
-  const removePick = (id: string) =>
-    setPicks((prev) => prev.filter((p) => p.food.id !== id))
+  const editFood = (f: Food) => {
+    const back = encodeURIComponent(location.pathname + location.search)
+    nav(`/foods/${f.id}?returnTo=${back}`)
+  }
 
   const add = async () => {
     if (!selected) return
@@ -143,29 +141,39 @@ export function FoodPickerPage() {
           {(foods ?? []).map((f) => {
             const active = multi ? isPicked(f.id) : selected?.id === f.id
             return (
-              <button
+              <div
                 key={f.id}
-                onClick={() => onRowTap(f)}
-                className={cn(
-                  'flex w-full items-center gap-3 p-3 text-left active:bg-accent',
-                  active && 'bg-accent',
-                )}
+                className={cn('flex items-center', active && 'bg-accent')}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">{f.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {Math.round(f.nutrients.kcal ?? 0)} kcal · {f.serving_qty}{' '}
-                    {f.serving_unit}
-                    {f.brand ? ` · ${f.brand}` : ''}
+                <button
+                  onClick={() => onRowTap(f)}
+                  className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left active:bg-accent"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium">{f.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {Math.round(f.nutrients.kcal ?? 0)} kcal · {f.serving_qty}{' '}
+                      {f.serving_unit}
+                      {f.brand ? ` · ${f.brand}` : ''}
+                    </div>
                   </div>
-                </div>
-                {multi &&
-                  (isPicked(f.id) ? (
-                    <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
-                  ) : (
-                    <Circle className="h-5 w-5 shrink-0 text-muted-foreground/40" />
-                  ))}
-              </button>
+                  {multi &&
+                    (isPicked(f.id) ? (
+                      <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
+                    ) : (
+                      <Circle className="h-5 w-5 shrink-0 text-muted-foreground/40" />
+                    ))}
+                </button>
+                {!multi && (
+                  <button
+                    onClick={() => editFood(f)}
+                    className="shrink-0 p-3 text-muted-foreground active:text-primary"
+                    aria-label={`Edit ${f.name}`}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             )
           })}
           {(foods ?? []).length === 0 && (
@@ -202,39 +210,6 @@ export function FoodPickerPage() {
 
       {multi && picks.length > 0 && (
         <div className="fixed bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 space-y-2 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <div className="max-h-44 space-y-2 overflow-y-auto">
-            {picks.map((p) => (
-              <div key={p.food.id} className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">
-                    {p.food.name}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    × {p.food.serving_qty} {p.food.serving_unit} ·{' '}
-                    {Math.round(
-                      (p.food.nutrients.kcal ?? 0) *
-                        (parseFloat(p.servings) || 0),
-                    )}{' '}
-                    kcal
-                  </div>
-                </div>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  className="w-16"
-                  value={p.servings}
-                  onChange={(e) => setPickServings(p.food.id, e.target.value)}
-                />
-                <button
-                  onClick={() => removePick(p.food.id)}
-                  className="p-1 text-muted-foreground active:text-destructive"
-                  aria-label={`Remove ${p.food.name}`}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
               {picks.length} {picks.length === 1 ? 'food' : 'foods'} selected
@@ -246,9 +221,7 @@ export function FoodPickerPage() {
             onClick={addMany}
             disabled={logMany.isPending}
           >
-            {logMany.isPending
-              ? 'Adding…'
-              : `Add ${picks.length} to ${meal}`}
+            {logMany.isPending ? 'Adding…' : `Add ${picks.length} to ${meal}`}
           </Button>
         </div>
       )}

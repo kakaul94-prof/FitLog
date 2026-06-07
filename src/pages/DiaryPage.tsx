@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Plus, Trash2, Flame } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, Trash2, Flame, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { useDiary, useStreak } from '@/features/diary/useDiary'
+import { useDiary, useStreak, useDeleteDiaryEntry } from '@/features/diary/useDiary'
 import {
   useExerciseEntries,
   useDeleteExercise,
@@ -14,7 +15,7 @@ import { useLatestWeight } from '@/features/measurements/useMeasurements'
 import { resolveCalorieGoal, resolveMacroTargets, roundHalf } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
-import type { Meal } from '@/lib/database.types'
+import type { DiaryEntry, Meal } from '@/lib/database.types'
 
 const MEALS: { key: Meal; label: string }[] = [
   { key: 'breakfast', label: 'Breakfast' },
@@ -32,6 +33,8 @@ export function DiaryPage() {
   const { data: exEntries } = useExerciseEntries(date)
   const { data: streak = 0 } = useStreak()
   const delEx = useDeleteExercise()
+  const delEntry = useDeleteDiaryEntry()
+  const [menuEntry, setMenuEntry] = useState<DiaryEntry | null>(null)
 
   const list = entries ?? []
   const consumed = sumNutrients(
@@ -41,9 +44,8 @@ export function DiaryPage() {
   const goal = goalRes?.goal ?? null
   const consumedKcal = Math.round(consumed.kcal ?? 0)
   const burned = (exEntries ?? []).reduce((s, e) => s + e.calories, 0)
-  const eatBack = !!profile?.eat_back_exercise && burned > 0
   const remaining =
-    goal != null ? goal - consumedKcal + (eatBack ? burned : 0) : null
+    goal != null ? goal - consumedKcal + burned : null
   const macros =
     goal != null && profile
       ? resolveMacroTargets(goal, weight ?? null, profile.macro_targets)
@@ -100,7 +102,7 @@ export function DiaryPage() {
                 <div className="text-right text-xs text-muted-foreground">
                   <div>{goal} goal</div>
                   <div>− {consumedKcal} food</div>
-                  {eatBack && <div>+ {burned} exercise</div>}
+                  {burned > 0 && <div>+ {burned} exercise</div>}
                 </div>
               </div>
               {macros && (
@@ -158,22 +160,12 @@ export function DiaryPage() {
               </div>
               <div className="divide-y divide-border">
                 {items.map((e) => (
-                  <button
+                  <FoodEntryRow
                     key={e.id}
-                    onClick={() => nav(`/diary/entry/${e.id}`)}
-                    className="flex w-full items-center gap-2 p-3 text-left active:bg-accent"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium">
-                        {e.food_name}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {e.servings} × {e.serving_qty} {e.serving_unit} ·{' '}
-                        {Math.round((e.nutrients.kcal ?? 0) * e.servings)} kcal
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  </button>
+                    entry={e}
+                    onEdit={() => nav(`/diary/entry/${e.id}`)}
+                    onMenu={() => setMenuEntry(e)}
+                  />
                 ))}
               </div>
               <button
@@ -220,7 +212,116 @@ export function DiaryPage() {
           </button>
         </Card>
       </div>
+
+      {menuEntry &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => setMenuEntry(null)}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="truncate border-b border-border p-3 text-center text-xs text-muted-foreground">
+                  {menuEntry.food_name}
+                </div>
+                <button
+                  onClick={() => {
+                    nav(`/diary/entry/${menuEntry.id}`)
+                    setMenuEntry(null)
+                  }}
+                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
+                >
+                  <Pencil className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Edit entry</span>
+                </button>
+                <button
+                  onClick={() => {
+                    delEntry.mutate(menuEntry.id)
+                    setMenuEntry(null)
+                  }}
+                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="text-sm font-medium">Delete entry</span>
+                </button>
+              </Card>
+              <button
+                onClick={() => setMenuEntry(null)}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
+  )
+}
+
+function FoodEntryRow({
+  entry,
+  onEdit,
+  onMenu,
+}: {
+  entry: DiaryEntry
+  onEdit: () => void
+  onMenu: () => void
+}) {
+  const timer = useRef<number | null>(null)
+  const fired = useRef(false)
+  const start = useRef<{ x: number; y: number } | null>(null)
+  const clear = () => {
+    if (timer.current) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+  }
+  return (
+    <button
+      onPointerDown={(e) => {
+        fired.current = false
+        start.current = { x: e.clientX, y: e.clientY }
+        clear()
+        timer.current = window.setTimeout(() => {
+          fired.current = true
+          onMenu()
+        }, 450)
+      }}
+      onPointerMove={(e) => {
+        if (
+          start.current &&
+          Math.hypot(
+            e.clientX - start.current.x,
+            e.clientY - start.current.y,
+          ) > 10
+        )
+          clear()
+      }}
+      onPointerUp={clear}
+      onPointerLeave={clear}
+      onPointerCancel={clear}
+      onContextMenu={(e) => e.preventDefault()}
+      onClick={() => {
+        if (fired.current) {
+          fired.current = false
+          return
+        }
+        onEdit()
+      }}
+      className="flex w-full select-none items-center gap-2 p-3 text-left [-webkit-touch-callout:none] active:bg-accent"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{entry.food_name}</div>
+        <div className="text-xs text-muted-foreground">
+          {entry.servings} × {entry.serving_qty} {entry.serving_unit} ·{' '}
+          {Math.round((entry.nutrients.kcal ?? 0) * entry.servings)} kcal
+        </div>
+      </div>
+    </button>
   )
 }
 

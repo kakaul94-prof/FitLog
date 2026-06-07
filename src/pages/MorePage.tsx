@@ -7,19 +7,15 @@ import {
   Apple,
   ChefHat,
   Download,
-  Flame,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/auth'
-import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
 import { exportData } from '@/features/settings/exportData'
 
 export function MorePage() {
   const { user, signOut } = useAuth()
-  const { data: profile } = useProfile()
-  const updateProfile = useUpdateProfile()
   const [exporting, setExporting] = useState(false)
 
   const doExport = async () => {
@@ -63,25 +59,6 @@ export function MorePage() {
         </Card>
 
         <Card className="divide-y divide-border overflow-hidden">
-          <label className="flex items-center gap-3 p-4">
-            <Flame className="h-5 w-5 text-muted-foreground" />
-            <div className="flex-1">
-              <div className="text-sm font-medium">
-                Add exercise calories back
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Burned calories raise your daily budget
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-[var(--primary)]"
-              checked={!!profile?.eat_back_exercise}
-              onChange={(e) =>
-                updateProfile.mutate({ eat_back_exercise: e.target.checked })
-              }
-            />
-          </label>
           <button
             onClick={doExport}
             disabled={exporting}

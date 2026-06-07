@@ -8,12 +8,13 @@ import {
   CheckCircle2,
   Circle,
   Pencil,
+  Trash2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useFoods } from '@/features/foods/useFoods'
+import { useFoods, useDeleteFood } from '@/features/foods/useFoods'
 import { useLogFood, useLogFoods } from '@/features/diary/useDiary'
 import { scaleNutrients, servingOptions } from '@/lib/nutrients'
 import { todayISO } from '@/lib/date'
@@ -37,6 +38,7 @@ export function FoodPickerPage() {
   const [picks, setPicks] = useState<Pick[]>([])
   const log = useLogFood()
   const logMany = useLogFoods()
+  const del = useDeleteFood()
 
   const isPicked = (id: string) => picks.some((p) => p.food.id === id)
 
@@ -69,6 +71,13 @@ export function FoodPickerPage() {
   const editFood = (f: Food) => {
     const back = encodeURIComponent(location.pathname + location.search)
     nav(`/foods/${f.id}?returnTo=${back}`)
+  }
+
+  const removeFood = (f: Food) => {
+    if (!confirm(`Remove "${f.name}" from your foods?`)) return
+    if (selected?.id === f.id) setSelected(null)
+    setPicks((prev) => prev.filter((p) => p.food.id !== f.id))
+    del.mutate(f.id)
   }
 
   const add = async () => {
@@ -175,13 +184,22 @@ export function FoodPickerPage() {
                     ))}
                 </button>
                 {!multi && (
-                  <button
-                    onClick={() => editFood(f)}
-                    className="shrink-0 p-3 text-muted-foreground active:text-primary"
-                    aria-label={`Edit ${f.name}`}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => editFood(f)}
+                      className="shrink-0 p-3 text-muted-foreground active:text-primary"
+                      aria-label={`Edit ${f.name}`}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => removeFood(f)}
+                      className="shrink-0 p-3 text-muted-foreground active:text-destructive"
+                      aria-label={`Remove ${f.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </>
                 )}
               </div>
             )

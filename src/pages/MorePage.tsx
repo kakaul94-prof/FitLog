@@ -7,16 +7,29 @@ import {
   Apple,
   ChefHat,
   Download,
+  Sun,
+  Moon,
+  Monitor,
+  Palette,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/auth'
 import { exportData } from '@/features/settings/exportData'
+import { cn } from '@/lib/utils'
+import { useTheme, type Theme } from '@/lib/theme'
+
+const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+]
 
 export function MorePage() {
   const { user, signOut } = useAuth()
   const [exporting, setExporting] = useState(false)
+  const [theme, setTheme] = useTheme()
 
   const doExport = async () => {
     setExporting(true)
@@ -56,6 +69,35 @@ export function MorePage() {
             <span className="flex-1 text-sm font-medium">Recipes</span>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </Link>
+        </Card>
+
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-3 p-4">
+            <Palette className="h-5 w-5 text-muted-foreground" />
+            <span className="flex-1 text-sm font-medium">Appearance</span>
+            <div className="flex rounded-lg bg-secondary p-0.5">
+              {THEME_OPTIONS.map(({ value, label, icon: Icon }) => {
+                const active = theme === value
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setTheme(value)}
+                    aria-label={label}
+                    aria-pressed={active}
+                    className={cn(
+                      'flex h-8 w-9 items-center justify-center rounded-md transition-colors',
+                      active
+                        ? 'bg-card text-foreground shadow-sm'
+                        : 'text-muted-foreground active:bg-accent',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </Card>
 
         <Card className="divide-y divide-border overflow-hidden">

@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/lib/auth'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { LoginPage } from '@/pages/LoginPage'
+import { watchSystemTheme } from '@/lib/theme'
 
 const lazyPage = <T extends Record<string, React.ComponentType>>(
   loader: () => Promise<T>,
@@ -95,6 +96,9 @@ function App() {
     }, 5000)
     return () => clearTimeout(t)
   }, [])
+
+  // Keep the theme in sync with the OS preference while 'system' is selected.
+  useEffect(() => watchSystemTheme(), [])
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -18,6 +18,26 @@ export function useDiary(date: string) {
   })
 }
 
+/** Build a diary_entries row from a food + servings (snapshots the food). */
+function toDiaryRow(
+  entry_date: string,
+  meal: Meal,
+  food: Food,
+  servings: number,
+) {
+  return {
+    entry_date,
+    meal,
+    food_id: food.id,
+    food_name: food.name,
+    brand: food.brand,
+    servings,
+    serving_qty: food.serving_qty,
+    serving_unit: food.serving_unit,
+    nutrients: food.nutrients,
+  }
+}
+
 export function useLogFood() {
   const qc = useQueryClient()
   return useMutation({
@@ -27,17 +47,32 @@ export function useLogFood() {
       food: Food
       servings: number
     }) => {
-      const { error } = await supabase.from('diary_entries').insert({
-        entry_date: e.entry_date,
-        meal: e.meal,
-        food_id: e.food.id,
-        food_name: e.food.name,
-        brand: e.food.brand,
-        servings: e.servings,
-        serving_qty: e.food.serving_qty,
-        serving_unit: e.food.serving_unit,
-        nutrients: e.food.nutrients,
-      })
+      const { error } = await supabase
+        .from('diary_entries')
+        .insert(toDiaryRow(e.entry_date, e.meal, e.food, e.servings))
+      if (error) throw error
+    },
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['diary', v.entry_date] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+    },
+  })
+}
+
+/** Log several foods to the same day/meal in one insert. */
+export function useLogFoods() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (e: {
+      entry_date: string
+      meal: Meal
+      items: { food: Food; servings: number }[]
+    }) => {
+      if (e.items.length === 0) return
+      const rows = e.items.map((it) =>
+        toDiaryRow(e.entry_date, e.meal, it.food, it.servings),
+      )
+      const { error } = await supabase.from('diary_entries').insert(rows)
       if (error) throw error
     },
     onSuccess: (_d, v) => {

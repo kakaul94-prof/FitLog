@@ -7,9 +7,9 @@ the old MyFitnessPal.
 ## Stack
 
 - React 19 + Vite + TypeScript, Tailwind v4, React Router (lazy routes), TanStack Query
-- Supabase (Postgres + Auth magic-link) — RLS owner-only on every table
+- Supabase (Postgres + Auth: email+password sign-in, magic-link fallback; password set/changed in Profile) — RLS owner-only on every table
 - recharts, lucide-react, vite-plugin-pwa (installable)
-- Host: Cloudflare Pages (see `DEPLOY.md`). Repo: github.com/kakaul94-prof/FitLog
+- Host: Cloudflare Pages — `https://fitlog-9wl.pages.dev` (see `DEPLOY.md`). Repo: github.com/kakaul94-prof/FitLog
 
 ## Run / build / verify
 
@@ -47,7 +47,7 @@ the old MyFitnessPal.
 ## Gotchas
 
 - **NordVPN Threat Protection blocks `supabase.co`** → "Failed to fetch". Allowlist `*.supabase.co` or disable it.
-- USDA imports arrive **per 100 g** (adjust serving after import).
+- USDA imports arrive **per 100 g** — changing the serving size on the food form now auto-rescales the nutrients (`FoodFormPage`). Energy may arrive only under the Atwater ids (`2047`/`2048`) rather than `1008`; the importer falls back so calories don't import as `0` (`usda.ts`).
 - Micros are only as complete as source data (USDA whole foods = full; branded/manual = sparse).
 - Offline = read recent data; writes need a connection (v1).
 - `public/_redirects` (`/* /index.html 200`) makes SPA deep links work on Cloudflare Pages.

@@ -47,6 +47,8 @@ export function RestTimer({
   const [sound, setSound] = useState(
     () => localStorage.getItem('rest_chime') === '1',
   )
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
 
   const ctxRef = useRef<AudioContext | null>(null)
   const persistRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -101,6 +103,28 @@ export function RestTimer({
     setRemaining(dur)
   }
 
+  // Tap the time to type a new rest duration. Accepts raw seconds ("90") or
+  // "m:ss" (handy on desktop); mobile gets a numeric keypad for the seconds.
+  const beginEdit = () => {
+    setDraft(String(dur))
+    setEditing(true)
+  }
+  const commitEdit = () => {
+    const t = draft.trim()
+    let sec = dur
+    if (t.includes(':')) {
+      const [m, s] = t.split(':')
+      sec = (parseInt(m, 10) || 0) * 60 + (parseInt(s, 10) || 0)
+    } else if (t !== '') {
+      const n = parseInt(t, 10)
+      if (Number.isFinite(n)) sec = n
+    }
+    const nv = clamp(sec)
+    setDur(nv)
+    persist(nv)
+    setEditing(false)
+  }
+
   const bump = (delta: number) => {
     if (running) {
       const nv = Math.max(0, (remaining ?? 0) + delta)
@@ -143,31 +167,35 @@ export function RestTimer({
           {!running ? (
             <>
               <Timer className="h-5 w-5 shrink-0 text-primary" />
-              <span className="text-sm font-medium text-muted-foreground">
-                {done ? 'Rest done' : 'Rest'}
-              </span>
-              <button
-                onClick={() => bump(-STEP)}
-                className="ml-auto flex h-8 w-8 items-center justify-center rounded-md border border-input active:bg-accent"
-                aria-label="Less rest"
-              >
-                <Minus className="h-4 w-4" />
-              </button>
-              <span className="w-12 text-center text-base font-bold tabular-nums">
-                {fmt(dur)}
-              </span>
-              <button
-                onClick={() => bump(STEP)}
-                className="flex h-8 w-8 items-center justify-center rounded-md border border-input active:bg-accent"
-                aria-label="More rest"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
+              {editing ? (
+                <input
+                  autoFocus
+                  inputMode="numeric"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onBlur={commitEdit}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitEdit()
+                    else if (e.key === 'Escape') setEditing(false)
+                  }}
+                  className="w-16 rounded-md border border-input bg-background px-2 py-1 text-center text-base font-bold tabular-nums outline-none focus:border-primary"
+                  aria-label="Rest seconds"
+                />
+              ) : (
+                <button
+                  onClick={beginEdit}
+                  className="rounded-md px-2 py-1 text-base font-bold tabular-nums active:bg-accent"
+                  aria-label="Edit rest time"
+                >
+                  {fmt(dur)}
+                </button>
+              )}
               <button
                 onClick={start}
-                className="flex h-8 items-center gap-1 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground active:scale-95"
+                className="ml-auto flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground active:scale-95"
+                aria-label="Start rest"
               >
-                <Play className="h-4 w-4" /> Start
+                <Play className="h-4 w-4" />
               </button>
             </>
           ) : (

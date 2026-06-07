@@ -11,7 +11,7 @@ import {
 } from '@/features/exercise/useExercise'
 import { useProfile } from '@/features/profile/useProfile'
 import { useLatestWeight } from '@/features/measurements/useMeasurements'
-import { resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
+import { resolveCalorieGoal, resolveMacroTargets, roundHalf } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
 import type { Meal } from '@/lib/database.types'
@@ -111,7 +111,7 @@ export function DiaryPage() {
                       label={
                         k === 'carb' ? 'Carbs' : k[0].toUpperCase() + k.slice(1)
                       }
-                      have={Math.round(consumed[k] ?? 0)}
+                      have={roundHalf(consumed[k] ?? 0)}
                       target={macros[k].grams}
                     />
                   ))}

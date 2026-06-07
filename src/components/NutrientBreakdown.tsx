@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { NUTRIENT_BY_KEY } from '@/lib/nutrients'
+import { roundHalf } from '@/lib/calc'
 import type { NutrientKey, Nutrients } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
@@ -163,7 +164,7 @@ function MacroPie({ nutrients }: { nutrients: Nutrients }) {
                     ? 'Carbs'
                     : d.name[0].toUpperCase() + d.name.slice(1)}
                 </span>
-                <span className="font-medium">{Math.round(d.grams)} g</span>
+                <span className="font-medium">{roundHalf(d.grams)} g</span>
                 <span className="w-9 text-right text-xs text-muted-foreground">
                   {pct}%
                 </span>

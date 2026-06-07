@@ -10,6 +10,9 @@ export const LB_PER_KG = 2.2046226218
 export const lbToKg = (lb: number) => lb / LB_PER_KG
 export const kgToLb = (kg: number) => kg * LB_PER_KG
 export const cmToInches = (cm: number) => cm / 2.54
+
+// Round to the nearest half-gram (0.5) — used for macro displays.
+export const roundHalf = (n: number) => Math.round(n * 2) / 2
 export const inchesToCm = (inches: number) => inches * 2.54
 
 export function cmToFtIn(cm: number): { ft: number; inch: number } {
@@ -179,7 +182,7 @@ export function resolveMacroTargets(
   for (const name of order) {
     const kcal = grams[name] * KCAL_PER_G[name]
     out[name] = {
-      grams: Math.round(grams[name]),
+      grams: roundHalf(grams[name]),
       kcal: Math.round(kcal),
       pct: calories > 0 ? Math.round((kcal / calories) * 100) : 0,
     }

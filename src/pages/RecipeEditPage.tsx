@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Plus, X, Search } from 'lucide-react'
+import { ChevronLeft, Plus, X, Search, Copy } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import {
   useAddIngredient,
   useUpdateIngredient,
   useRemoveIngredient,
+  useDuplicateRecipe,
 } from '@/features/recipes/useRecipes'
 
 export function RecipeEditPage() {
@@ -26,6 +27,7 @@ export function RecipeEditPage() {
   const addIng = useAddIngredient()
   const updateIng = useUpdateIngredient()
   const removeIng = useRemoveIngredient()
+  const duplicate = useDuplicateRecipe()
 
   const [name, setName] = useState('')
   const [yieldServings, setYieldServings] = useState('1')
@@ -59,6 +61,20 @@ export function RecipeEditPage() {
         left={
           <Button variant="ghost" size="icon" onClick={() => nav('/recipes')}>
             <ChevronLeft className="h-5 w-5" />
+          </Button>
+        }
+        action={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Save as a copy"
+            disabled={!recipe || duplicate.isPending}
+            onClick={async () => {
+              const r = await duplicate.mutateAsync(id!)
+              nav(`/recipes/${r.id}`)
+            }}
+          >
+            <Copy className="h-5 w-5" />
           </Button>
         }
       />

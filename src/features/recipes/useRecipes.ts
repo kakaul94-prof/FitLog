@@ -117,6 +117,74 @@ export function useCreateRecipe() {
   })
 }
 
+/**
+ * Fork a recipe: create a new recipe food that copies the source's meta and all
+ * its ingredients, so it can be renamed and tweaked independently. Per-serving
+ * nutrients are recomputed from the copied ingredients.
+ */
+export function useDuplicateRecipe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (sourceId: string): Promise<Food> => {
+      const { data: srcData, error: srcErr } = await supabase
+        .from('foods')
+        .select('*')
+        .eq('id', sourceId)
+        .single()
+      if (srcErr) throw srcErr
+      const source = srcData as Food
+
+      const { data: risData, error: riErr } = await supabase
+        .from('recipe_ingredients')
+        .select('ingredient_food_id,servings,position')
+        .eq('recipe_food_id', sourceId)
+        .order('position')
+      if (riErr) throw riErr
+      const ingredients = (risData ?? []) as Pick<
+        RecipeIngredient,
+        'ingredient_food_id' | 'servings' | 'position'
+      >[]
+
+      const { data: created, error: createErr } = await supabase
+        .from('foods')
+        .insert({
+          name: `${source.name} (copy)`,
+          source: 'recipe',
+          recipe_servings: source.recipe_servings ?? 1,
+          serving_qty: source.serving_qty ?? 1,
+          serving_unit: source.serving_unit ?? 'serving',
+          serving_grams: source.serving_grams,
+          portions: source.portions ?? [],
+          nutrients: source.nutrients ?? {},
+        })
+        .select('*')
+        .single()
+      if (createErr) throw createErr
+      const copy = created as Food
+
+      if (ingredients.length) {
+        const { error: insErr } = await supabase
+          .from('recipe_ingredients')
+          .insert(
+            ingredients.map((i, idx) => ({
+              recipe_food_id: copy.id,
+              ingredient_food_id: i.ingredient_food_id,
+              servings: i.servings,
+              position: i.position ?? idx,
+            })),
+          )
+        if (insErr) throw insErr
+        await recompute(copy.id)
+      }
+      return copy
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recipes'] })
+      qc.invalidateQueries({ queryKey: ['foods'] })
+    },
+  })
+}
+
 /** Delete a recipe (archive the recipe food; ingredients + logged snapshots are left intact). */
 export function useDeleteRecipe() {
   const qc = useQueryClient()

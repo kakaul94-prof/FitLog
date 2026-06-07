@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronLeft, Plus, ChevronRight, Trash2 } from 'lucide-react'
+import { ChevronLeft, Plus, ChevronRight, Copy, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -7,6 +7,7 @@ import {
   useRecipes,
   useCreateRecipe,
   useDeleteRecipe,
+  useDuplicateRecipe,
 } from '@/features/recipes/useRecipes'
 
 export function RecipesPage() {
@@ -14,9 +15,15 @@ export function RecipesPage() {
   const { data: recipes } = useRecipes()
   const create = useCreateRecipe()
   const del = useDeleteRecipe()
+  const duplicate = useDuplicateRecipe()
 
   const newRecipe = async () => {
     const r = await create.mutateAsync('New recipe')
+    nav(`/recipes/${r.id}`)
+  }
+
+  const duplicateRecipe = async (id: string) => {
+    const r = await duplicate.mutateAsync(id)
     nav(`/recipes/${r.id}`)
   }
 
@@ -52,6 +59,15 @@ export function RecipesPage() {
                 </div>
                 <ChevronRight className="h-4 w-4 text-muted-foreground" />
               </Link>
+              <button
+                type="button"
+                className="p-3 text-muted-foreground active:text-primary disabled:opacity-50"
+                onClick={() => duplicateRecipe(r.id)}
+                disabled={duplicate.isPending}
+                aria-label="Duplicate"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
               <button
                 type="button"
                 className="p-3 text-muted-foreground active:text-destructive"

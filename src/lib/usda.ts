@@ -20,6 +20,10 @@ interface RawNutrient {
   nutrient?: { id?: number }
 }
 
+// FDC energy nutrient ids in kcal. Foundation Foods often omit 1008 (mapped to
+// `kcal` in nutrients.ts) and only provide these Atwater variants.
+const ENERGY_KCAL_FALLBACK = [2047, 2048] // Atwater General, Atwater Specific
+
 function mapNutrients(list: RawNutrient[] | undefined): Nutrients {
   const out: Nutrients = {}
   if (!list) return out
@@ -29,6 +33,19 @@ function mapNutrients(list: RawNutrient[] | undefined): Nutrients {
     if (id == null || val == null) continue
     const key = USDA_TO_KEY[id] as NutrientKey | undefined
     if (key) out[key] = val
+  }
+  if (out.kcal == null) {
+    for (const altId of ENERGY_KCAL_FALLBACK) {
+      const fn = list.find(
+        (n) =>
+          (n.nutrientId ?? n.nutrient?.id) === altId &&
+          (n.value ?? n.amount) != null,
+      )
+      if (fn) {
+        out.kcal = (fn.value ?? fn.amount) as number
+        break
+      }
+    }
   }
   return out
 }

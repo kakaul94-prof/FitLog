@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, Search, Loader2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -14,6 +14,7 @@ import {
   isUsdaConfigured,
   type UsdaSearchItem,
 } from '@/lib/usda'
+import { scaleNutrients } from '@/lib/nutrients'
 import type { Food, NutrientKey, Nutrients } from '@/lib/database.types'
 
 export function FoodFormPage() {
@@ -46,6 +47,7 @@ export function FoodFormPage() {
     setSource(existing.source)
     setSourceId(existing.source_id)
     setNutrients(existing.nutrients ?? {})
+    servingBaseRef.current = existing.serving_qty
   }, [existing])
 
   const setNutrient = (k: NutrientKey, v: string) => {
@@ -56,6 +58,36 @@ export function FoodFormPage() {
       else next[k] = num
       return next
     })
+  }
+
+  // serving qty that the current `nutrients` correspond to; used to rescale by new/old
+  const servingBaseRef = useRef(1)
+  const round6 = (x: number) => Math.round(x * 1e6) / 1e6
+
+  const scaleToServing = () => {
+    const base = servingBaseRef.current
+    const next = parseFloat(servingQty)
+    if (!Number.isFinite(next) || next <= 0 || base <= 0 || next === base) {
+      if (Number.isFinite(next) && next > 0) servingBaseRef.current = next
+      return { nutrients, servingGrams }
+    }
+    const factor = next / base
+    servingBaseRef.current = next
+    const scaled = scaleNutrients(nutrients, factor)
+    for (const k in scaled) {
+      const key = k as NutrientKey
+      if (typeof scaled[key] === 'number') scaled[key] = round6(scaled[key] as number)
+    }
+    const g = parseFloat(servingGrams)
+    const grams =
+      Number.isFinite(g) && g > 0 ? String(round6(g * factor)) : servingGrams
+    return { nutrients: scaled, servingGrams: grams }
+  }
+
+  const onServingBlur = () => {
+    const r = scaleToServing()
+    setNutrients(r.nutrients)
+    setServingGrams(r.servingGrams)
   }
 
   const runUsda = async () => {
@@ -84,6 +116,7 @@ export function FoodFormPage() {
       setSource('usda')
       setSourceId(d.source_id)
       setNutrients(d.nutrients)
+      servingBaseRef.current = d.serving_qty
       setUResults([])
       setUq('')
     } catch (e) {
@@ -95,6 +128,9 @@ export function FoodFormPage() {
 
   const onSave = async () => {
     if (!name.trim()) return
+    const r = scaleToServing()
+    setNutrients(r.nutrients)
+    setServingGrams(r.servingGrams)
     await saveFood.mutateAsync({
       id,
       name: name.trim(),
@@ -103,9 +139,9 @@ export function FoodFormPage() {
       source_id: sourceId,
       serving_qty: parseFloat(servingQty) || 1,
       serving_unit: servingUnit.trim() || 'serving',
-      serving_grams: servingGrams ? parseFloat(servingGrams) : null,
+      serving_grams: r.servingGrams ? parseFloat(r.servingGrams) : null,
       recipe_servings: null,
-      nutrients,
+      nutrients: r.nutrients,
     })
     nav('/foods')
   }
@@ -172,8 +208,9 @@ export function FoodFormPage() {
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Picking a result fills the form below (per 100 g). Adjust the
-                  serving and values, then save your copy.
+                  Picking a result fills the form below (per 100 g). Set your
+                  serving size — the nutrition rescales to match. Tweak anything,
+                  then save your copy.
                 </p>
               </>
             )}
@@ -212,6 +249,7 @@ export function FoodFormPage() {
                   inputMode="decimal"
                   value={servingQty}
                   onChange={(e) => setServingQty(e.target.value)}
+                  onBlur={onServingBlur}
                 />
               </div>
               <div className="flex-1 space-y-1.5">

@@ -81,6 +81,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
           The app failed to load this page. Reloading usually fixes it.
         </p>
         <Button onClick={this.hardReload}>Reload</Button>
+        {this.state.error.message && (
+          <pre className="max-w-full overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-left text-xs text-muted-foreground">
+            {this.state.error.name}: {this.state.error.message}
+          </pre>
+        )}
       </div>
     )
   }

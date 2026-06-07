@@ -40,14 +40,18 @@ export function ProgressPage() {
   const delM = useDeleteMeasurement()
   const [val, setVal] = useState('')
 
-  const points = (rows ?? []).map((r) => ({ date: r.measured_on, value: r.value }))
+  // Guard against rows with a missing/blank date or non-numeric value — either
+  // would throw later (e.g. `t.date.slice(5)`) and blank the whole page.
+  const points = (rows ?? [])
+    .map((r) => ({ date: r.measured_on, value: Number(r.value) }))
+    .filter((p) => typeof p.date === 'string' && p.date.length > 0 && Number.isFinite(p.value))
   const trend = movingAverage(points, 7)
   const latest = points.length ? points[points.length - 1].value : null
   const first = points.length ? points[0].value : null
   const change = latest != null && first != null ? latest - first : null
 
   const chartData = trend.map((t) => ({
-    date: t.date.slice(5),
+    date: String(t.date).slice(5),
     value: t.value,
     trend: Math.round(t.trend * 10) / 10,
   }))

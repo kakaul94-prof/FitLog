@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { todayISO, addDaysISO } from '@/lib/date'
-import type { DiaryEntry, Food, Meal } from '@/lib/database.types'
+import type { DiaryEntry, Food, Meal, Nutrients } from '@/lib/database.types'
 
 export function useDiary(date: string) {
   return useQuery({
@@ -18,12 +18,20 @@ export function useDiary(date: string) {
   })
 }
 
+/** A chosen serving unit, overriding the food's base serving when logging. */
+export type ServingOverride = {
+  serving_qty?: number
+  serving_unit?: string
+  nutrients?: Nutrients
+}
+
 /** Build a diary_entries row from a food + servings (snapshots the food). */
 function toDiaryRow(
   entry_date: string,
   meal: Meal,
   food: Food,
   servings: number,
+  unit?: ServingOverride,
 ) {
   return {
     entry_date,
@@ -32,9 +40,9 @@ function toDiaryRow(
     food_name: food.name,
     brand: food.brand,
     servings,
-    serving_qty: food.serving_qty,
-    serving_unit: food.serving_unit,
-    nutrients: food.nutrients,
+    serving_qty: unit?.serving_qty ?? food.serving_qty,
+    serving_unit: unit?.serving_unit ?? food.serving_unit,
+    nutrients: unit?.nutrients ?? food.nutrients,
   }
 }
 
@@ -46,10 +54,11 @@ export function useLogFood() {
       meal: Meal
       food: Food
       servings: number
+      unit?: ServingOverride
     }) => {
       const { error } = await supabase
         .from('diary_entries')
-        .insert(toDiaryRow(e.entry_date, e.meal, e.food, e.servings))
+        .insert(toDiaryRow(e.entry_date, e.meal, e.food, e.servings, e.unit))
       if (error) throw error
     },
     onSuccess: (_d, v) => {
@@ -66,11 +75,11 @@ export function useLogFoods() {
     mutationFn: async (e: {
       entry_date: string
       meal: Meal
-      items: { food: Food; servings: number }[]
+      items: { food: Food; servings: number; unit?: ServingOverride }[]
     }) => {
       if (e.items.length === 0) return
       const rows = e.items.map((it) =>
-        toDiaryRow(e.entry_date, e.meal, it.food, it.servings),
+        toDiaryRow(e.entry_date, e.meal, it.food, it.servings, it.unit),
       )
       const { error } = await supabase.from('diary_entries').insert(rows)
       if (error) throw error

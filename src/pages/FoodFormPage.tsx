@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, Search, Loader2 } from 'lucide-react'
+import {
+  ChevronLeft,
+  Search,
+  Loader2,
+  Plus,
+  Trash2,
+  RotateCcw,
+  Pencil,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,8 +23,12 @@ import {
   isUsdaConfigured,
   type UsdaSearchItem,
 } from '@/lib/usda'
-import { scaleNutrients } from '@/lib/nutrients'
-import type { Food, NutrientKey, Nutrients } from '@/lib/database.types'
+import {
+  scaleNutrients,
+  massUnitToGrams,
+  computePortionNutrients,
+} from '@/lib/nutrients'
+import type { Food, NutrientKey, Nutrients, Portion } from '@/lib/database.types'
 
 export function FoodFormPage() {
   const nav = useNavigate()
@@ -37,6 +49,7 @@ export function FoodFormPage() {
   const [source, setSource] = useState<Food['source']>('manual')
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [nutrients, setNutrients] = useState<Nutrients>({})
+  const [portions, setPortions] = useState<Portion[]>([])
 
   const [uq, setUq] = useState('')
   const [uResults, setUResults] = useState<UsdaSearchItem[]>([])
@@ -53,6 +66,7 @@ export function FoodFormPage() {
     setSource(existing.source)
     setSourceId(existing.source_id)
     setNutrients(existing.nutrients ?? {})
+    setPortions(existing.portions ?? [])
     servingBaseRef.current = existing.serving_qty
   }, [existing])
 
@@ -96,6 +110,56 @@ export function FoodFormPage() {
     setServingGrams(r.servingGrams)
   }
 
+  // Base gram weight drives auto-scaling of the alternate units below.
+  const baseGramsNum = parseFloat(servingGrams)
+  const baseGramsValid = Number.isFinite(baseGramsNum) && baseGramsNum > 0
+
+  const addPortion = () =>
+    setPortions((p) => [...p, { id: crypto.randomUUID(), label: '', grams: null }])
+
+  const patchPortion = (pid: string, patch: Partial<Portion>) =>
+    setPortions((p) => p.map((x) => (x.id === pid ? { ...x, ...patch } : x)))
+
+  const removePortion = (pid: string) =>
+    setPortions((p) => p.filter((x) => x.id !== pid))
+
+  // When a unit is named (cup, oz…), prefill grams if it's a known mass unit.
+  const onPortionLabelBlur = (pid: string) => {
+    const p = portions.find((x) => x.id === pid)
+    if (!p || p.grams != null) return
+    const g = massUnitToGrams(p.label)
+    if (g != null) patchPortion(pid, { grams: g })
+  }
+
+  const setPortionGrams = (pid: string, v: string) => {
+    const n = parseFloat(v)
+    patchPortion(pid, { grams: v === '' || Number.isNaN(n) ? null : n })
+  }
+
+  // Seed the override with the current auto-computed facts, then let it diverge.
+  const customizePortion = (pid: string) => {
+    const p = portions.find((x) => x.id === pid)
+    if (!p) return
+    const computed =
+      computePortionNutrients(nutrients, baseGramsValid ? baseGramsNum : null, p) ??
+      {}
+    patchPortion(pid, { nutrients: { ...computed } })
+  }
+
+  const resetPortion = (pid: string) => patchPortion(pid, { nutrients: undefined })
+
+  const setPortionNutrient = (pid: string, k: NutrientKey, v: string) =>
+    setPortions((prev) =>
+      prev.map((x) => {
+        if (x.id !== pid) return x
+        const next = { ...(x.nutrients ?? {}) }
+        const num = parseFloat(v)
+        if (v === '' || Number.isNaN(num)) delete next[k]
+        else next[k] = num
+        return { ...x, nutrients: next }
+      }),
+    )
+
   const runUsda = async () => {
     if (!uq.trim()) return
     setULoading(true)
@@ -122,6 +186,7 @@ export function FoodFormPage() {
       setSource('usda')
       setSourceId(d.source_id)
       setNutrients(d.nutrients)
+      setPortions([])
       servingBaseRef.current = d.serving_qty
       setUResults([])
       setUq('')
@@ -137,6 +202,19 @@ export function FoodFormPage() {
     const r = scaleToServing()
     setNutrients(r.nutrients)
     setServingGrams(r.servingGrams)
+    const cleanPortions: Portion[] = portions
+      .filter((p) => p.label.trim())
+      .map((p) => ({
+        id: p.id,
+        label: p.label.trim(),
+        grams:
+          p.grams != null && Number.isFinite(p.grams) && p.grams > 0
+            ? p.grams
+            : null,
+        ...(p.nutrients && Object.keys(p.nutrients).length > 0
+          ? { nutrients: p.nutrients }
+          : {}),
+      }))
     const saved = await saveFood.mutateAsync({
       id,
       name: name.trim(),
@@ -148,6 +226,7 @@ export function FoodFormPage() {
       serving_grams: r.servingGrams ? parseFloat(r.servingGrams) : null,
       recipe_servings: null,
       nutrients: r.nutrients,
+      portions: cleanPortions,
     })
     if (addToRecipe && !id) {
       await addIng.mutateAsync({
@@ -275,6 +354,20 @@ export function FoodFormPage() {
                 />
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sgrams">Weight per serving (g)</Label>
+              <Input
+                id="sgrams"
+                type="number"
+                inputMode="decimal"
+                value={servingGrams}
+                onChange={(e) => setServingGrams(e.target.value)}
+                placeholder="optional"
+              />
+              <p className="text-xs text-muted-foreground">
+                The mass of one serving. Set this to auto-scale the units below.
+              </p>
+            </div>
           </CardContent>
         </Card>
 
@@ -285,6 +378,105 @@ export function FoodFormPage() {
           </CardHeader>
           <CardContent>
             <NutrientFields values={nutrients} onChange={setNutrient} />
+          </CardContent>
+        </Card>
+
+        {/* Other serving units */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Other serving units</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!baseGramsValid && portions.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Set “Weight per serving (g)” above, then add units like cup, oz,
+                or slice — their nutrition scales automatically, and you can edit
+                it.
+              </p>
+            )}
+            {portions.map((p) => {
+              const computed = computePortionNutrients(
+                nutrients,
+                baseGramsValid ? baseGramsNum : null,
+                p,
+              )
+              const overridden = p.nutrients != null
+              return (
+                <div
+                  key={p.id}
+                  className="space-y-2 rounded-md border border-border p-3"
+                >
+                  <div className="flex gap-2">
+                    <div className="flex-1 space-y-1.5">
+                      <Label>Unit</Label>
+                      <Input
+                        value={p.label}
+                        onChange={(e) =>
+                          patchPortion(p.id, { label: e.target.value })
+                        }
+                        onBlur={() => onPortionLabelBlur(p.id)}
+                        placeholder="cup, oz, slice…"
+                      />
+                    </div>
+                    <div className="flex-1 space-y-1.5">
+                      <Label>Weight (g)</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        value={p.grams ?? ''}
+                        onChange={(e) => setPortionGrams(p.id, e.target.value)}
+                        placeholder="grams"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removePortion(p.id)}
+                      className="mt-6 shrink-0 p-2 text-muted-foreground active:text-destructive"
+                      aria-label="Remove unit"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {overridden
+                        ? 'Custom facts'
+                        : computed
+                          ? `${Math.round(computed.kcal ?? 0)} kcal · auto`
+                          : 'Set a weight, or customize facts'}
+                    </span>
+                    {overridden ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => resetPortion(p.id)}
+                      >
+                        <RotateCcw className="h-4 w-4" /> Reset to auto
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => customizePortion(p.id)}
+                      >
+                        <Pencil className="h-4 w-4" /> Edit facts
+                      </Button>
+                    )}
+                  </div>
+
+                  {overridden && (
+                    <NutrientFields
+                      values={p.nutrients ?? {}}
+                      onChange={(k, v) => setPortionNutrient(p.id, k, v)}
+                    />
+                  )}
+                </div>
+              )
+            })}
+            <Button variant="outline" className="w-full" onClick={addPortion}>
+              <Plus className="h-4 w-4" /> Add a unit
+            </Button>
           </CardContent>
         </Card>
 

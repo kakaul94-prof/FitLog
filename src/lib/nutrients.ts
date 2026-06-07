@@ -1,4 +1,4 @@
-import type { NutrientKey, Nutrients } from './database.types'
+import type { Food, NutrientKey, Nutrients, Portion } from './database.types'
 
 export type NutrientGroup =
   | 'energy'
@@ -84,4 +84,75 @@ export function sumNutrients(sets: Nutrients[]): Nutrients {
     }
   }
   return out
+}
+
+/** Known mass units → grams (exact). Volume/count units aren't here. */
+export const MASS_UNIT_GRAMS: Record<string, number> = {
+  g: 1,
+  gram: 1,
+  grams: 1,
+  mg: 0.001,
+  kg: 1000,
+  oz: 28.349523,
+  ounce: 28.349523,
+  ounces: 28.349523,
+  lb: 453.59237,
+  lbs: 453.59237,
+  pound: 453.59237,
+  pounds: 453.59237,
+}
+
+/** Grams for one of `label` if it's a known mass unit, else null. */
+export function massUnitToGrams(label: string): number | null {
+  return MASS_UNIT_GRAMS[label.trim().toLowerCase()] ?? null
+}
+
+/** Per-gram nutrients for a serving, or null when its gram weight is unknown. */
+export function perGram(
+  nutrients: Nutrients,
+  servingGrams: number | null,
+): Nutrients | null {
+  if (!servingGrams || servingGrams <= 0) return null
+  return scaleNutrients(nutrients, 1 / servingGrams)
+}
+
+/**
+ * Nutrients for one of a portion. Uses the portion's own facts when overridden,
+ * otherwise auto-scales the base by grams. Null when neither is possible.
+ */
+export function computePortionNutrients(
+  baseNutrients: Nutrients,
+  baseGrams: number | null,
+  portion: Pick<Portion, 'grams' | 'nutrients'>,
+): Nutrients | null {
+  if (portion.nutrients && Object.keys(portion.nutrients).length > 0)
+    return portion.nutrients
+  const pg = perGram(baseNutrients, baseGrams)
+  if (!pg || portion.grams == null || portion.grams <= 0) return null
+  return scaleNutrients(pg, portion.grams)
+}
+
+export interface ServingOption {
+  id: string // 'base' or a portion id
+  label: string
+  qty: number // base serving qty for this option (portions are per 1)
+  nutrients: Nutrients // per `qty label`
+}
+
+/** Selectable units for logging a food: its base serving + any usable portions. */
+export function servingOptions(food: Food): ServingOption[] {
+  const opts: ServingOption[] = [
+    {
+      id: 'base',
+      label: food.serving_unit,
+      qty: food.serving_qty,
+      nutrients: food.nutrients,
+    },
+  ]
+  for (const p of food.portions ?? []) {
+    if (!p.label.trim()) continue
+    const n = computePortionNutrients(food.nutrients, food.serving_grams, p)
+    if (n) opts.push({ id: p.id, label: p.label, qty: 1, nutrients: n })
+  }
+  return opts
 }

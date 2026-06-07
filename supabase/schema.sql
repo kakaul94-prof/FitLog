@@ -78,6 +78,7 @@ create table if not exists public.foods (
   serving_grams numeric,                -- grams per serving when known (unit conversions)
   recipe_servings numeric,              -- yield; only set when source='recipe'
   nutrients jsonb not null default '{}'::jsonb,
+  portions jsonb not null default '[]'::jsonb,  -- alternate serving units (label, grams, optional nutrient override)
   archived boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

@@ -47,6 +47,7 @@ export type FoodInput = {
   serving_grams: number | null
   recipe_servings: number | null
   nutrients: Food['nutrients']
+  portions: Food['portions']
 }
 
 export function useSaveFood() {

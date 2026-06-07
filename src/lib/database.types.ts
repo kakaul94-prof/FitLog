@@ -80,6 +80,15 @@ export interface Profile {
   updated_at: string
 }
 
+// An alternate serving unit for a food (e.g. "1 cup = 240 g"). Nutrition
+// auto-scales from the food's base per-gram unless `nutrients` overrides it.
+export interface Portion {
+  id: string
+  label: string
+  grams: number | null
+  nutrients?: Nutrients
+}
+
 export interface Food {
   id: string
   user_id: string
@@ -92,6 +101,7 @@ export interface Food {
   serving_grams: number | null
   recipe_servings: number | null
   nutrients: Nutrients
+  portions: Portion[]
   archived: boolean
   created_at: string
   updated_at: string

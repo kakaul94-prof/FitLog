@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useFoods } from '@/features/foods/useFoods'
 import { useLogFood, useLogFoods } from '@/features/diary/useDiary'
-import { scaleNutrients } from '@/lib/nutrients'
+import { scaleNutrients, servingOptions } from '@/lib/nutrients'
 import { todayISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Food, Meal } from '@/lib/database.types'
@@ -33,6 +33,7 @@ export function FoodPickerPage() {
   const [multi, setMulti] = useState(false)
   const [selected, setSelected] = useState<Food | null>(null)
   const [servings, setServings] = useState('1')
+  const [unitId, setUnitId] = useState('base')
   const [picks, setPicks] = useState<Pick[]>([])
   const log = useLogFood()
   const logMany = useLogFoods()
@@ -54,6 +55,8 @@ export function FoodPickerPage() {
   const onRowTap = (f: Food) => {
     if (!multi) {
       setSelected(f)
+      setUnitId('base')
+      setServings('1')
       return
     }
     setPicks((prev) =>
@@ -69,12 +72,17 @@ export function FoodPickerPage() {
   }
 
   const add = async () => {
-    if (!selected) return
+    if (!selected || !chosen) return
     await log.mutateAsync({
       entry_date: date,
       meal,
       food: selected,
       servings: parseFloat(servings) || 1,
+      unit: {
+        serving_qty: chosen.qty,
+        serving_unit: chosen.label,
+        nutrients: chosen.nutrients,
+      },
     })
     nav('/')
   }
@@ -92,8 +100,10 @@ export function FoodPickerPage() {
     nav('/')
   }
 
-  const preview = selected
-    ? scaleNutrients(selected.nutrients, parseFloat(servings) || 0)
+  const options = selected ? servingOptions(selected) : []
+  const chosen = options.find((o) => o.id === unitId) ?? options[0]
+  const preview = chosen
+    ? scaleNutrients(chosen.nutrients, parseFloat(servings) || 0)
     : null
 
   const multiKcal = picks.reduce(
@@ -191,14 +201,29 @@ export function FoodPickerPage() {
             <Input
               type="number"
               inputMode="decimal"
-              className="w-24"
+              className="w-20"
               value={servings}
               onChange={(e) => setServings(e.target.value)}
             />
-            <span className="text-sm text-muted-foreground">
-              × {selected.serving_qty} {selected.serving_unit}
-            </span>
-            <span className="ml-auto text-sm font-semibold">
+            <span className="text-sm text-muted-foreground">×</span>
+            {options.length > 1 ? (
+              <select
+                value={chosen?.id}
+                onChange={(e) => setUnitId(e.target.value)}
+                className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm"
+              >
+                {options.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.qty === 1 ? o.label : `${o.qty} ${o.label}`}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-sm text-muted-foreground">
+                {selected.serving_qty} {selected.serving_unit}
+              </span>
+            )}
+            <span className="ml-auto shrink-0 text-sm font-semibold">
               {Math.round(preview?.kcal ?? 0)} kcal
             </span>
           </div>

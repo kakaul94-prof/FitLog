@@ -4,6 +4,13 @@ Personal, phone-first PWA to track calories/food, macros + micros, cardio,
 strength, and body weight. Single user, cloud-synced via Supabase. Modeled on
 the old MyFitnessPal.
 
+## Working style
+
+- Be token-frugal. Verify changes with `npm run build` (tsc + vite) — do **not**
+  start the dev server or load the preview tools unless explicitly asked; UI is
+  tested on the deployed app.
+- Confirm scope before large or multi-step exploration/refactors.
+
 ## Stack
 
 - React 19 + Vite + TypeScript, Tailwind v4, React Router (lazy routes), TanStack Query

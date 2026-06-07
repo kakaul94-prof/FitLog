@@ -86,6 +86,28 @@ export function useDeleteWorkout() {
   })
 }
 
+/** Patch workout fields (e.g. rest_seconds); updates cache in place — no refetch. */
+export function useUpdateWorkout() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...patch
+    }: { id: string } & Partial<Workout>) => {
+      const { error } = await supabase.from('workouts').update(patch).eq('id', id)
+      if (error) throw error
+      return { id, patch }
+    },
+    onSuccess: ({ id, patch }) => {
+      qc.setQueryData(['workout', id], (prev: WorkoutDetail | undefined) =>
+        prev?.workout
+          ? { ...prev, workout: { ...prev.workout, ...patch } }
+          : prev,
+      )
+    },
+  })
+}
+
 /** Add an exercise to a workout: pre-fills sets from last time; optionally supersets with another. */
 export function useAddExercise() {
   const qc = useQueryClient()

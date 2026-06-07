@@ -14,7 +14,9 @@ import {
   useUpdateExercise,
   useDeleteExercise,
   useLastExerciseNote,
+  useUpdateWorkout,
 } from '@/features/strength/useStrength'
+import { RestTimer } from '@/components/strength/RestTimer'
 import { estimated1RM } from '@/lib/calc'
 import { dateLabel } from '@/lib/date'
 import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
@@ -22,6 +24,7 @@ import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
 export function WorkoutPage() {
   const { id } = useParams()
   const nav = useNavigate()
+  const updateWorkout = useUpdateWorkout()
   const { data } = useWorkout(id)
   const workout = data?.workout
   const exercises = data?.exercises ?? []
@@ -54,7 +57,7 @@ export function WorkoutPage() {
           </Button>
         }
       />
-      <div className="space-y-4 p-4 pb-24">
+      <div className="space-y-4 p-4 pb-32">
         {blocks.map((b, bi) =>
           b.group != null ? (
             <div
@@ -95,6 +98,14 @@ export function WorkoutPage() {
           Done
         </Button>
       </div>
+      {workout && (
+        <RestTimer
+          restSeconds={workout.rest_seconds ?? 90}
+          onChangeRest={(sec) =>
+            updateWorkout.mutate({ id: workout.id, rest_seconds: sec })
+          }
+        />
+      )}
     </div>
   )
 }

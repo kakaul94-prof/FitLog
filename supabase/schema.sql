@@ -227,8 +227,10 @@ create table if not exists public.workouts (
   name text,
   source_routine_id uuid references public.routines(id) on delete set null,
   notes text,
+  rest_seconds integer not null default 90,
   created_at timestamptz not null default now()
 );
+alter table public.workouts add column if not exists rest_seconds integer not null default 90;
 create index if not exists workouts_user_date_idx on public.workouts(user_id, workout_date);
 alter table public.workouts enable row level security;
 drop policy if exists workouts_rw_own on public.workouts;

@@ -182,6 +182,7 @@ export interface Workout {
   name: string | null
   source_routine_id: string | null
   notes: string | null
+  rest_seconds: number
   created_at: string
 }
 

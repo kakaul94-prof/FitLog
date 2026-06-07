@@ -117,6 +117,24 @@ export function useCreateRecipe() {
   })
 }
 
+/** Delete a recipe (archive the recipe food; ingredients + logged snapshots are left intact). */
+export function useDeleteRecipe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('foods')
+        .update({ archived: true })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recipes'] })
+      qc.invalidateQueries({ queryKey: ['foods'] })
+    },
+  })
+}
+
 export function useUpdateRecipe() {
   const qc = useQueryClient()
   return useMutation({

@@ -7,13 +7,13 @@
 - [DONE] Same long-hold Edit/Delete menu on diary **exercise** entries (replaced the trash icon); Edit opens a prefilled screen to adjust duration/distance/calories (route `/exercise/edit/:id`, reuses ExerciseAddPage; preserves a manual watch-override).
 - [DONE] Also have the ability to remove an added food from the list of choices? (Trash/archive button added to the food picker.)
 - [DONE] I also want the ability to take a recipe - copy the ingredients from it into a new recipe and then name that. For example - i have a pan pizza recipe, if i want one with turkey pepperoni, i should have the option to add that new item to the recipe and save as a new recipe. (Duplicate action via Copy button on the recipes list + a "Save as a copy" action in the recipe editor header; clones meta + all ingredients into "<name> (copy)", recomputes nutrients, then opens the copy to rename/tweak.)
-- I want the ability to be able to add a custom exercise when im adding a new template in the Lift Tab.
+- [DONE] I want the ability to be able to add a custom exercise when im adding a new template in the Lift Tab. (Marked done as-is, no new build: custom exercises created inline during a live workout (the "+ New custom exercise" form in ExercisePickerPage) are already selectable in the template builder's exercise search. A separate inline-create directly inside the template builder was deemed unnecessary.)
 For a recipe - in the ingredients section - i should be able to click on that ingredient in order to do further manipulation of the nutritional values.
 - [DONE] i want to have the nutrition values not be decimal points. Round to the nearest whole number. (Shared `formatNutrient` in nutrients.ts: whole numbers everywhere, but a value between 0 and 1 keeps just enough precision to stay non-zero so real micros don't read as "0"/collide with "—". Applied to NutrientBreakdown panel + macro pie, diary macro bars, and macro targets via resolveMacroTargets.)
 - right now when i add am adding a food from the diary, and then add a food
 - i want the ability to take all of the exercises im doing and help me figure out my activity level to help me better/more accurately find my goal calories. I want to do research on this.
 - [DONE] I also want to change the layout of the lift tab. I think it would be helpful to have it only show the exercises of the last 5 days. And then i want the ability to see any exercises i did in a calendar view where i could also type in the date. (Lift tab "Recent workouts" now shows the 5 most recent; added a Calendar link to a new /lift/calendar page: month grid marking strength (green) + cardio (orange) days, a date input to jump to any date, and a per-day list linking to each workout / cardio entry. Month-scoped hooks useWorkoutsRange + useExerciseEntriesRange. "Last 5" = 5 most recent workouts.)
-
+- an enhancement where theres a button on an exercise while youre in a set - that you can click to give a pop up with a cue. I want to also have the source for this cue and i want to make sure that they are accurate. If a cue actually ends up helping me during an exercise, i want the ability to give that cue a thumbs up. And then i want that cue to be saved to the exercise. Each exercise now will have a page for it that contains cues and other different things such as form.
 
 === Additional enhancement ideas (suggested by Claude 2026-06-07) ===
 
@@ -23,9 +23,7 @@ For a recipe - in the ingredients section - i should be able to click on that in
 
 - Saved Meals (named multi-food groups). Distinct from recipes: a recipe collapses ingredients into one food; a meal is a reusable bundle (e.g. "Usual breakfast") that logs several separate diary rows in one tap (keeps per-item editing). Effort: medium; new meals + meal_items tables; reuse the existing multi-add flow in the picker.
 
-- Barcode scanning. UPC lookup against Open Food Facts (free, no key) via the browser BarcodeDetector API or a small lib. Distinct from the planned "photo of nutrition facts" (OCR) idea above. Pairs with the USDA importer in usda.ts. Effort: medium.
-
-- Inline USDA search in the food picker. Today "Search your foods" only hits the local library; adding anything new detours through Add new food -> FoodFormPage. Surface USDA results inline below own foods (one tap to import + log). Effort: low-medium, usda.ts already does search/import.
+- [DONE] Inline USDA search in the food picker. Today "Search your foods" only hits the local library; adding anything new detours through Add new food -> FoodFormPage. Surface USDA results inline below own foods (one tap to import + log). Effort: low-medium, usda.ts already does search/import. (Shipped in FoodPickerPage: the All tab now shows a "Search USDA for '<query>'" button below your own foods whenever a query is typed and USDA is configured. Tapping a result imports it via useSaveFood (source 'usda', per 100 g) and drops it into the normal log flow — selects it to open the serving sheet, or adds it to the multi-add picks. Button-triggered, not per-keystroke, to avoid hammering the API; USDA results clear when the query changes.)
 
 -- Insight & engagement (keeps you coming back) --
 
@@ -45,6 +43,5 @@ For a recipe - in the ingredients section - i should be able to click on that in
 
 -- Smaller bonuses --
 
-- Plate calculator near the rest timer (given barbell weight, show plates per side).
 - More body-measurement types (chest/arms/thighs); measurements table already supports arbitrary types.
 - Log reminders / notifications (note: PWA push is limited on iOS).

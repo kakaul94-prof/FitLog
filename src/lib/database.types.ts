@@ -164,6 +164,17 @@ export interface CustomExercise {
   created_at: string
 }
 
+// Per-user form notes for one exercise (built-in slug or 'custom:<uuid>').
+// Curated cues ship in src/data/exerciseForm.ts; this holds the user's own.
+export interface ExerciseNote {
+  id: string
+  user_id: string
+  exercise_key: string
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Routine {
   id: string
   user_id: string
@@ -253,6 +264,7 @@ export interface Database {
       custom_activities: Tbl<CustomActivity>
       exercise_entries: Tbl<ExerciseEntry>
       custom_exercises: Tbl<CustomExercise>
+      exercise_notes: Tbl<ExerciseNote>
       routines: Tbl<Routine>
       routine_exercises: Tbl<RoutineExercise>
       workouts: Tbl<Workout>

@@ -25,7 +25,7 @@ const DiaryNutrientsPage = lazyPage(() => import('@/pages/DiaryNutrientsPage'), 
 const ExerciseAddPage = lazyPage(() => import('@/pages/ExerciseAddPage'), 'ExerciseAddPage')
 const WorkoutPage = lazyPage(() => import('@/pages/WorkoutPage'), 'WorkoutPage')
 const ExercisePickerPage = lazyPage(() => import('@/pages/ExercisePickerPage'), 'ExercisePickerPage')
-const ExerciseProgressPage = lazyPage(() => import('@/pages/ExerciseProgressPage'), 'ExerciseProgressPage')
+const ExerciseDetailPage = lazyPage(() => import('@/pages/ExerciseDetailPage'), 'ExerciseDetailPage')
 const WorkoutCalendarPage = lazyPage(() => import('@/pages/WorkoutCalendarPage'), 'WorkoutCalendarPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
 const RecipesPage = lazyPage(() => import('@/pages/RecipesPage'), 'RecipesPage')
@@ -69,7 +69,7 @@ function Routed() {
             <Route path="/exercise/edit/:id" element={<ExerciseAddPage />} />
             <Route path="/workout/:id" element={<WorkoutPage />} />
             <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
-            <Route path="/lift/exercise/:key" element={<ExerciseProgressPage />} />
+            <Route path="/lift/exercise/:key" element={<ExerciseDetailPage />} />
             <Route path="/lift/calendar" element={<WorkoutCalendarPage />} />
             <Route path="/routines/:id" element={<RoutineEditPage />} />
             <Route path="/recipes/:id" element={<RecipeEditPage />} />

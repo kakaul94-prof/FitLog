@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft,
@@ -8,6 +8,7 @@ import {
   Trash2,
   RotateCcw,
   Pencil,
+  Camera,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -17,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { NutrientFields } from '@/components/NutrientFields'
 import { useFood, useSaveFood } from '@/features/foods/useFoods'
 import { useAddIngredient } from '@/features/recipes/useRecipes'
+import { scanLabel } from '@/lib/scanLabel'
 import {
   searchUsdaFoods,
   getUsdaFood,
@@ -55,6 +57,11 @@ export function FoodFormPage() {
   const [uResults, setUResults] = useState<UsdaSearchItem[]>([])
   const [uLoading, setULoading] = useState(false)
   const [uErr, setUErr] = useState('')
+
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [scanLoading, setScanLoading] = useState(false)
+  const [scanErr, setScanErr] = useState('')
+  const [scanWarnings, setScanWarnings] = useState<string[]>([])
 
   useEffect(() => {
     if (!existing) return
@@ -197,6 +204,33 @@ export function FoodFormPage() {
     }
   }
 
+  const onScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    setScanLoading(true)
+    setScanErr('')
+    setScanWarnings([])
+    try {
+      const d = await scanLabel(file)
+      setName(d.name)
+      setBrand(d.brand ?? '')
+      setServingQty(String(d.serving_qty))
+      setServingUnit(d.serving_unit)
+      setServingGrams(d.serving_grams != null ? String(d.serving_grams) : '')
+      setSource('manual')
+      setSourceId(null)
+      setNutrients(d.nutrients)
+      setPortions([])
+      servingBaseRef.current = d.serving_qty
+      setScanWarnings(d.warnings)
+    } catch (err) {
+      setScanErr(err instanceof Error ? err.message : 'Scan failed')
+    } finally {
+      setScanLoading(false)
+    }
+  }
+
   const onSave = async () => {
     if (!name.trim()) return
     const r = scaleToServing()
@@ -250,6 +284,51 @@ export function FoodFormPage() {
       />
 
       <div className="space-y-4 p-4">
+        {/* Scan a nutrition label */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Scan a nutrition label</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={onScanFile}
+            />
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => fileRef.current?.click()}
+              disabled={scanLoading}
+            >
+              {scanLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Reading label…
+                </>
+              ) : (
+                <>
+                  <Camera className="h-4 w-4" /> Scan nutrition label
+                </>
+              )}
+            </Button>
+            {scanErr && <p className="text-sm text-destructive">{scanErr}</p>}
+            {scanWarnings.length > 0 && (
+              <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+                {scanWarnings.map((w, i) => (
+                  <p key={i}>⚠ {w}</p>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Take a straight-on photo of the Nutrition Facts panel. The values
+              fill the form below — review them, then save.
+            </p>
+          </CardContent>
+        </Card>
+
         {/* USDA search */}
         <Card>
           <CardHeader>

@@ -23,7 +23,8 @@ git push -u origin main
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
    - `VITE_USDA_API_KEY`
-4. **Save and Deploy.** You'll get a URL like `https://fitlog.pages.dev`.
+4. **Workers AI binding** (powers "Scan nutrition label"; Settings → Functions → Bindings — you may need one deploy first): add a **Workers AI** binding with the variable name **`AI`**. No API key needed — it uses Cloudflare's free Workers AI allowance, and nothing is exposed to the browser.
+5. **Save and Deploy.** You'll get a URL like `https://fitlog.pages.dev`.
 
 ## 3. Point Supabase auth at the live URL
 
@@ -45,4 +46,5 @@ full-screen with its own icon, like a native app.
   can't load data with the VPN on, allowlist `*.supabase.co` in NordVPN →
   Settings → Threat Protection, or disable Threat Protection.
 - **Updating:** push to GitHub → Cloudflare auto-rebuilds and deploys.
+- **Label scanning:** lives in a Pages Function (`functions/api/scan-label.ts`) that only runs on Cloudflare. Plain `npm run dev` won't serve it — test scanning on the deployed site, or run `npx wrangler pages dev dist --ai AI` after a build.
 - **Your data:** More → "Export my data (JSON)" downloads a full backup anytime.

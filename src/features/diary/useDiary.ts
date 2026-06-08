@@ -64,6 +64,7 @@ export function useLogFood() {
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ['diary', v.entry_date] })
       qc.invalidateQueries({ queryKey: ['streak'] })
+      qc.invalidateQueries({ queryKey: ['foodHistory'] })
     },
   })
 }
@@ -87,6 +88,50 @@ export function useLogFoods() {
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ['diary', v.entry_date] })
       qc.invalidateQueries({ queryKey: ['streak'] })
+      qc.invalidateQueries({ queryKey: ['foodHistory'] })
+    },
+  })
+}
+
+/** Copy all entries of one meal from another day into a target day/meal. */
+export function useCopyMeal() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (e: {
+      from: string
+      to: string
+      meal: Meal
+    }): Promise<number> => {
+      const { data, error } = await supabase
+        .from('diary_entries')
+        .select('*')
+        .eq('entry_date', e.from)
+        .eq('meal', e.meal)
+        .order('created_at')
+      if (error) throw error
+      const src = (data ?? []) as DiaryEntry[]
+      if (src.length === 0) return 0
+      const rows = src.map((r) => ({
+        entry_date: e.to,
+        meal: e.meal,
+        food_id: r.food_id,
+        food_name: r.food_name,
+        brand: r.brand,
+        servings: r.servings,
+        serving_qty: r.serving_qty,
+        serving_unit: r.serving_unit,
+        nutrients: r.nutrients,
+      }))
+      const { error: insErr } = await supabase
+        .from('diary_entries')
+        .insert(rows)
+      if (insErr) throw insErr
+      return rows.length
+    },
+    onSuccess: (_n, v) => {
+      qc.invalidateQueries({ queryKey: ['diary', v.to] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+      qc.invalidateQueries({ queryKey: ['foodHistory'] })
     },
   })
 }

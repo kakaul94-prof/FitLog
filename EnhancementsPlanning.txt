@@ -10,3 +10,38 @@
 For a recipe - in the ingredients section - i should be able to click on that ingredient in order to do further manipulation of the nutritional values.
 - Taking a photo or uploading a photo of the nutrition facts to add a food.
 - be able to import the previous exercises from the workout log.
+
+
+=== Additional enhancement ideas (suggested by Claude 2026-06-07) ===
+
+-- Faster daily logging (highest-frequency action) --
+
+- Recent / Frequent / "copy a day" in the food picker. The picker (FoodPickerPage.tsx) is search-only (useFoods(search)). Add Recent + Frequent tabs derived from diary_entries (most-recent distinct foods, plus counts over ~30 days), and a "Copy from another day" action that clones a previous day's meal into today. Biggest friction reducer. Effort: low-medium, no schema change.
+
+- Saved Meals (named multi-food groups). Distinct from recipes: a recipe collapses ingredients into one food; a meal is a reusable bundle (e.g. "Usual breakfast") that logs several separate diary rows in one tap (keeps per-item editing). Effort: medium; new meals + meal_items tables; reuse the existing multi-add flow in the picker.
+
+- Barcode scanning. UPC lookup against Open Food Facts (free, no key) via the browser BarcodeDetector API or a small lib. Distinct from the planned "photo of nutrition facts" (OCR) idea above. Pairs with the USDA importer in usda.ts. Effort: medium.
+
+- Inline USDA search in the food picker. Today "Search your foods" only hits the local library; adding anything new detours through Add new food -> FoodFormPage. Surface USDA results inline below own foods (one tap to import + log). Effort: low-medium, usda.ts already does search/import.
+
+-- Insight & engagement (keeps you coming back) --
+
+- Nutrition trends on the Progress tab. ProgressPage.tsx only charts body metrics (weight/body fat/waist). Add a Nutrition view: 7/30-day calories vs goal, average macros vs targets, days-logged. Data already in diary_entries. Effort: medium; reuses recharts + calc helpers.
+
+- Adaptive TDEE / goal calibration. calc.ts uses pure Mifflin-St Jeor, which drifts. Compute actual maintenance from logged intake + real weight change over ~2-4 weeks, then show "Your data suggests ~X kcal; formula says Y" with a one-tap adjust. Effort: medium.
+
+- Micronutrient targets + weekly "you're low on..." insights. App already stores 31 nutrients (nutrients.ts) but only macros have targets. Add DV-based micro targets and a weekly summary flagging consistent shortfalls (fiber, iron, potassium...). DV reference already in nutrients.ts. Effort: low-medium.
+
+- Water tracking. Missing MFP staple. Tappable glasses/oz counter on the diary, daily goal, small streak. Effort: low; one water_logs table (or fold into a daily row).
+
+-- Strength & resilience --
+
+- Automatic PR detection & celebration. useExerciseHistory already computes max weight / volume / est. 1RM (Epley in calc.ts). Detect when a set beats prior bests and surface a PR badge on the workout + a Records view per lift. Effort: low-medium.
+
+- Offline write queue + JSON re-import. Writes currently need a connection (v1) and export has no import. For a phone-first PWA: queue offline logs (IndexedDB) and sync on reconnect; add restore-from-JSON to mirror exportData.ts so backups round-trip. Effort: import = low; offline queue = higher but high value.
+
+-- Smaller bonuses --
+
+- Plate calculator near the rest timer (given barbell weight, show plates per side).
+- More body-measurement types (chest/arms/thighs); measurements table already supports arbitrary types.
+- Log reminders / notifications (note: PWA push is limited on iOS).

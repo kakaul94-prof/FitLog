@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { todayISO, addDaysISO } from '@/lib/date'
 import type { Food } from '@/lib/database.types'
 
 export function useFoods(search = '') {
@@ -16,6 +17,64 @@ export function useFoods(search = '') {
       const { data, error } = await q
       if (error) throw error
       return (data ?? []) as Food[]
+    },
+  })
+}
+
+export type FoodHistory = { recent: Food[]; frequent: Food[] }
+
+/**
+ * Recently- and frequently-logged foods, derived from the last ~60 days of
+ * diary entries mapped back to live (non-archived) foods. One query feeds both
+ * lists: distinct food_ids in recency order, plus per-food log counts.
+ */
+export function useFoodHistory() {
+  return useQuery({
+    queryKey: ['foodHistory'],
+    queryFn: async (): Promise<FoodHistory> => {
+      const since = addDaysISO(todayISO(), -60)
+      const { data, error } = await supabase
+        .from('diary_entries')
+        .select('food_id, created_at')
+        .gte('entry_date', since)
+        .not('food_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (error) throw error
+      const rows = (data ?? []) as { food_id: string }[]
+
+      const seen = new Set<string>()
+      const recencyIds: string[] = []
+      const counts = new Map<string, number>()
+      for (const r of rows) {
+        const id = r.food_id
+        if (!id) continue
+        counts.set(id, (counts.get(id) ?? 0) + 1)
+        if (!seen.has(id)) {
+          seen.add(id)
+          recencyIds.push(id)
+        }
+      }
+      if (recencyIds.length === 0) return { recent: [], frequent: [] }
+
+      const { data: foodRows, error: fErr } = await supabase
+        .from('foods')
+        .select('*')
+        .in('id', recencyIds)
+        .eq('archived', false)
+      if (fErr) throw fErr
+      const byId = new Map(
+        (foodRows ?? []).map((f) => [(f as Food).id, f as Food]),
+      )
+
+      const recent = recencyIds
+        .map((id) => byId.get(id))
+        .filter((f): f is Food => !!f)
+      const frequent = recencyIds
+        .filter((id) => byId.has(id))
+        .sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))
+        .map((id) => byId.get(id) as Food)
+      return { recent: recent.slice(0, 50), frequent: frequent.slice(0, 50) }
     },
   })
 }

@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft,
   Search,
   Plus,
+  Copy,
   ListChecks,
   CheckCircle2,
   Circle,
@@ -14,10 +16,10 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useFoods, useDeleteFood } from '@/features/foods/useFoods'
-import { useLogFood, useLogFoods } from '@/features/diary/useDiary'
+import { useFoods, useDeleteFood, useFoodHistory } from '@/features/foods/useFoods'
+import { useDiary, useLogFood, useLogFoods, useCopyMeal } from '@/features/diary/useDiary'
 import { scaleNutrients, servingOptions } from '@/lib/nutrients'
-import { todayISO } from '@/lib/date'
+import { todayISO, addDaysISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { Food, Meal } from '@/lib/database.types'
 
@@ -39,6 +41,12 @@ export function FoodPickerPage() {
   const log = useLogFood()
   const logMany = useLogFoods()
   const del = useDeleteFood()
+  const { data: history } = useFoodHistory()
+  const copyMeal = useCopyMeal()
+  const [tab, setTab] = useState<'all' | 'recent' | 'frequent'>('all')
+  const [copyOpen, setCopyOpen] = useState(false)
+  const [copyDate, setCopyDate] = useState(() => addDaysISO(date, -1))
+  const { data: copySrc } = useDiary(copyDate)
 
   const isPicked = (id: string) => picks.some((p) => p.food.id === id)
 
@@ -109,6 +117,17 @@ export function FoodPickerPage() {
     nav('/')
   }
 
+  const q = search.trim().toLowerCase()
+  const byName = (arr: Food[]) =>
+    q ? arr.filter((f) => f.name.toLowerCase().includes(q)) : arr
+  const visible =
+    tab === 'all'
+      ? (foods ?? [])
+      : tab === 'recent'
+        ? byName(history?.recent ?? [])
+        : byName(history?.frequent ?? [])
+  const copyItems = (copySrc ?? []).filter((e) => e.meal === meal)
+
   const options = selected ? servingOptions(selected) : []
   const chosen = options.find((o) => o.id === unitId) ?? options[0]
   const preview = chosen
@@ -149,15 +168,33 @@ export function FoodPickerPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={() => nav('/foods/new')}
-        >
-          <Plus className="h-4 w-4" /> Add a new food
-        </Button>
+        <div className="flex rounded-lg bg-secondary p-0.5 text-sm">
+          {(['all', 'recent', 'frequent'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={cn(
+                'flex-1 rounded-md py-1.5 font-medium capitalize transition-colors',
+                tab === t
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground active:bg-accent',
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="outline" onClick={() => nav('/foods/new')}>
+            <Plus className="h-4 w-4" /> New food
+          </Button>
+          <Button variant="outline" onClick={() => setCopyOpen(true)}>
+            <Copy className="h-4 w-4" /> Copy day
+          </Button>
+        </div>
         <Card className="divide-y divide-border overflow-hidden">
-          {(foods ?? []).map((f) => {
+          {visible.map((f) => {
             const active = multi ? isPicked(f.id) : selected?.id === f.id
             return (
               <div
@@ -204,9 +241,13 @@ export function FoodPickerPage() {
               </div>
             )
           })}
-          {(foods ?? []).length === 0 && (
+          {visible.length === 0 && (
             <div className="p-4 text-center text-sm text-muted-foreground">
-              No foods found. Tap “Add a new food”.
+              {tab === 'all'
+                ? 'No foods found. Tap “New food”.'
+                : tab === 'recent'
+                  ? 'No recent foods yet — log some foods first.'
+                  : 'No frequent foods yet — log some foods first.'}
             </div>
           )}
         </Card>
@@ -268,6 +309,78 @@ export function FoodPickerPage() {
           </Button>
         </div>
       )}
+
+      {copyOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => setCopyOpen(false)}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="border-b border-border p-3 text-center text-sm font-medium">
+                  Copy {meal} from another day
+                </div>
+                <div className="space-y-3 p-4">
+                  <input
+                    type="date"
+                    value={copyDate}
+                    max={addDaysISO(date, -1)}
+                    onChange={(e) => setCopyDate(e.target.value)}
+                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                  />
+                  {copyItems.length > 0 ? (
+                    <ul className="max-h-48 space-y-1 overflow-auto text-sm">
+                      {copyItems.map((e) => (
+                        <li
+                          key={e.id}
+                          className="flex justify-between gap-2 text-muted-foreground"
+                        >
+                          <span className="truncate">{e.food_name}</span>
+                          <span className="shrink-0">
+                            {Math.round((e.nutrients.kcal ?? 0) * e.servings)} kcal
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="py-2 text-center text-sm text-muted-foreground">
+                      Nothing logged to {meal} on this day.
+                    </p>
+                  )}
+                  <Button
+                    className="w-full"
+                    disabled={copyItems.length === 0 || copyMeal.isPending}
+                    onClick={async () => {
+                      const n = await copyMeal.mutateAsync({
+                        from: copyDate,
+                        to: date,
+                        meal,
+                      })
+                      if (n > 0) nav('/')
+                    }}
+                  >
+                    {copyMeal.isPending
+                      ? 'Copying…'
+                      : `Copy ${copyItems.length} ${
+                          copyItems.length === 1 ? 'item' : 'items'
+                        }`}
+                  </Button>
+                </div>
+              </Card>
+              <button
+                onClick={() => setCopyOpen(false)}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

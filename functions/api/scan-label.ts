@@ -2,6 +2,10 @@
 // Reads a Nutrition Facts photo with Workers AI and returns structured,
 // per-serving nutrition mapped to our nutrient keys. Uses the `AI` binding —
 // there is NO external API key, so nothing sensitive ships to the browser.
+//
+// Two steps, because the vision model reliably *reads* a label but ignores
+// JSON-mode and just describes it: (1) vision model transcribes the panel to
+// text; (2) a text model with JSON mode converts that text to our schema.
 
 interface Env {
   AI?: {
@@ -9,7 +13,8 @@ interface Env {
   }
 }
 
-const MODEL = '@cf/meta/llama-3.2-11b-vision-instruct'
+const VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct'
+const TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct'
 
 // key -> unit. Mirrors src/lib/nutrients.ts; kept inline so the function stays
 // self-contained (the `@/` alias / browser modules don't apply to Functions).
@@ -30,16 +35,23 @@ const unitLine = () => {
   return `kcal: kcal. grams: ${by('g')}. milligrams: ${by('mg')}. micrograms: ${by('mcg')}.`
 }
 
-const PROMPT = `Extract the Nutrition Facts panel from the image. Output ONLY a single JSON object — no description, no prose, no markdown fences, nothing before or after the JSON.
+// Step 1 — let the vision model do what it's good at: read the label as text.
+const READ_PROMPT = `Read the Nutrition Facts label in this image and transcribe it precisely as plain text. Include the serving size, the servings per container, and the PER SERVING amount and unit for calories and every nutrient listed (including any vitamins and minerals). Also include the product name and brand if visible. Do not convert, round, or omit anything.`
+
+// Step 2 — a text model turns that transcription into our JSON shape.
+const structPrompt = (labelText: string) =>
+  `Convert the following Nutrition Facts text into a single JSON object. Output ONLY the JSON.
 Rules:
-- Use the PER SERVING column, not the per-container amounts.
-- Report ABSOLUTE amounts, never the % Daily Value column.
+- Use the PER SERVING amounts.
 - Units per field — ${unitLine()}
 - "Includes Xg Added Sugars" maps to added_sugar.
-- serving_qty = the serving amount as a number; serving_unit = its text (e.g. "cup", "g", "piece"); serving_grams = the gram weight shown in parentheses, or null.
-- name = the product name if it is visible in the image, otherwise "".
-- If a value is missing or not legible, OMIT that key entirely. Never guess and never output 0 for a value you cannot read.
-Return JSON with keys: name (string), brand (string), serving_qty (number), serving_unit (string), serving_grams (number or null), nutrients (object whose keys come ONLY from this list: ${KEYS.join(', ')}).`
+- serving_qty = the serving amount as a number; serving_unit = its text (e.g. "cup", "g", "fl oz"); serving_grams = the gram weight in parentheses, or null.
+- name = the product name if present, otherwise "".
+- If a value is missing or unreadable, OMIT that key entirely. Never guess and never output 0 for a value that is not stated.
+JSON keys: name (string), brand (string), serving_qty (number), serving_unit (string), serving_grams (number or null), nutrients (object whose keys come ONLY from this list: ${KEYS.join(', ')}).
+
+Nutrition Facts text:
+${labelText}`
 
 const SCHEMA = {
   type: 'object',
@@ -79,21 +91,24 @@ function extractJson(text: string): unknown {
   return JSON.parse(text.slice(start, end + 1))
 }
 
-// Run the model, accepting Meta's license on first use (Workers AI error 5016),
+// Run a model, accepting Meta's license on first use (Workers AI error 5016),
 // then retrying. The binding is authenticated, so no token is needed.
 async function runWithAgree(
-  env: Env,
+  ai: NonNullable<Env['AI']>,
+  model: string,
   input: Record<string, unknown>,
-): Promise<unknown> {
-  const ai = env.AI!
+): Promise<string> {
+  let res: unknown
   try {
-    return await ai.run(MODEL, input)
+    res = await ai.run(model, input)
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     if (!/5016|agree|terms|license/i.test(msg)) throw e
-    await ai.run(MODEL, { prompt: 'agree' })
-    return ai.run(MODEL, input)
+    await ai.run(model, { prompt: 'agree' })
+    res = await ai.run(model, input)
   }
+  const r = res as { response?: unknown }
+  return typeof r?.response === 'string' ? r.response : JSON.stringify(r?.response ?? res)
 }
 
 export const onRequestPost = async (context: {
@@ -101,7 +116,8 @@ export const onRequestPost = async (context: {
   env: Env
 }): Promise<Response> => {
   const { request, env } = context
-  if (!env.AI)
+  const ai = env.AI
+  if (!ai)
     return json({ error: 'Label scanning is not configured (no AI binding).' }, 503)
 
   let body: { image?: string }
@@ -119,49 +135,65 @@ export const onRequestPost = async (context: {
     return json({ error: 'Could not read the image.' }, 400)
   }
 
-  const baseInput = {
-    image: Array.from(bytes),
-    prompt: PROMPT,
-    max_tokens: 1024,
-    temperature: 0.1,
-  }
-  // JSON mode stops the model from "describing" the image instead of extracting
-  // it. Fall back to a plain call if response_format is rejected with an image.
-  const jsonInput = {
-    ...baseInput,
-    response_format: { type: 'json_schema', json_schema: SCHEMA },
-  }
-
-  let result: unknown
+  // Step 1: vision model transcribes the label.
+  let labelText: string
   try {
-    result = await runWithAgree(env, jsonInput)
+    labelText = await runWithAgree(ai, VISION_MODEL, {
+      image: Array.from(bytes),
+      prompt: READ_PROMPT,
+      max_tokens: 1024,
+      temperature: 0.1,
+    })
+  } catch (e) {
+    return json(
+      {
+        error: 'The label reader is unavailable right now.',
+        detail: e instanceof Error ? e.message : String(e),
+      },
+      502,
+    )
+  }
+  if (!labelText.trim())
+    return json(
+      { error: "Couldn't read the label. Try a clearer, straight-on photo." },
+      422,
+    )
+
+  // Step 2: structure the transcription into JSON with the text model (JSON mode
+  // is reliable for text models). Short-circuit only if the vision step already
+  // returned usable JSON (it normally just describes the label).
+  let direct: unknown = null
+  try {
+    direct = extractJson(labelText)
   } catch {
-    try {
-      result = await runWithAgree(env, baseInput)
-    } catch (e) {
-      return json(
+    direct = null
+  }
+  if (direct && typeof direct === 'object' && 'nutrients' in (direct as object))
+    return json(direct)
+
+  try {
+    const out = await runWithAgree(ai, TEXT_MODEL, {
+      messages: [
         {
-          error: 'The label reader is unavailable right now.',
-          detail: e instanceof Error ? e.message : String(e),
+          role: 'system',
+          content:
+            'You convert nutrition label text into a JSON object. Output only JSON.',
         },
-        502,
-      )
-    }
-  }
-
-  // Workers AI returns { response: string | object } for these models.
-  const raw = (result as { response?: unknown })?.response ?? result
-  try {
-    const parsed = typeof raw === 'string' ? extractJson(raw) : raw
-    return json(parsed)
-  } catch {
+        { role: 'user', content: structPrompt(labelText) },
+      ],
+      max_tokens: 1024,
+      temperature: 0,
+      response_format: { type: 'json_schema', json_schema: SCHEMA },
+    })
+    return json(extractJson(out))
+  } catch (e) {
     return json(
       {
         error: "Couldn't read the label. Try a clearer, straight-on photo.",
         detail:
-          typeof raw === 'string'
-            ? raw.slice(0, 400)
-            : JSON.stringify(raw).slice(0, 400),
+          (e instanceof Error ? e.message : String(e)) +
+          ' | read: ' +
+          labelText.slice(0, 200),
       },
       422,
     )

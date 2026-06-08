@@ -10,6 +10,7 @@ the old MyFitnessPal.
   start the dev server or load the preview tools unless explicitly asked; UI is
   tested on the deployed app.
 - Confirm scope before large or multi-step exploration/refactors.
+- When I ask for an enhancement (especially at the start of a new session), read `EnhancementsPlanning.txt` first — it's the running backlog (items marked `[DONE]` are shipped). Confirm which item to build before coding.
 
 ## Stack
 

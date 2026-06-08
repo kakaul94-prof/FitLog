@@ -86,21 +86,33 @@ export const onRequestPost = async (context: {
     return json({ error: 'Could not read the image.' }, 400)
   }
 
+  const input = { image: Array.from(bytes), prompt: PROMPT, max_tokens: 1024 }
   let result: unknown
   try {
-    result = await env.AI.run(MODEL, {
-      image: Array.from(bytes),
-      prompt: PROMPT,
-      max_tokens: 1024,
-    })
+    result = await env.AI.run(MODEL, input)
   } catch (e) {
-    return json(
-      {
-        error: 'The label reader is unavailable right now.',
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      502,
-    )
+    const msg = e instanceof Error ? e.message : String(e)
+    // Gated Llama model: first use must accept Meta's license (Workers AI error
+    // 5016). The binding is authenticated, so accept here and retry once.
+    if (/5016|agree|terms|license/i.test(msg)) {
+      try {
+        await env.AI.run(MODEL, { prompt: 'agree' })
+        result = await env.AI.run(MODEL, input)
+      } catch (e2) {
+        return json(
+          {
+            error: 'The label reader is unavailable right now.',
+            detail: e2 instanceof Error ? e2.message : String(e2),
+          },
+          502,
+        )
+      }
+    } else {
+      return json(
+        { error: 'The label reader is unavailable right now.', detail: msg },
+        502,
+      )
+    }
   }
 
   // Workers AI returns { response: string | object } for these models.

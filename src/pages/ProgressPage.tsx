@@ -1,13 +1,5 @@
 import { useState } from 'react'
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from 'recharts'
+import { LineChartSvg } from '@/components/LineChartSvg'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -139,39 +131,14 @@ export function ProgressPage() {
                 Log a few entries to see your trend.
               </p>
             ) : (
-              <div className="h-56 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={chartData}
-                    margin={{ top: 5, right: 5, bottom: 0, left: -20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke={GRAY} />
-                    <YAxis
-                      domain={['auto', 'auto']}
-                      tick={{ fontSize: 11 }}
-                      stroke={GRAY}
-                    />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="value"
-                      stroke={GRAY}
-                      strokeWidth={1}
-                      dot={{ r: 2 }}
-                      name="Logged"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="trend"
-                      stroke={GREEN}
-                      strokeWidth={2.5}
-                      dot={false}
-                      name="7-day trend"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <LineChartSvg
+                data={chartData}
+                xKey="date"
+                series={[
+                  { key: 'value', color: GRAY, strokeWidth: 1, dotRadius: 2, name: 'Logged' },
+                  { key: 'trend', color: GREEN, strokeWidth: 2.5, name: '7-day trend' },
+                ]}
+              />
             )}
             <p className="mt-2 text-center text-xs text-muted-foreground">
               Faint line = daily logs · bold = 7-day average (the real trend)

@@ -1,15 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from 'recharts'
 import { ChevronLeft } from 'lucide-react'
+import { LineChartSvg } from '@/components/LineChartSvg'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -26,7 +18,6 @@ const METRICS = [
 type MetricKey = (typeof METRICS)[number]['key']
 
 const GREEN = '#16a34a'
-const GRAY = '#9ca3af'
 
 export function ExerciseProgressPage() {
   const { key } = useParams()
@@ -90,31 +81,13 @@ export function ExerciseProgressPage() {
                 Log this exercise in 2+ sessions to see a trend.
               </p>
             ) : (
-              <div className="h-56 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={chartData}
-                    margin={{ top: 5, right: 5, bottom: 0, left: -20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke={GRAY} />
-                    <YAxis
-                      domain={['auto', 'auto']}
-                      tick={{ fontSize: 11 }}
-                      stroke={GRAY}
-                    />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="value"
-                      stroke={GREEN}
-                      strokeWidth={2.5}
-                      dot={{ r: 3 }}
-                      name={meta.label}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <LineChartSvg
+                data={chartData}
+                xKey="date"
+                series={[
+                  { key: 'value', color: GREEN, strokeWidth: 2.5, dotRadius: 3, name: meta.label },
+                ]}
+              />
             )}
           </CardContent>
         </Card>

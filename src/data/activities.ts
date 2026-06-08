@@ -29,4 +29,33 @@ export const ACTIVITIES: BuiltinActivity[] = [
   { key: 'basketball', name: 'Basketball', met: 6.5, distanceBased: false },
   { key: 'tennis', name: 'Tennis', met: 7.3, distanceBased: false },
   { key: 'dancing', name: 'Dancing', met: 5.0, distanceBased: false },
+
+  // Household & yard work
+  { key: 'mowing_push', name: 'Mowing lawn (push mower)', met: 5.5, distanceBased: false },
+  { key: 'mowing_riding', name: 'Mowing lawn (riding mower)', met: 2.5, distanceBased: false },
+  { key: 'gardening', name: 'Gardening (general)', met: 3.8, distanceBased: false },
+  { key: 'raking', name: 'Raking leaves', met: 3.8, distanceBased: false },
+  { key: 'shoveling_snow', name: 'Shoveling snow (by hand)', met: 5.3, distanceBased: false },
+  { key: 'vacuuming', name: 'Vacuuming', met: 3.3, distanceBased: false },
+  { key: 'cleaning', name: 'House cleaning (general)', met: 3.3, distanceBased: false },
+  { key: 'mopping', name: 'Mopping / sweeping', met: 3.5, distanceBased: false },
+  { key: 'washing_car', name: 'Washing the car', met: 3.0, distanceBased: false },
+  { key: 'moving_furniture', name: 'Moving furniture / boxes', met: 5.8, distanceBased: false },
+  { key: 'painting_home', name: 'Home repair / painting', met: 3.3, distanceBased: false },
+  { key: 'childcare', name: 'Childcare (active)', met: 3.5, distanceBased: false },
+  { key: 'dog_walking', name: 'Walking the dog', met: 3.0, distanceBased: true },
+
+  // Recreation & sport
+  { key: 'rucking', name: 'Rucking (walking w/ load)', met: 7.0, distanceBased: true },
+  { key: 'table_tennis', name: 'Table tennis (ping pong)', met: 4.0, distanceBased: false },
+  { key: 'pickleball', name: 'Pickleball', met: 4.5, distanceBased: false },
+  { key: 'badminton', name: 'Badminton (social)', met: 4.5, distanceBased: false },
+  { key: 'volleyball', name: 'Volleyball (recreational)', met: 4.0, distanceBased: false },
+  { key: 'golf_walking', name: 'Golf (walking, carrying clubs)', met: 4.3, distanceBased: false },
+  { key: 'bowling', name: 'Bowling', met: 3.8, distanceBased: false },
+  { key: 'skating', name: 'Skating / rollerblading', met: 7.0, distanceBased: false },
+  { key: 'skiing_downhill', name: 'Skiing (downhill)', met: 5.3, distanceBased: false },
+  { key: 'martial_arts', name: 'Martial arts', met: 10.0, distanceBased: false },
+  { key: 'boxing', name: 'Boxing (heavy bag)', met: 6.0, distanceBased: false },
+  { key: 'rock_climbing', name: 'Rock climbing / bouldering', met: 8.0, distanceBased: false },
 ]

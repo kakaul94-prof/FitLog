@@ -41,22 +41,6 @@ Rules:
 - If a value is missing or not legible, OMIT that key entirely. Never guess and never output 0 for a value you cannot read.
 Return JSON with keys: name (string), brand (string), serving_qty (number), serving_unit (string), serving_grams (number or null), nutrients (object whose keys come ONLY from this list: ${KEYS.join(', ')}).`
 
-const SCHEMA = {
-  type: 'object',
-  properties: {
-    name: { type: 'string' },
-    brand: { type: 'string' },
-    serving_qty: { type: 'number' },
-    serving_unit: { type: 'string' },
-    serving_grams: { type: ['number', 'null'] },
-    nutrients: {
-      type: 'object',
-      properties: Object.fromEntries(KEYS.map((k) => [k, { type: 'number' }])),
-    },
-  },
-  required: ['nutrients'],
-}
-
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -102,21 +86,21 @@ export const onRequestPost = async (context: {
     return json({ error: 'Could not read the image.' }, 400)
   }
 
-  const base = { image: [...bytes], prompt: PROMPT, max_tokens: 1024 }
   let result: unknown
   try {
-    // Prefer schema-constrained output; fall back to plain if the model rejects
-    // response_format alongside an image input.
     result = await env.AI.run(MODEL, {
-      ...base,
-      response_format: { type: 'json_schema', json_schema: SCHEMA },
+      image: Array.from(bytes),
+      prompt: PROMPT,
+      max_tokens: 1024,
     })
-  } catch {
-    try {
-      result = await env.AI.run(MODEL, base)
-    } catch {
-      return json({ error: 'The label reader is unavailable right now.' }, 502)
-    }
+  } catch (e) {
+    return json(
+      {
+        error: 'The label reader is unavailable right now.',
+        detail: e instanceof Error ? e.message : String(e),
+      },
+      502,
+    )
   }
 
   // Workers AI returns { response: string | object } for these models.
@@ -126,7 +110,13 @@ export const onRequestPost = async (context: {
     return json(parsed)
   } catch {
     return json(
-      { error: "Couldn't read the label. Try a clearer, straight-on photo." },
+      {
+        error: "Couldn't read the label. Try a clearer, straight-on photo.",
+        detail:
+          typeof raw === 'string'
+            ? raw.slice(0, 400)
+            : JSON.stringify(raw).slice(0, 400),
+      },
       422,
     )
   }

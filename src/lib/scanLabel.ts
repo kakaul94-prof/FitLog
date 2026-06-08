@@ -92,8 +92,11 @@ export async function scanLabel(file: File): Promise<ScannedFood> {
     string,
     unknown
   > | null
-  if (!res.ok)
-    throw new Error((data?.error as string) || 'Label scan failed. Try again.')
+  if (!res.ok) {
+    const msg = (data?.error as string) || 'Label scan failed. Try again.'
+    const detail = data?.detail as string | undefined
+    throw new Error(detail ? `${msg} [${detail}]` : msg)
+  }
   if (!data) throw new Error('Label scan returned no data.')
 
   const nutrients = cleanNutrients(data.nutrients)

@@ -313,7 +313,7 @@ export function DiaryPage() {
       </div>
 
       {selectMode && (
-        <div className="fixed bottom-0 left-1/2 z-40 w-full max-w-md -translate-x-1/2 border-t border-border bg-card p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+        <div className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 border-t border-border bg-card p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
           <div className="grid grid-cols-3 gap-1">
             <SelectAction
               icon={BookmarkPlus}

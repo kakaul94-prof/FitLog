@@ -30,7 +30,7 @@ const unitLine = () => {
   return `kcal: kcal. grams: ${by('g')}. milligrams: ${by('mg')}. micrograms: ${by('mcg')}.`
 }
 
-const PROMPT = `You read the Nutrition Facts panel in the image and return ONLY a JSON object.
+const PROMPT = `Extract the Nutrition Facts panel from the image. Output ONLY a single JSON object — no description, no prose, no markdown fences, nothing before or after the JSON.
 Rules:
 - Use the PER SERVING column, not the per-container amounts.
 - Report ABSOLUTE amounts, never the % Daily Value column.
@@ -40,6 +40,22 @@ Rules:
 - name = the product name if it is visible in the image, otherwise "".
 - If a value is missing or not legible, OMIT that key entirely. Never guess and never output 0 for a value you cannot read.
 Return JSON with keys: name (string), brand (string), serving_qty (number), serving_unit (string), serving_grams (number or null), nutrients (object whose keys come ONLY from this list: ${KEYS.join(', ')}).`
+
+const SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    brand: { type: 'string' },
+    serving_qty: { type: 'number' },
+    serving_unit: { type: 'string' },
+    serving_grams: { type: ['number', 'null'] },
+    nutrients: {
+      type: 'object',
+      properties: Object.fromEntries(KEYS.map((k) => [k, { type: 'number' }])),
+    },
+  },
+  required: ['nutrients'],
+}
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -61,6 +77,23 @@ function extractJson(text: string): unknown {
   const end = text.lastIndexOf('}')
   if (start === -1 || end === -1 || end < start) throw new Error('no json')
   return JSON.parse(text.slice(start, end + 1))
+}
+
+// Run the model, accepting Meta's license on first use (Workers AI error 5016),
+// then retrying. The binding is authenticated, so no token is needed.
+async function runWithAgree(
+  env: Env,
+  input: Record<string, unknown>,
+): Promise<unknown> {
+  const ai = env.AI!
+  try {
+    return await ai.run(MODEL, input)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (!/5016|agree|terms|license/i.test(msg)) throw e
+    await ai.run(MODEL, { prompt: 'agree' })
+    return ai.run(MODEL, input)
+  }
 }
 
 export const onRequestPost = async (context: {
@@ -86,30 +119,31 @@ export const onRequestPost = async (context: {
     return json({ error: 'Could not read the image.' }, 400)
   }
 
-  const input = { image: Array.from(bytes), prompt: PROMPT, max_tokens: 1024 }
+  const baseInput = {
+    image: Array.from(bytes),
+    prompt: PROMPT,
+    max_tokens: 1024,
+    temperature: 0.1,
+  }
+  // JSON mode stops the model from "describing" the image instead of extracting
+  // it. Fall back to a plain call if response_format is rejected with an image.
+  const jsonInput = {
+    ...baseInput,
+    response_format: { type: 'json_schema', json_schema: SCHEMA },
+  }
+
   let result: unknown
   try {
-    result = await env.AI.run(MODEL, input)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    // Gated Llama model: first use must accept Meta's license (Workers AI error
-    // 5016). The binding is authenticated, so accept here and retry once.
-    if (/5016|agree|terms|license/i.test(msg)) {
-      try {
-        await env.AI.run(MODEL, { prompt: 'agree' })
-        result = await env.AI.run(MODEL, input)
-      } catch (e2) {
-        return json(
-          {
-            error: 'The label reader is unavailable right now.',
-            detail: e2 instanceof Error ? e2.message : String(e2),
-          },
-          502,
-        )
-      }
-    } else {
+    result = await runWithAgree(env, jsonInput)
+  } catch {
+    try {
+      result = await runWithAgree(env, baseInput)
+    } catch (e) {
       return json(
-        { error: 'The label reader is unavailable right now.', detail: msg },
+        {
+          error: 'The label reader is unavailable right now.',
+          detail: e instanceof Error ? e.message : String(e),
+        },
         502,
       )
     }

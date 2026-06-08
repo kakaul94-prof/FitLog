@@ -12,14 +12,14 @@ For a recipe - in the ingredients section - i should be able to click on that in
 - [DONE] i want to have the nutrition values not be decimal points. Round to the nearest whole number. (Shared `formatNutrient` in nutrients.ts: whole numbers everywhere, but a value between 0 and 1 keeps just enough precision to stay non-zero so real micros don't read as "0"/collide with "—". Applied to NutrientBreakdown panel + macro pie, diary macro bars, and macro targets via resolveMacroTargets.)
 - right now when i add am adding a food from the diary, and then add a food
 - i want the ability to take all of the exercises im doing and help me figure out my activity level to help me better/more accurately find my goal calories. I want to do research on this.
-- I also want to change the layout of the lift tab. I think it would be helpful to have it only show the exercises of the last 5 days. And then i want the ability to see any exercises i did in a calendar view where i could also type in the date.
+- [DONE] I also want to change the layout of the lift tab. I think it would be helpful to have it only show the exercises of the last 5 days. And then i want the ability to see any exercises i did in a calendar view where i could also type in the date. (Lift tab "Recent workouts" now shows the 5 most recent; added a Calendar link to a new /lift/calendar page: month grid marking strength (green) + cardio (orange) days, a date input to jump to any date, and a per-day list linking to each workout / cardio entry. Month-scoped hooks useWorkoutsRange + useExerciseEntriesRange. "Last 5" = 5 most recent workouts.)
 
 
 === Additional enhancement ideas (suggested by Claude 2026-06-07) ===
 
 -- Faster daily logging (highest-frequency action) --
 
-- Recent / Frequent / "copy a day" in the food picker. The picker (FoodPickerPage.tsx) is search-only (useFoods(search)). Add Recent + Frequent tabs derived from diary_entries (most-recent distinct foods, plus counts over ~30 days), and a "Copy from another day" action that clones a previous day's meal into today. Biggest friction reducer. Effort: low-medium, no schema change.
+- [DONE] Recent / Frequent / "copy a day" in the food picker. (Shipped 03ceef5: Recent + Frequent tabs via useFoodHistory — last 60 days of diary_entries, distinct food_ids in recency order + per-food counts, mapped to non-archived foods; search filters within each tab. "Copy day" button + modal via useCopyMeal. CAVEAT: copy is per-meal — the button copies the currently-selected meal from the chosen day, not the whole day.)
 
 - Saved Meals (named multi-food groups). Distinct from recipes: a recipe collapses ingredients into one food; a meal is a reusable bundle (e.g. "Usual breakfast") that logs several separate diary rows in one tap (keeps per-item editing). Effort: medium; new meals + meal_items tables; reuse the existing multi-add flow in the picker.
 

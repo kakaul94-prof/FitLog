@@ -17,6 +17,23 @@ export function useExerciseEntries(date: string) {
   })
 }
 
+/** Cardio entries within an inclusive date range — for the calendar. */
+export function useExerciseEntriesRange(start: string, end: string) {
+  return useQuery({
+    queryKey: ['exercise', 'range', start, end],
+    queryFn: async (): Promise<ExerciseEntry[]> => {
+      const { data, error } = await supabase
+        .from('exercise_entries')
+        .select('*')
+        .gte('entry_date', start)
+        .lte('entry_date', end)
+        .order('entry_date', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as ExerciseEntry[]
+    },
+  })
+}
+
 export interface NewExercise {
   entry_date: string
   name: string

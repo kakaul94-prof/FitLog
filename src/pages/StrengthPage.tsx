@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Dumbbell, Play, ChevronRight } from 'lucide-react'
+import { Plus, Dumbbell, Play, ChevronRight, CalendarDays } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -81,11 +81,19 @@ export function StrengthPage() {
         </div>
 
         <div>
-          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-            Recent workouts
-          </h2>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-muted-foreground">
+              Recent workouts
+            </h2>
+            <Link
+              to="/lift/calendar"
+              className="flex items-center gap-1 text-sm font-medium text-primary"
+            >
+              <CalendarDays className="h-4 w-4" /> Calendar
+            </Link>
+          </div>
           <Card className="divide-y divide-border overflow-hidden">
-            {(workouts ?? []).map((w) => (
+            {(workouts ?? []).slice(0, 5).map((w) => (
               <Link
                 key={w.id}
                 to={`/workout/${w.id}`}

@@ -17,6 +17,23 @@ export function useWorkouts() {
   })
 }
 
+/** Workouts within an inclusive date range (newest first) — for the calendar. */
+export function useWorkoutsRange(start: string, end: string) {
+  return useQuery({
+    queryKey: ['workouts', 'range', start, end],
+    queryFn: async (): Promise<Workout[]> => {
+      const { data, error } = await supabase
+        .from('workouts')
+        .select('*')
+        .gte('workout_date', start)
+        .lte('workout_date', end)
+        .order('workout_date', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as Workout[]
+    },
+  })
+}
+
 export interface WorkoutDetail {
   workout: Workout | null
   exercises: WorkoutExercise[]

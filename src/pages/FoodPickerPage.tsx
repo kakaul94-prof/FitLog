@@ -25,6 +25,7 @@ import {
   useSaveFood,
 } from '@/features/foods/useFoods'
 import { useDiary, useLogFood, useLogFoods, useCopyMeal } from '@/features/diary/useDiary'
+import { useMeals, useLogMeal, type MealWithItems } from '@/features/meals/useMeals'
 import { scaleNutrients, servingOptions } from '@/lib/nutrients'
 import {
   searchUsdaFoods,
@@ -56,7 +57,10 @@ export function FoodPickerPage() {
   const del = useDeleteFood()
   const { data: history } = useFoodHistory()
   const copyMeal = useCopyMeal()
-  const [tab, setTab] = useState<'all' | 'recent' | 'frequent'>('all')
+  const { data: meals } = useMeals()
+  const logMeal = useLogMeal()
+  const [mealToLog, setMealToLog] = useState<MealWithItems | null>(null)
+  const [tab, setTab] = useState<'all' | 'recent' | 'frequent' | 'meals'>('all')
   const [copyOpen, setCopyOpen] = useState(false)
   const [copyDate, setCopyDate] = useState(() => addDaysISO(date, -1))
   const { data: copySrc } = useDiary(copyDate)
@@ -200,6 +204,9 @@ export function FoodPickerPage() {
         ? byName(history?.recent ?? [])
         : byName(history?.frequent ?? [])
   const copyItems = (copySrc ?? []).filter((e) => e.meal === meal)
+  const mealList = (meals ?? []).filter(
+    (m) => !q || m.name.toLowerCase().includes(q),
+  )
 
   const options = selected ? servingOptions(selected) : []
   const chosen = options.find((o) => o.id === unitId) ?? options[0]
@@ -247,7 +254,7 @@ export function FoodPickerPage() {
           />
         </div>
         <div className="flex rounded-lg bg-secondary p-0.5 text-sm">
-          {(['all', 'recent', 'frequent'] as const).map((t) => (
+          {(['all', 'recent', 'frequent', 'meals'] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -263,6 +270,41 @@ export function FoodPickerPage() {
             </button>
           ))}
         </div>
+        {tab === 'meals' ? (
+          <Card className="divide-y divide-border overflow-hidden">
+            {mealList.map((m) => {
+              const kcal = Math.round(
+                m.items.reduce(
+                  (s, it) => s + (it.nutrients.kcal ?? 0) * it.servings,
+                  0,
+                ),
+              )
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => setMealToLog(m)}
+                  className="flex w-full items-center gap-3 p-3 text-left active:bg-accent"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium">{m.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {m.items.length} {m.items.length === 1 ? 'item' : 'items'}{' '}
+                      · {kcal} kcal
+                    </div>
+                  </div>
+                  <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              )
+            })}
+            {mealList.length === 0 && (
+              <div className="p-4 text-center text-sm text-muted-foreground">
+                No saved meals yet. On the diary, long-press an entry → “Select
+                multiple” → “Save as meal”.
+              </div>
+            )}
+          </Card>
+        ) : (
+          <>
         <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={() => nav('/foods/new')}>
             <Plus className="h-4 w-4" /> New food
@@ -393,6 +435,8 @@ export function FoodPickerPage() {
             )}
           </div>
         )}
+          </>
+        )}
       </div>
 
       {!multi && selected && (
@@ -515,6 +559,66 @@ export function FoodPickerPage() {
               </Card>
               <button
                 onClick={() => setCopyOpen(false)}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {mealToLog &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => setMealToLog(null)}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="border-b border-border p-3 text-center text-sm font-medium">
+                  {mealToLog.name}
+                </div>
+                <div className="space-y-3 p-4">
+                  <ul className="max-h-48 space-y-1 overflow-auto text-sm">
+                    {mealToLog.items.map((it) => (
+                      <li
+                        key={it.id}
+                        className="flex justify-between gap-2 text-muted-foreground"
+                      >
+                        <span className="truncate">{it.food_name}</span>
+                        <span className="shrink-0">
+                          {Math.round((it.nutrients.kcal ?? 0) * it.servings)}{' '}
+                          kcal
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    className="w-full"
+                    disabled={
+                      mealToLog.items.length === 0 || logMeal.isPending
+                    }
+                    onClick={async () => {
+                      const n = await logMeal.mutateAsync({
+                        meal_id: mealToLog.id,
+                        entry_date: date,
+                        meal,
+                      })
+                      if (n > 0) nav('/')
+                    }}
+                  >
+                    {logMeal.isPending
+                      ? 'Adding…'
+                      : `Add ${mealToLog.items.length} to ${meal}`}
+                  </Button>
+                </div>
+              </Card>
+              <button
+                onClick={() => setMealToLog(null)}
                 className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
               >
                 Cancel

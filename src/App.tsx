@@ -29,6 +29,7 @@ const ExerciseDetailPage = lazyPage(() => import('@/pages/ExerciseDetailPage'), 
 const WorkoutCalendarPage = lazyPage(() => import('@/pages/WorkoutCalendarPage'), 'WorkoutCalendarPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
 const RecipesPage = lazyPage(() => import('@/pages/RecipesPage'), 'RecipesPage')
+const MealsPage = lazyPage(() => import('@/pages/MealsPage'), 'MealsPage')
 const RecipeEditPage = lazyPage(() => import('@/pages/RecipeEditPage'), 'RecipeEditPage')
 
 const queryClient = new QueryClient({
@@ -61,6 +62,7 @@ function Routed() {
               <Route path="foods/new" element={<FoodFormPage />} />
               <Route path="foods/:id" element={<FoodFormPage />} />
               <Route path="recipes" element={<RecipesPage />} />
+              <Route path="meals" element={<MealsPage />} />
             </Route>
             <Route path="/diary/add" element={<FoodPickerPage />} />
             <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />

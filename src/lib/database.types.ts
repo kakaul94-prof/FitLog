@@ -133,6 +133,34 @@ export interface DiaryEntry {
   created_at: string
 }
 
+// A named, reusable bundle of foods. Logging it creates one diary
+// row per item (each stays individually editable), unlike a recipe.
+export interface SavedMeal {
+  id: string
+  user_id: string
+  name: string
+  position: number
+  created_at: string
+  updated_at: string
+}
+
+// One food in a saved meal. Snapshots the food (same shape as a
+// diary row) so logging stays stable if the source food changes.
+export interface SavedMealItem {
+  id: string
+  user_id: string
+  meal_id: string
+  food_id: string | null
+  food_name: string
+  brand: string | null
+  servings: number
+  serving_qty: number | null
+  serving_unit: string | null
+  nutrients: Nutrients
+  position: number
+  created_at: string
+}
+
 export interface CustomActivity {
   id: string
   user_id: string
@@ -261,6 +289,8 @@ export interface Database {
       foods: Tbl<Food>
       recipe_ingredients: Tbl<RecipeIngredient>
       diary_entries: Tbl<DiaryEntry>
+      meals: Tbl<SavedMeal>
+      meal_items: Tbl<SavedMealItem>
       custom_activities: Tbl<CustomActivity>
       exercise_entries: Tbl<ExerciseEntry>
       custom_exercises: Tbl<CustomExercise>

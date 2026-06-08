@@ -167,6 +167,57 @@ export function useDeleteDiaryEntry() {
   })
 }
 
+/** Delete several diary entries at once (multi-select). */
+export function useDeleteDiaryEntries() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      if (ids.length === 0) return
+      const { error } = await supabase
+        .from('diary_entries')
+        .delete()
+        .in('id', ids)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['diary'] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+    },
+  })
+}
+
+/** Copy given entries to another day, preserving each entry's meal slot. */
+export function useCopyEntriesToDay() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (e: {
+      to: string
+      entries: DiaryEntry[]
+    }): Promise<number> => {
+      if (e.entries.length === 0) return 0
+      const rows = e.entries.map((r) => ({
+        entry_date: e.to,
+        meal: r.meal,
+        food_id: r.food_id,
+        food_name: r.food_name,
+        brand: r.brand,
+        servings: r.servings,
+        serving_qty: r.serving_qty,
+        serving_unit: r.serving_unit,
+        nutrients: r.nutrients,
+      }))
+      const { error } = await supabase.from('diary_entries').insert(rows)
+      if (error) throw error
+      return rows.length
+    },
+    onSuccess: (_n, v) => {
+      qc.invalidateQueries({ queryKey: ['diary', v.to] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+      qc.invalidateQueries({ queryKey: ['foodHistory'] })
+    },
+  })
+}
+
 export function useDiaryEntry(id: string | undefined) {
   return useQuery({
     queryKey: ['diaryEntry', id],

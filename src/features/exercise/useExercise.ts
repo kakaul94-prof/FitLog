@@ -51,3 +51,36 @@ export function useDeleteExercise() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['exercise'] }),
   })
 }
+
+export function useExerciseEntry(id: string | undefined) {
+  return useQuery({
+    queryKey: ['exerciseEntry', id],
+    enabled: !!id,
+    queryFn: async (): Promise<ExerciseEntry> => {
+      const { data, error } = await supabase
+        .from('exercise_entries')
+        .select('*')
+        .eq('id', id)
+        .single()
+      if (error) throw error
+      return data as ExerciseEntry
+    },
+  })
+}
+
+export function useUpdateExercise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...e }: NewExercise & { id: string }) => {
+      const { error } = await supabase
+        .from('exercise_entries')
+        .update(e)
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['exercise', v.entry_date] })
+      qc.invalidateQueries({ queryKey: ['exerciseEntry', v.id] })
+    },
+  })
+}

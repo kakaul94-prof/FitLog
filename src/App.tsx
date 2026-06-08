@@ -65,6 +65,7 @@ function Routed() {
             <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />
             <Route path="/diary/nutrients" element={<DiaryNutrientsPage />} />
             <Route path="/exercise/add" element={<ExerciseAddPage />} />
+            <Route path="/exercise/edit/:id" element={<ExerciseAddPage />} />
             <Route path="/workout/:id" element={<WorkoutPage />} />
             <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
             <Route path="/lift/exercise/:key" element={<ExerciseProgressPage />} />

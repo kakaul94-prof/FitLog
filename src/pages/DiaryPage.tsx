@@ -1,4 +1,8 @@
 import { useRef, useState } from 'react'
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Plus, Trash2, Flame, Pencil } from 'lucide-react'
@@ -15,7 +19,7 @@ import { useLatestWeight } from '@/features/measurements/useMeasurements'
 import { resolveCalorieGoal, resolveMacroTargets, roundHalf } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
-import type { DiaryEntry, Meal } from '@/lib/database.types'
+import type { DiaryEntry, ExerciseEntry, Meal } from '@/lib/database.types'
 
 const MEALS: { key: Meal; label: string }[] = [
   { key: 'breakfast', label: 'Breakfast' },
@@ -35,6 +39,7 @@ export function DiaryPage() {
   const delEx = useDeleteExercise()
   const delEntry = useDeleteDiaryEntry()
   const [menuEntry, setMenuEntry] = useState<DiaryEntry | null>(null)
+  const [menuEx, setMenuEx] = useState<ExerciseEntry | null>(null)
 
   const list = entries ?? []
   const consumed = sumNutrients(
@@ -185,23 +190,12 @@ export function DiaryPage() {
           </div>
           <div className="divide-y divide-border">
             {(exEntries ?? []).map((e) => (
-              <div key={e.id} className="flex items-center gap-2 p-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{e.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {e.duration_min ? `${e.duration_min} min` : ''}
-                    {e.distance_mi ? ` · ${e.distance_mi} mi` : ''} · {e.calories}{' '}
-                    kcal
-                  </div>
-                </div>
-                <button
-                  onClick={() => delEx.mutate(e.id)}
-                  className="p-1 text-muted-foreground active:text-destructive"
-                  aria-label="Delete"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+              <ExerciseEntryRow
+                key={e.id}
+                entry={e}
+                onEdit={() => nav(`/exercise/edit/${e.id}`)}
+                onMenu={() => setMenuEx(e)}
+              />
             ))}
           </div>
           <button
@@ -213,53 +207,83 @@ export function DiaryPage() {
         </Card>
       </div>
 
-      {menuEntry &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
-            onClick={() => setMenuEntry(null)}
-          >
-            <div
-              className="mx-auto w-full max-w-md p-3"
-              onClick={(ev) => ev.stopPropagation()}
-            >
-              <Card className="overflow-hidden">
-                <div className="truncate border-b border-border p-3 text-center text-xs text-muted-foreground">
-                  {menuEntry.food_name}
-                </div>
-                <button
-                  onClick={() => {
-                    nav(`/diary/entry/${menuEntry.id}`)
-                    setMenuEntry(null)
-                  }}
-                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
-                >
-                  <Pencil className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Edit entry</span>
-                </button>
-                <button
-                  onClick={() => {
-                    delEntry.mutate(menuEntry.id)
-                    setMenuEntry(null)
-                  }}
-                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span className="text-sm font-medium">Delete entry</span>
-                </button>
-              </Card>
-              <button
-                onClick={() => setMenuEntry(null)}
-                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>,
-          document.body,
-        )}
+      {menuEntry && (
+        <ActionSheet
+          title={menuEntry.food_name}
+          onEdit={() => {
+            nav(`/diary/entry/${menuEntry.id}`)
+            setMenuEntry(null)
+          }}
+          onDelete={() => {
+            delEntry.mutate(menuEntry.id)
+            setMenuEntry(null)
+          }}
+          onClose={() => setMenuEntry(null)}
+        />
+      )}
+
+      {menuEx && (
+        <ActionSheet
+          title={menuEx.name}
+          onEdit={() => {
+            nav(`/exercise/edit/${menuEx.id}`)
+            setMenuEx(null)
+          }}
+          onDelete={() => {
+            delEx.mutate(menuEx.id)
+            setMenuEx(null)
+          }}
+          onClose={() => setMenuEx(null)}
+        />
+      )}
     </div>
   )
+}
+
+const ROW_CLASS =
+  'flex w-full select-none items-center gap-2 p-3 text-left [-webkit-touch-callout:none] active:bg-accent'
+
+// Tap = onClick; press-and-hold (450ms) = onLongPress. Moving >10px cancels.
+function useLongPress(onLongPress: () => void, onClick: () => void) {
+  const timer = useRef<number | null>(null)
+  const fired = useRef(false)
+  const start = useRef<{ x: number; y: number } | null>(null)
+  const clear = () => {
+    if (timer.current) {
+      clearTimeout(timer.current)
+      timer.current = null
+    }
+  }
+  return {
+    onPointerDown: (e: ReactPointerEvent) => {
+      fired.current = false
+      start.current = { x: e.clientX, y: e.clientY }
+      clear()
+      timer.current = window.setTimeout(() => {
+        fired.current = true
+        onLongPress()
+      }, 450)
+    },
+    onPointerMove: (e: ReactPointerEvent) => {
+      if (
+        start.current &&
+        Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) >
+          10
+      )
+        clear()
+    },
+    onPointerUp: clear,
+    onPointerLeave: clear,
+    onPointerCancel: clear,
+    onContextMenu: (e: ReactMouseEvent) => e.preventDefault(),
+    onClick: () => {
+      if (fired.current) {
+        fired.current = false
+        return
+      }
+      onClick()
+    },
+  }
 }
 
 function FoodEntryRow({
@@ -271,49 +295,9 @@ function FoodEntryRow({
   onEdit: () => void
   onMenu: () => void
 }) {
-  const timer = useRef<number | null>(null)
-  const fired = useRef(false)
-  const start = useRef<{ x: number; y: number } | null>(null)
-  const clear = () => {
-    if (timer.current) {
-      clearTimeout(timer.current)
-      timer.current = null
-    }
-  }
+  const press = useLongPress(onMenu, onEdit)
   return (
-    <button
-      onPointerDown={(e) => {
-        fired.current = false
-        start.current = { x: e.clientX, y: e.clientY }
-        clear()
-        timer.current = window.setTimeout(() => {
-          fired.current = true
-          onMenu()
-        }, 450)
-      }}
-      onPointerMove={(e) => {
-        if (
-          start.current &&
-          Math.hypot(
-            e.clientX - start.current.x,
-            e.clientY - start.current.y,
-          ) > 10
-        )
-          clear()
-      }}
-      onPointerUp={clear}
-      onPointerLeave={clear}
-      onPointerCancel={clear}
-      onContextMenu={(e) => e.preventDefault()}
-      onClick={() => {
-        if (fired.current) {
-          fired.current = false
-          return
-        }
-        onEdit()
-      }}
-      className="flex w-full select-none items-center gap-2 p-3 text-left [-webkit-touch-callout:none] active:bg-accent"
-    >
+    <button {...press} className={ROW_CLASS}>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{entry.food_name}</div>
         <div className="text-xs text-muted-foreground">
@@ -322,6 +306,81 @@ function FoodEntryRow({
         </div>
       </div>
     </button>
+  )
+}
+
+function ExerciseEntryRow({
+  entry,
+  onEdit,
+  onMenu,
+}: {
+  entry: ExerciseEntry
+  onEdit: () => void
+  onMenu: () => void
+}) {
+  const press = useLongPress(onMenu, onEdit)
+  return (
+    <button {...press} className={ROW_CLASS}>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{entry.name}</div>
+        <div className="text-xs text-muted-foreground">
+          {entry.duration_min ? `${entry.duration_min} min` : ''}
+          {entry.distance_mi ? ` · ${entry.distance_mi} mi` : ''} ·{' '}
+          {entry.calories} kcal
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function ActionSheet({
+  title,
+  onEdit,
+  onDelete,
+  onClose,
+}: {
+  title: string
+  onEdit: () => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="mx-auto w-full max-w-md p-3"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <Card className="overflow-hidden">
+          <div className="truncate border-b border-border p-3 text-center text-xs text-muted-foreground">
+            {title}
+          </div>
+          <button
+            onClick={onEdit}
+            className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
+          >
+            <Pencil className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Edit entry</span>
+          </button>
+          <button
+            onClick={onDelete}
+            className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="text-sm font-medium">Delete entry</span>
+          </button>
+        </Card>
+        <button
+          onClick={onClose}
+          className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>,
+    document.body,
   )
 }
 

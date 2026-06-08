@@ -4,12 +4,15 @@
 - [DONE] I want to make sure that the calories burned get scaled to the weight that is currently entered in. (New logs already use latest weight at log time.)
 - [DONE] I also want the calories burned to show on the main diary page, i want it to show the net. (Diary "remaining" now always nets exercise burn; redundant eat-back toggle removed.)
 - [DONE] I want to be able to click on a food item on the diary page and then be able to delete it using a long hold. And instead of the '>' arrow to edit/delete the food entry - i want it to be added to the long hold option. I should see two things here - delete entry and edit entry.
+- [DONE] Same long-hold Edit/Delete menu on diary **exercise** entries (replaced the trash icon); Edit opens a prefilled screen to adjust duration/distance/calories (route `/exercise/edit/:id`, reuses ExerciseAddPage; preserves a manual watch-override).
 - [DONE] Also have the ability to remove an added food from the list of choices? (Trash/archive button added to the food picker.)
 - [DONE] I also want the ability to take a recipe - copy the ingredients from it into a new recipe and then name that. For example - i have a pan pizza recipe, if i want one with turkey pepperoni, i should have the option to add that new item to the recipe and save as a new recipe. (Duplicate action via Copy button on the recipes list + a "Save as a copy" action in the recipe editor header; clones meta + all ingredients into "<name> (copy)", recomputes nutrients, then opens the copy to rename/tweak.)
 - I want the ability to be able to add a custom exercise when im adding a new template in the Lift Tab.
 For a recipe - in the ingredients section - i should be able to click on that ingredient in order to do further manipulation of the nutritional values.
-- Taking a photo or uploading a photo of the nutrition facts to add a food.
-- be able to import the previous exercises from the workout log.
+-i want to have the nutrition values not be decimal points. Round to the nearest whole number.
+- right now when i add am adding a food from the diary, and then add a food
+- i want the ability to take all of the exercises im doing and help me figure out my activity level to help me better/more accurately find my goal calories. I want to do research on this.
+- I also want to change the layout of the lift tab. I think it would be helpful to have it only show the exercises of the last 5 days. And then i want the ability to see any exercises i did in a calendar view where i could also type in the date.
 
 
 === Additional enhancement ideas (suggested by Claude 2026-06-07) ===

@@ -86,6 +86,19 @@ export function sumNutrients(sets: Nutrients[]): Nutrients {
   return out
 }
 
+/**
+ * Display a nutrient amount as text: whole numbers (no decimals), except a
+ * value between 0 and 1 keeps just enough precision to stay non-zero — so real
+ * micros (e.g. 0.4 mg copper) don't render as "0" and collide with "—"/no data.
+ */
+export function formatNutrient(n: number): string {
+  if (!Number.isFinite(n) || n === 0) return '0'
+  if (Math.abs(n) >= 1) return String(Math.round(n))
+  if (Math.abs(n) >= 0.1) return String(Math.round(n * 10) / 10)
+  if (Math.abs(n) >= 0.01) return String(Math.round(n * 100) / 100)
+  return String(Math.round(n * 1000) / 1000)
+}
+
 /** Known mass units → grams (exact). Volume/count units aren't here. */
 export const MASS_UNIT_GRAMS: Record<string, number> = {
   g: 1,

@@ -182,7 +182,7 @@ export function resolveMacroTargets(
   for (const name of order) {
     const kcal = grams[name] * KCAL_PER_G[name]
     out[name] = {
-      grams: roundHalf(grams[name]),
+      grams: Math.round(grams[name]),
       kcal: Math.round(kcal),
       pct: calories > 0 ? Math.round((kcal / calories) * 100) : 0,
     }

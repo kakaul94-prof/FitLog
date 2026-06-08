@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
-import { NUTRIENT_BY_KEY } from '@/lib/nutrients'
-import { roundHalf } from '@/lib/calc'
+import { NUTRIENT_BY_KEY, formatNutrient } from '@/lib/nutrients'
 import type { NutrientKey, Nutrients } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
@@ -63,12 +62,6 @@ const MACRO_COLORS: Record<'protein' | 'carb' | 'fat', string> = {
   protein: '#16a34a',
   carb: '#3b82f6',
   fat: '#f59e0b',
-}
-
-function fmt(n: number): string {
-  if (n >= 100) return Math.round(n).toString()
-  if (n >= 10) return (Math.round(n * 10) / 10).toString()
-  return (Math.round(n * 100) / 100).toString()
 }
 
 function MacroPie({ nutrients }: { nutrients: Nutrients }) {
@@ -142,7 +135,7 @@ function MacroPie({ nutrients }: { nutrients: Nutrients }) {
             <span className="text-sm font-bold">
               {basis === 'cal'
                 ? Math.round(totalCal)
-                : Math.round(totalG * 10) / 10}
+                : formatNutrient(totalG)}
             </span>
             <span className="text-[10px] text-muted-foreground">
               {basis === 'cal' ? 'kcal' : 'g'}
@@ -164,7 +157,7 @@ function MacroPie({ nutrients }: { nutrients: Nutrients }) {
                     ? 'Carbs'
                     : d.name[0].toUpperCase() + d.name.slice(1)}
                 </span>
-                <span className="font-medium">{roundHalf(d.grams)} g</span>
+                <span className="font-medium">{formatNutrient(d.grams)} g</span>
                 <span className="w-9 text-right text-xs text-muted-foreground">
                   {pct}%
                 </span>
@@ -209,7 +202,7 @@ export function NutrientBreakdown({ nutrients }: { nutrients: Nutrients }) {
                   </span>
                   <span className="flex items-center gap-3">
                     <span className={cn(!has && 'text-muted-foreground')}>
-                      {has ? `${fmt(v)} ${def.unit}` : '—'}
+                      {has ? `${formatNutrient(v)} ${def.unit}` : '—'}
                     </span>
                     {dvPct != null && (
                       <span className="w-10 text-right text-xs text-muted-foreground">

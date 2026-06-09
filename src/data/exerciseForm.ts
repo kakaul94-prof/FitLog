@@ -561,6 +561,41 @@ export const EXERCISE_FORM: Record<string, ExerciseForm> = {
       'Dropping down too fast.',
     ],
   },
+  // ---- Form-only keys for common imported variants (no built-in equivalent;
+  //      referenced via exerciseAliases.ts, never stored as an exercise_key) ----
+  incline_db_press: {
+    setup: [
+      'Set the bench to about 30–45°.',
+      'Sit with a dumbbell on each thigh, then kick them up as you lie back.',
+      'Retract your shoulder blades and plant your feet.',
+    ],
+    cues: [
+      'Start with the dumbbells stacked over your upper chest, palms forward.',
+      'Lower to the sides of your upper chest, elbows about 45° from the torso.',
+      'Press up and slightly together over the upper chest.',
+    ],
+    mistakes: [
+      'Setting the incline too steep (it becomes a shoulder press).',
+      'Letting the dumbbells drift back over your face.',
+      'Clanging the bells together at the top.',
+    ],
+  },
+  cable_crunch: {
+    setup: [
+      'Attach a rope to a high pulley and kneel facing the stack.',
+      'Hold the rope by your ears; hinge slightly so the abs are under tension.',
+    ],
+    cues: [
+      'Crunch down by rounding your spine and pulling your ribs toward your pelvis.',
+      'Keep your hips fixed — flex the spine, don’t pull with your arms or hips.',
+      'Squeeze at the bottom, then return under control without losing tension.',
+    ],
+    mistakes: [
+      'Turning it into a lat pulldown with the arms.',
+      'Sitting back onto your heels to lever the weight.',
+      'Using momentum instead of controlled spinal flexion.',
+    ],
+  },
 }
 
 export function getExerciseForm(

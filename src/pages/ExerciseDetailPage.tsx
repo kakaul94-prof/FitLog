@@ -15,6 +15,7 @@ import {
 } from '@/features/strength/useExerciseNotes'
 import { EXERCISES } from '@/data/exercises'
 import { getExerciseForm } from '@/data/exerciseForm'
+import { builtinKeyForName } from '@/data/exerciseAliases'
 
 const METRICS = [
   { key: 'max', label: 'Max weight' },
@@ -36,6 +37,9 @@ export function ExerciseDetailPage() {
   const builtin = EXERCISES.find((e) => e.key === key)
   const customEx = (custom ?? []).find((c) => `custom:${c.id}` === key)
   const name = builtin?.name ?? customEx?.name ?? key ?? 'Exercise'
+  // Built-in cues are keyed by built-in key; imported/custom lifts land under a
+  // custom: key, so fall back to matching the exercise's name to a built-in.
+  const formKey = builtin?.key ?? builtinKeyForName(customEx?.name)
   const subtitle = [
     builtin?.muscle ?? customEx?.muscle,
     builtin?.equipment ?? customEx?.equipment,
@@ -73,7 +77,7 @@ export function ExerciseDetailPage() {
         </div>
 
         {tab === 'form' ? (
-          <FormTab exerciseKey={key} />
+          <FormTab exerciseKey={key} formKey={formKey} />
         ) : (
           <ProgressTab exerciseKey={key} />
         )}
@@ -82,8 +86,14 @@ export function ExerciseDetailPage() {
   )
 }
 
-function FormTab({ exerciseKey }: { exerciseKey: string | undefined }) {
-  const form = getExerciseForm(exerciseKey)
+function FormTab({
+  exerciseKey,
+  formKey,
+}: {
+  exerciseKey: string | undefined
+  formKey: string | undefined
+}) {
+  const form = getExerciseForm(formKey)
   const { data: note } = useExerciseNotes(exerciseKey)
   const upsert = useUpsertExerciseNote()
   const [notes, setNotes] = useState('')

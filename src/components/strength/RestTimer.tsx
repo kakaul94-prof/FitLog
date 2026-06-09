@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Timer,
   Play,
+  Pause,
   X,
   Minus,
   Plus,
@@ -50,10 +51,10 @@ const notifySupported = () =>
  * is a web-platform limit (the countdown is wall-clock based, so it fires the
  * moment you return if it ended while away). iOS needs the PWA installed.
  */
-function notifyPhone() {
+function notifyPhone(title = 'Rest complete', body = 'Time for your next set 💪') {
   if (!notifySupported() || Notification.permission !== 'granted') return
   const opts = {
-    body: 'Time for your next set 💪',
+    body,
     tag: 'fitlog-rest',
     renotify: true,
     icon: '/pwa-192.png',
@@ -61,10 +62,10 @@ function notifyPhone() {
     vibrate: [200, 100, 200],
   } as NotificationOptions
   navigator.serviceWorker.ready
-    .then((reg) => reg.showNotification('Rest complete', opts))
+    .then((reg) => reg.showNotification(title, opts))
     .catch(() => {
       try {
-        new Notification('Rest complete', opts)
+        new Notification(title, opts)
       } catch {
         /* notifications unavailable */
       }
@@ -88,6 +89,7 @@ export function RestTimer({
 }) {
   const [dur, setDur] = useState(restSeconds)
   const [endsAt, setEndsAt] = useState<number | null>(null)
+  const [paused, setPaused] = useState<number | null>(null)
   const [remaining, setRemaining] = useState(restSeconds)
   const [total, setTotal] = useState(restSeconds)
   const [done, setDone] = useState(false)
@@ -113,6 +115,9 @@ export function RestTimer({
   const notifyRef = useRef(notify)
   notifyRef.current = notify
   const running = endsAt != null
+  const isPaused = paused != null
+  const active = running || isPaused
+  const display = isPaused ? (paused ?? 0) : remaining
 
   // Keep the configured duration in sync if the persisted value changes.
   useEffect(() => setDur(restSeconds), [restSeconds])
@@ -177,9 +182,29 @@ export function RestTimer({
     ensureCtx() // unlock audio on the user gesture (needed for iOS)
     setDone(false)
     clearTimeout(flashRef.current)
+    setPaused(null)
     setTotal(dur)
     setRemaining(dur)
     setEndsAt(Date.now() + dur * 1000)
+  }
+
+  // Pause freezes the remaining seconds and stops the tick; resume re-anchors
+  // the wall-clock end time so the countdown picks up where it left off.
+  const pause = () => {
+    if (endsAt == null) return
+    const rem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000))
+    setPaused(rem)
+    setRemaining(rem)
+    setEndsAt(null)
+  }
+  const resume = () => {
+    if (paused == null) return
+    setEndsAt(Date.now() + paused * 1000)
+    setPaused(null)
+  }
+  const stop = () => {
+    setEndsAt(null)
+    setPaused(null)
   }
 
   // Tap the time to type a new rest duration. Accepts raw seconds ("90") or
@@ -211,6 +236,11 @@ export function RestTimer({
       const rem = Math.max(0, Math.ceil((ne - Date.now()) / 1000))
       setRemaining(rem)
       if (rem > total) setTotal(rem)
+    } else if (isPaused) {
+      const nv = Math.max(0, (paused ?? 0) + delta)
+      setPaused(nv)
+      setRemaining(nv)
+      if (nv > total) setTotal(nv)
     } else {
       const nv = clamp(dur + delta)
       setDur(nv)
@@ -242,9 +272,11 @@ export function RestTimer({
     if (perm !== 'granted') return
     setNotify(true)
     localStorage.setItem('rest_notify', '1')
+    // Immediate confirmation banner — proves permission + delivery work.
+    notifyPhone('Notifications on', 'You’ll get a banner when rest ends.')
   }
 
-  const pct = running && total ? Math.min(1, remaining / total) : 0
+  const pct = active && total ? Math.min(1, display / total) : 0
 
   return (
     <div className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -254,14 +286,14 @@ export function RestTimer({
           done && 'animate-pulse border-primary bg-primary/15',
         )}
       >
-        {running && (
+        {active && (
           <div
             className="absolute inset-y-0 left-0 bg-primary/15 transition-[width] duration-1000 ease-linear"
             style={{ width: `${pct * 100}%` }}
           />
         )}
         <div className="relative flex items-center gap-2 p-2">
-          {!running ? (
+          {!active ? (
             <>
               <Timer className="h-5 w-5 shrink-0 text-primary" />
               {editing ? (
@@ -304,8 +336,13 @@ export function RestTimer({
               >
                 <Minus className="h-4 w-4" />
               </button>
-              <span className="flex-1 text-center text-2xl font-bold tabular-nums">
-                {fmt(remaining)}
+              <span
+                className={cn(
+                  'min-w-0 flex-1 text-center text-2xl font-bold tabular-nums',
+                  isPaused && 'text-muted-foreground',
+                )}
+              >
+                {fmt(display)}
               </span>
               <button
                 onClick={() => bump(STEP)}
@@ -315,7 +352,18 @@ export function RestTimer({
                 <Plus className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setEndsAt(null)}
+                onClick={isPaused ? resume : pause}
+                className="flex h-8 w-8 items-center justify-center rounded-md border border-input active:bg-accent"
+                aria-label={isPaused ? 'Resume rest' : 'Pause rest'}
+              >
+                {isPaused ? (
+                  <Play className="h-4 w-4" />
+                ) : (
+                  <Pause className="h-4 w-4" />
+                )}
+              </button>
+              <button
+                onClick={stop}
                 className="flex h-8 items-center gap-1 rounded-md border border-input px-3 text-sm font-medium active:bg-accent"
               >
                 <X className="h-4 w-4" /> Skip

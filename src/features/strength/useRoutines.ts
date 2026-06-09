@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { Routine, RoutineExercise, WorkoutSet } from '@/lib/database.types'
+import type { Routine, RoutineExercise } from '@/lib/database.types'
 
 export function useRoutines() {
   return useQuery({
@@ -172,8 +172,8 @@ export function useRemoveRoutineExercise() {
   })
 }
 
-/** Create a workout from a routine: copies exercises (+ supersets), pre-filling
- *  sets from last performance, falling back to the template's target sets/reps. */
+/** Create a workout from a routine: copies exercises (+ supersets) and starts
+ *  each with a single blank set — no prefill from last time or template targets. */
 export function useStartFromRoutine() {
   const qc = useQueryClient()
   return useMutation({
@@ -212,43 +212,17 @@ export function useStartFromRoutine() {
           .select('*')
           .single()
         const weId = (we2 as { id: string }).id
-        const { data: prev } = await supabase
-          .from('workout_sets')
-          .select('*')
-          .eq('exercise_key', re.exercise_key)
-          .order('created_at', { ascending: false })
-          .limit(30)
-        const prior = ((prev ?? []) as WorkoutSet[]).filter(
-          (s) => s.workout_id !== workoutId,
-        )
-        let rows
-        if (prior.length) {
-          const wid = prior[0].workout_id
-          const tmpl = prior
-            .filter((s) => s.workout_id === wid)
-            .sort((a, b) => a.set_number - b.set_number)
-          rows = tmpl.map((s) => ({
-            workout_id: workoutId,
-            workout_exercise_id: weId,
-            exercise_key: re.exercise_key,
-            exercise_name: re.exercise_name,
-            set_number: s.set_number,
-            reps: s.reps,
-            weight_lb: s.weight_lb,
-          }))
-        } else {
-          const n = re.target_sets ?? 1
-          rows = Array.from({ length: n }, (_, i) => ({
-            workout_id: workoutId,
-            workout_exercise_id: weId,
-            exercise_key: re.exercise_key,
-            exercise_name: re.exercise_name,
-            set_number: i + 1,
-            reps: re.target_reps ?? null,
-            weight_lb: null,
-          }))
-        }
-        await supabase.from('workout_sets').insert(rows)
+        // Start every exercise with one empty set — no last-time prefill and no
+        // template target numbers loaded, so the boxes begin blank.
+        await supabase.from('workout_sets').insert({
+          workout_id: workoutId,
+          workout_exercise_id: weId,
+          exercise_key: re.exercise_key,
+          exercise_name: re.exercise_name,
+          set_number: 1,
+          reps: null,
+          weight_lb: null,
+        })
       }
       return workoutId
     },

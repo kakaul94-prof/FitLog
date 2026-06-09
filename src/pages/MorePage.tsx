@@ -12,6 +12,8 @@ import {
   Moon,
   Monitor,
   Palette,
+  Volume2,
+  Bell,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -20,6 +22,16 @@ import { useAuth } from '@/lib/auth'
 import { exportData } from '@/features/settings/exportData'
 import { cn } from '@/lib/utils'
 import { useTheme, type Theme } from '@/lib/theme'
+import {
+  getChime,
+  setChime,
+  getNotify,
+  setNotify,
+  notifySupported,
+  previewChime,
+  notifyPhone,
+  requestNotifyPermission,
+} from '@/lib/restTimer'
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -31,6 +43,31 @@ export function MorePage() {
   const { user, signOut } = useAuth()
   const [exporting, setExporting] = useState(false)
   const [theme, setTheme] = useTheme()
+  const [chime, setChimeOn] = useState(getChime)
+  const [notify, setNotifyOn] = useState(
+    () =>
+      getNotify() && notifySupported() && Notification.permission === 'granted',
+  )
+
+  const toggleChime = () => {
+    const next = !chime
+    setChimeOn(next)
+    setChime(next)
+    if (next) previewChime() // hear it + unlock audio on the tap
+  }
+  const toggleNotify = async () => {
+    if (notify) {
+      setNotifyOn(false)
+      setNotify(false)
+      return
+    }
+    const granted = await requestNotifyPermission()
+    if (!granted) return
+    setNotifyOn(true)
+    setNotify(true)
+    // Immediate confirmation banner — proves permission + delivery work.
+    notifyPhone('Notifications on', 'You’ll get a banner when rest ends.')
+  }
 
   const doExport = async () => {
     setExporting(true)
@@ -110,6 +147,39 @@ export function MorePage() {
         </Card>
 
         <Card className="divide-y divide-border overflow-hidden">
+          <div className="flex items-center gap-3 p-4">
+            <Volume2 className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Rest timer chime</p>
+              <p className="text-xs text-muted-foreground">
+                Play a sound when the rest timer ends
+              </p>
+            </div>
+            <Switch
+              checked={chime}
+              onClick={toggleChime}
+              label="Rest timer chime"
+            />
+          </div>
+          {notifySupported() && (
+            <div className="flex items-center gap-3 p-4">
+              <Bell className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Rest timer notification</p>
+                <p className="text-xs text-muted-foreground">
+                  Show a phone banner when the rest timer ends
+                </p>
+              </div>
+              <Switch
+                checked={notify}
+                onClick={() => void toggleNotify()}
+                label="Rest timer notification"
+              />
+            </div>
+          )}
+        </Card>
+
+        <Card className="divide-y divide-border overflow-hidden">
           <button
             onClick={doExport}
             disabled={exporting}
@@ -136,5 +206,36 @@ export function MorePage() {
         </Button>
       </div>
     </div>
+  )
+}
+
+function Switch({
+  checked,
+  onClick,
+  label,
+}: {
+  checked: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onClick}
+      className={cn(
+        'relative h-6 w-11 shrink-0 rounded-full transition-colors',
+        checked ? 'bg-primary' : 'bg-input',
+      )}
+    >
+      <span
+        className={cn(
+          'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
+          checked && 'translate-x-5',
+        )}
+      />
+    </button>
   )
 }

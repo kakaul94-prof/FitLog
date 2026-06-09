@@ -1,17 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  Timer,
-  Play,
-  Pause,
-  X,
-  Minus,
-  Plus,
-  Volume2,
-  VolumeX,
-  Bell,
-  BellOff,
-} from 'lucide-react'
+import { Timer, Play, Pause, X, Minus, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getChime, getNotify, notifyPhone, playChime } from '@/lib/restTimer'
 
 const MIN = 15
 const MAX = 600
@@ -19,66 +9,13 @@ const STEP = 15
 const clamp = (s: number) => Math.max(MIN, Math.min(MAX, s))
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 
-/** Two ascending beeps via WebAudio — no audio asset, no dependency. */
-function playChime(ctx: AudioContext) {
-  const t0 = ctx.currentTime
-  const beep = (offset: number, freq: number) => {
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = 'sine'
-    osc.frequency.value = freq
-    gain.gain.setValueAtTime(0.0001, t0 + offset)
-    gain.gain.exponentialRampToValueAtTime(0.3, t0 + offset + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + offset + 0.25)
-    osc.connect(gain).connect(ctx.destination)
-    osc.start(t0 + offset)
-    osc.stop(t0 + offset + 0.26)
-  }
-  beep(0, 880)
-  beep(0.32, 1175)
-}
-
-const notifySupported = () =>
-  typeof window !== 'undefined' &&
-  'Notification' in window &&
-  'serviceWorker' in navigator
-
-/**
- * System notification on the phone when rest ends. Uses the service-worker
- * registration (required on Android — `new Notification()` throws there),
- * falling back to a plain Notification on desktop. Android delivers reliably
- * while the app is foreground/recently-active; a fully-closed or locked phone
- * is a web-platform limit (the countdown is wall-clock based, so it fires the
- * moment you return if it ended while away). iOS needs the PWA installed.
- */
-function notifyPhone(title = 'Rest complete', body = 'Time for your next set 💪') {
-  if (!notifySupported() || Notification.permission !== 'granted') return
-  const opts = {
-    body,
-    tag: 'fitlog-rest',
-    renotify: true,
-    icon: '/pwa-192.png',
-    badge: '/pwa-192.png',
-    vibrate: [200, 100, 200],
-  } as NotificationOptions
-  navigator.serviceWorker.ready
-    .then((reg) => reg.showNotification(title, opts))
-    .catch(() => {
-      try {
-        new Notification(title, opts)
-      } catch {
-        /* notifications unavailable */
-      }
-    })
-}
-
 /**
  * Sticky rest-timer bar for the active workout. The duration persists per
  * workout (via onChangeRest); the running countdown is ephemeral local state
  * driven by a wall-clock end time so it stays accurate when the tab is
  * backgrounded/throttled. At zero: vibrate (Android) + visual flash, plus an
- * optional chime toggle and an optional phone-notification toggle (both saved
- * in localStorage, default off). The Start tap unlocks audio for iOS.
+ * optional chime and/or phone notification (both toggled in More → Rest timer).
+ * Pause freezes the remaining time; the Start/Resume tap unlocks audio for iOS.
  */
 export function RestTimer({
   restSeconds,
@@ -93,27 +30,12 @@ export function RestTimer({
   const [remaining, setRemaining] = useState(restSeconds)
   const [total, setTotal] = useState(restSeconds)
   const [done, setDone] = useState(false)
-  const [sound, setSound] = useState(
-    () => localStorage.getItem('rest_chime') === '1',
-  )
-  const [notify, setNotify] = useState(
-    () =>
-      localStorage.getItem('rest_notify') === '1' &&
-      notifySupported() &&
-      Notification.permission === 'granted',
-  )
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
   const ctxRef = useRef<AudioContext | null>(null)
   const persistRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const flashRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  // Read the latest toggle values inside the countdown tick without making the
-  // tick effect re-subscribe every time they change.
-  const soundRef = useRef(sound)
-  soundRef.current = sound
-  const notifyRef = useRef(notify)
-  notifyRef.current = notify
   const running = endsAt != null
   const isPaused = paused != null
   const active = running || isPaused
@@ -134,8 +56,8 @@ export function RestTimer({
       if (rem > 0 || fired) return
       fired = true
       navigator.vibrate?.([200, 100, 200])
-      if (soundRef.current && ctxRef.current) playChime(ctxRef.current)
-      if (notifyRef.current) notifyPhone()
+      if (getChime() && ctxRef.current) playChime(ctxRef.current)
+      if (getNotify()) notifyPhone()
       setEndsAt(null)
       setDone(true)
       clearTimeout(flashRef.current)
@@ -189,7 +111,7 @@ export function RestTimer({
   }
 
   // Pause freezes the remaining seconds and stops the tick; resume re-anchors
-  // the wall-clock end time so the countdown picks up where it left off.
+  // the wall-clock end time so the countdown continues from where it left off.
   const pause = () => {
     if (endsAt == null) return
     const rem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000))
@@ -199,6 +121,7 @@ export function RestTimer({
   }
   const resume = () => {
     if (paused == null) return
+    ensureCtx()
     setEndsAt(Date.now() + paused * 1000)
     setPaused(null)
   }
@@ -246,34 +169,6 @@ export function RestTimer({
       setDur(nv)
       persist(nv)
     }
-  }
-
-  const toggleSound = () => {
-    const next = !sound
-    setSound(next)
-    localStorage.setItem('rest_chime', next ? '1' : '0')
-    if (next) {
-      const ctx = ensureCtx()
-      if (ctx) playChime(ctx) // preview confirms it works + unlocks audio
-    }
-  }
-
-  // Asks for notification permission on the tap (a user gesture, as browsers
-  // require). If denied, the toggle stays off.
-  const toggleNotify = async () => {
-    if (notify) {
-      setNotify(false)
-      localStorage.setItem('rest_notify', '0')
-      return
-    }
-    if (!notifySupported()) return
-    let perm = Notification.permission
-    if (perm === 'default') perm = await Notification.requestPermission()
-    if (perm !== 'granted') return
-    setNotify(true)
-    localStorage.setItem('rest_notify', '1')
-    // Immediate confirmation banner — proves permission + delivery work.
-    notifyPhone('Notifications on', 'You’ll get a banner when rest ends.')
   }
 
   const pct = active && total ? Math.min(1, display / total) : 0
@@ -369,38 +264,6 @@ export function RestTimer({
                 <X className="h-4 w-4" /> Skip
               </button>
             </>
-          )}
-          <button
-            onClick={toggleSound}
-            className={cn(
-              'flex h-8 w-8 items-center justify-center rounded-md active:bg-accent',
-              sound ? 'text-primary' : 'text-muted-foreground',
-            )}
-            aria-label={sound ? 'Mute chime' : 'Enable chime'}
-          >
-            {sound ? (
-              <Volume2 className="h-4 w-4" />
-            ) : (
-              <VolumeX className="h-4 w-4" />
-            )}
-          </button>
-          {notifySupported() && (
-            <button
-              onClick={() => void toggleNotify()}
-              className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-md active:bg-accent',
-                notify ? 'text-primary' : 'text-muted-foreground',
-              )}
-              aria-label={
-                notify ? 'Disable phone notification' : 'Notify phone when done'
-              }
-            >
-              {notify ? (
-                <Bell className="h-4 w-4" />
-              ) : (
-                <BellOff className="h-4 w-4" />
-              )}
-            </button>
           )}
         </div>
       </div>

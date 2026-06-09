@@ -73,6 +73,17 @@ export function scaleNutrients(n: Nutrients, factor: number): Nutrients {
   return out
 }
 
+/** Round every nutrient amount to the nearest whole number. */
+export function roundNutrients(n: Nutrients): Nutrients {
+  const out: Nutrients = {}
+  for (const k in n) {
+    const key = k as NutrientKey
+    const v = n[key]
+    if (typeof v === 'number') out[key] = Math.round(v)
+  }
+  return out
+}
+
 /** Sum any number of nutrient sets into one. */
 export function sumNutrients(sets: Nutrients[]): Nutrients {
   const out: Nutrients = {}
@@ -87,16 +98,13 @@ export function sumNutrients(sets: Nutrients[]): Nutrients {
 }
 
 /**
- * Display a nutrient amount as text: whole numbers (no decimals), except a
- * value between 0 and 1 keeps just enough precision to stay non-zero — so real
- * micros (e.g. 0.4 mg copper) don't render as "0" and collide with "—"/no data.
+ * Display a nutrient amount as text, always rounded to the nearest whole number.
+ * A trace amount (e.g. 0.4 mg) shows as "0"; "—"/no-data is decided by the
+ * caller, so the two stay distinct.
  */
 export function formatNutrient(n: number): string {
-  if (!Number.isFinite(n) || n === 0) return '0'
-  if (Math.abs(n) >= 1) return String(Math.round(n))
-  if (Math.abs(n) >= 0.1) return String(Math.round(n * 10) / 10)
-  if (Math.abs(n) >= 0.01) return String(Math.round(n * 100) / 100)
-  return String(Math.round(n * 1000) / 1000)
+  if (!Number.isFinite(n)) return '0'
+  return String(Math.round(n))
 }
 
 /** Known mass units → grams (exact). Volume/count units aren't here. */

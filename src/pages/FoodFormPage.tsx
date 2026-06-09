@@ -27,6 +27,7 @@ import {
 } from '@/lib/usda'
 import {
   scaleNutrients,
+  roundNutrients,
   massUnitToGrams,
   computePortionNutrients,
 } from '@/lib/nutrients'
@@ -72,7 +73,7 @@ export function FoodFormPage() {
     setServingGrams(existing.serving_grams != null ? String(existing.serving_grams) : '')
     setSource(existing.source)
     setSourceId(existing.source_id)
-    setNutrients(existing.nutrients ?? {})
+    setNutrients(roundNutrients(existing.nutrients ?? {}))
     setPortions(existing.portions ?? [])
     servingBaseRef.current = existing.serving_qty
   }, [existing])
@@ -100,11 +101,7 @@ export function FoodFormPage() {
     }
     const factor = next / base
     servingBaseRef.current = next
-    const scaled = scaleNutrients(nutrients, factor)
-    for (const k in scaled) {
-      const key = k as NutrientKey
-      if (typeof scaled[key] === 'number') scaled[key] = round6(scaled[key] as number)
-    }
+    const scaled = roundNutrients(scaleNutrients(nutrients, factor))
     const g = parseFloat(servingGrams)
     const grams =
       Number.isFinite(g) && g > 0 ? String(round6(g * factor)) : servingGrams
@@ -192,7 +189,7 @@ export function FoodFormPage() {
       setServingGrams(d.serving_grams != null ? String(d.serving_grams) : '')
       setSource('usda')
       setSourceId(d.source_id)
-      setNutrients(d.nutrients)
+      setNutrients(roundNutrients(d.nutrients))
       setPortions([])
       servingBaseRef.current = d.serving_qty
       setUResults([])
@@ -220,7 +217,7 @@ export function FoodFormPage() {
       setServingGrams(d.serving_grams != null ? String(d.serving_grams) : '')
       setSource('manual')
       setSourceId(null)
-      setNutrients(d.nutrients)
+      setNutrients(roundNutrients(d.nutrients))
       setPortions([])
       servingBaseRef.current = d.serving_qty
       setScanWarnings(d.warnings)

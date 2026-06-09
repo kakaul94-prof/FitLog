@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { Timer, Play, X, Minus, Plus, Volume2, VolumeX } from 'lucide-react'
+import {
+  Timer,
+  Play,
+  X,
+  Minus,
+  Plus,
+  Volume2,
+  VolumeX,
+  Bell,
+  BellOff,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MIN = 15
@@ -27,11 +37,47 @@ function playChime(ctx: AudioContext) {
   beep(0.32, 1175)
 }
 
+const notifySupported = () =>
+  typeof window !== 'undefined' &&
+  'Notification' in window &&
+  'serviceWorker' in navigator
+
+/**
+ * System notification on the phone when rest ends. Uses the service-worker
+ * registration (required on Android — `new Notification()` throws there),
+ * falling back to a plain Notification on desktop. Android delivers reliably
+ * while the app is foreground/recently-active; a fully-closed or locked phone
+ * is a web-platform limit (the countdown is wall-clock based, so it fires the
+ * moment you return if it ended while away). iOS needs the PWA installed.
+ */
+function notifyPhone() {
+  if (!notifySupported() || Notification.permission !== 'granted') return
+  const opts = {
+    body: 'Time for your next set 💪',
+    tag: 'fitlog-rest',
+    renotify: true,
+    icon: '/pwa-192.png',
+    badge: '/pwa-192.png',
+    vibrate: [200, 100, 200],
+  } as NotificationOptions
+  navigator.serviceWorker.ready
+    .then((reg) => reg.showNotification('Rest complete', opts))
+    .catch(() => {
+      try {
+        new Notification('Rest complete', opts)
+      } catch {
+        /* notifications unavailable */
+      }
+    })
+}
+
 /**
  * Sticky rest-timer bar for the active workout. The duration persists per
- * workout (via onChangeRest); the running countdown is ephemeral local state.
- * At zero: vibrate (Android) + visual flash, plus an optional chime toggle
- * (saved in localStorage, default off). The Start tap unlocks audio for iOS.
+ * workout (via onChangeRest); the running countdown is ephemeral local state
+ * driven by a wall-clock end time so it stays accurate when the tab is
+ * backgrounded/throttled. At zero: vibrate (Android) + visual flash, plus an
+ * optional chime toggle and an optional phone-notification toggle (both saved
+ * in localStorage, default off). The Start tap unlocks audio for iOS.
  */
 export function RestTimer({
   restSeconds,
@@ -41,43 +87,74 @@ export function RestTimer({
   onChangeRest: (sec: number) => void
 }) {
   const [dur, setDur] = useState(restSeconds)
-  const [remaining, setRemaining] = useState<number | null>(null)
+  const [endsAt, setEndsAt] = useState<number | null>(null)
+  const [remaining, setRemaining] = useState(restSeconds)
   const [total, setTotal] = useState(restSeconds)
   const [done, setDone] = useState(false)
   const [sound, setSound] = useState(
     () => localStorage.getItem('rest_chime') === '1',
+  )
+  const [notify, setNotify] = useState(
+    () =>
+      localStorage.getItem('rest_notify') === '1' &&
+      notifySupported() &&
+      Notification.permission === 'granted',
   )
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
   const ctxRef = useRef<AudioContext | null>(null)
   const persistRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const running = remaining != null
+  const flashRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Read the latest toggle values inside the countdown tick without making the
+  // tick effect re-subscribe every time they change.
+  const soundRef = useRef(sound)
+  soundRef.current = sound
+  const notifyRef = useRef(notify)
+  notifyRef.current = notify
+  const running = endsAt != null
 
   // Keep the configured duration in sync if the persisted value changes.
   useEffect(() => setDur(restSeconds), [restSeconds])
 
-  // Countdown tick.
+  // Countdown driven by wall-clock time so it stays accurate when the tab is
+  // backgrounded/throttled; recompute immediately on return to foreground.
+  // Reaching zero → vibrate + optional chime + optional notification + flash.
   useEffect(() => {
-    if (!running) return
-    const id = setInterval(() => {
-      setRemaining((r) => (r == null ? null : Math.max(0, r - 1)))
-    }, 1000)
-    return () => clearInterval(id)
-  }, [running])
+    if (endsAt == null) return
+    let fired = false
+    const tick = () => {
+      const rem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000))
+      setRemaining(rem)
+      if (rem > 0 || fired) return
+      fired = true
+      navigator.vibrate?.([200, 100, 200])
+      if (soundRef.current && ctxRef.current) playChime(ctxRef.current)
+      if (notifyRef.current) notifyPhone()
+      setEndsAt(null)
+      setDone(true)
+      clearTimeout(flashRef.current)
+      flashRef.current = setTimeout(() => setDone(false), 4000)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [endsAt])
 
-  // Reached zero → alert + reset to idle with a brief "done" flash.
-  useEffect(() => {
-    if (remaining !== 0) return
-    navigator.vibrate?.([200, 100, 200])
-    if (sound && ctxRef.current) playChime(ctxRef.current)
-    setRemaining(null)
-    setDone(true)
-    const t = setTimeout(() => setDone(false), 4000)
-    return () => clearTimeout(t)
-  }, [remaining, sound])
-
-  useEffect(() => () => void ctxRef.current?.close(), [])
+  useEffect(
+    () => () => {
+      void ctxRef.current?.close()
+      clearTimeout(flashRef.current)
+    },
+    [],
+  )
 
   const ensureCtx = () => {
     if (!ctxRef.current) {
@@ -99,8 +176,10 @@ export function RestTimer({
   const start = () => {
     ensureCtx() // unlock audio on the user gesture (needed for iOS)
     setDone(false)
+    clearTimeout(flashRef.current)
     setTotal(dur)
     setRemaining(dur)
+    setEndsAt(Date.now() + dur * 1000)
   }
 
   // Tap the time to type a new rest duration. Accepts raw seconds ("90") or
@@ -127,9 +206,11 @@ export function RestTimer({
 
   const bump = (delta: number) => {
     if (running) {
-      const nv = Math.max(0, (remaining ?? 0) + delta)
-      setRemaining(nv)
-      if (nv > total) setTotal(nv)
+      const ne = Math.max(Date.now(), (endsAt ?? Date.now()) + delta * 1000)
+      setEndsAt(ne)
+      const rem = Math.max(0, Math.ceil((ne - Date.now()) / 1000))
+      setRemaining(rem)
+      if (rem > total) setTotal(rem)
     } else {
       const nv = clamp(dur + delta)
       setDur(nv)
@@ -147,7 +228,23 @@ export function RestTimer({
     }
   }
 
-  const pct = running && total ? Math.min(1, (remaining ?? 0) / total) : 0
+  // Asks for notification permission on the tap (a user gesture, as browsers
+  // require). If denied, the toggle stays off.
+  const toggleNotify = async () => {
+    if (notify) {
+      setNotify(false)
+      localStorage.setItem('rest_notify', '0')
+      return
+    }
+    if (!notifySupported()) return
+    let perm = Notification.permission
+    if (perm === 'default') perm = await Notification.requestPermission()
+    if (perm !== 'granted') return
+    setNotify(true)
+    localStorage.setItem('rest_notify', '1')
+  }
+
+  const pct = running && total ? Math.min(1, remaining / total) : 0
 
   return (
     <div className="fixed bottom-0 left-1/2 z-20 w-full max-w-md -translate-x-1/2 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -208,7 +305,7 @@ export function RestTimer({
                 <Minus className="h-4 w-4" />
               </button>
               <span className="flex-1 text-center text-2xl font-bold tabular-nums">
-                {fmt(remaining ?? 0)}
+                {fmt(remaining)}
               </span>
               <button
                 onClick={() => bump(STEP)}
@@ -218,7 +315,7 @@ export function RestTimer({
                 <Plus className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setRemaining(null)}
+                onClick={() => setEndsAt(null)}
                 className="flex h-8 items-center gap-1 rounded-md border border-input px-3 text-sm font-medium active:bg-accent"
               >
                 <X className="h-4 w-4" /> Skip
@@ -239,6 +336,24 @@ export function RestTimer({
               <VolumeX className="h-4 w-4" />
             )}
           </button>
+          {notifySupported() && (
+            <button
+              onClick={() => void toggleNotify()}
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-md active:bg-accent',
+                notify ? 'text-primary' : 'text-muted-foreground',
+              )}
+              aria-label={
+                notify ? 'Disable phone notification' : 'Notify phone when done'
+              }
+            >
+              {notify ? (
+                <Bell className="h-4 w-4" />
+              ) : (
+                <BellOff className="h-4 w-4" />
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

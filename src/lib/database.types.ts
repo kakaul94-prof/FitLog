@@ -232,6 +232,7 @@ export interface Workout {
   source_routine_id: string | null
   notes: string | null
   rest_seconds: number
+  completed: boolean
   created_at: string
 }
 

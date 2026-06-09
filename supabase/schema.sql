@@ -229,9 +229,14 @@ create table if not exists public.workouts (
   source_routine_id uuid references public.routines(id) on delete set null,
   notes text,
   rest_seconds integer not null default 90,
+  completed boolean not null default false,
   created_at timestamptz not null default now()
 );
 alter table public.workouts add column if not exists rest_seconds integer not null default 90;
+-- "Done" flag: existing workouts predate it, so backfill them as completed
+-- (default true on add), then make new workouts start in-progress (false).
+alter table public.workouts add column if not exists completed boolean not null default true;
+alter table public.workouts alter column completed set default false;
 create index if not exists workouts_user_date_idx on public.workouts(user_id, workout_date);
 alter table public.workouts enable row level security;
 drop policy if exists workouts_rw_own on public.workouts;

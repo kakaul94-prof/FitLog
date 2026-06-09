@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Plus, X, Link2, Save, Trash2 } from 'lucide-react'
+import { ChevronLeft, Plus, X, Link2, Save, Trash2, Check } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -47,22 +47,27 @@ export function WorkoutPage() {
     onChangeRest,
   )
 
-  // Pressing back (arrow or Android system gesture) asks whether to keep the
-  // workout; discard deletes it (sets + exercises cascade). Navigations deeper
-  // into the workout (add exercise, an exercise's stats) pass through, and
-  // leavingRef lets Done/Save exit without re-prompting.
+  // Pressing back (arrow or Android system gesture) asks whether to keep an
+  // in-progress workout; discard deletes it (sets + exercises cascade). Once
+  // the workout is marked done (the Done button) the prompt is skipped — back
+  // just navigates. Navigations deeper into the workout (add exercise, an
+  // exercise's stats) pass through, and leavingRef lets Done exit cleanly.
   const del = useDeleteWorkout()
   const leavingRef = useRef(false)
   const blocker = useBlocker(({ nextLocation }) => {
-    if (leavingRef.current) return false
+    if (leavingRef.current || workout?.completed) return false
     const p = nextLocation.pathname
     const internal =
       p.startsWith(`/workout/${id}`) || p.startsWith('/lift/exercise/')
     return !internal
   })
   const showExit = blocker.state === 'blocked'
-  const leave = () => {
+  // Save the workout as done, then leave. leavingRef guarantees we exit even
+  // before the cache reflects completed=true (so the blocker can't re-fire).
+  const finish = async () => {
     leavingRef.current = true
+    if (workoutId && !workout?.completed)
+      await updateWorkout.mutateAsync({ id: workoutId, completed: true })
     nav('/strength')
   }
   const discardWorkout = async () => {
@@ -134,8 +139,14 @@ export function WorkoutPage() {
         >
           <Plus className="h-4 w-4" /> Add exercise
         </Button>
-        <Button className="w-full" onClick={leave}>
-          Done
+        <Button className="w-full" onClick={finish}>
+          {workout?.completed ? (
+            <>
+              <Check className="h-4 w-4" /> Done
+            </>
+          ) : (
+            'Mark as done'
+          )}
         </Button>
       </div>
       {showExit &&

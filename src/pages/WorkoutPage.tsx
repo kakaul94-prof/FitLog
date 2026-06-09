@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, Plus, X, Link2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -16,7 +16,7 @@ import {
   useLastExerciseNote,
   useUpdateWorkout,
 } from '@/features/strength/useStrength'
-import { RestTimer } from '@/components/strength/RestTimer'
+import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
 import { estimated1RM } from '@/lib/calc'
 import { dateLabel } from '@/lib/date'
 import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
@@ -29,6 +29,21 @@ export function WorkoutPage() {
   const workout = data?.workout
   const exercises = data?.exercises ?? []
   const sets = data?.sets ?? []
+
+  // Register this workout's rest duration with the global timer so the running
+  // countdown persists across navigation (the bar is rendered at the app root).
+  const workoutId = workout?.id
+  const mutate = updateWorkout.mutate
+  const onChangeRest = useCallback(
+    (sec: number) => {
+      if (workoutId) mutate({ id: workoutId, rest_seconds: sec })
+    },
+    [workoutId, mutate],
+  )
+  useRegisterRestTimer(
+    workout ? (workout.rest_seconds ?? 90) : undefined,
+    onChangeRest,
+  )
 
   const blocks: { group: number | null; exercises: WorkoutExercise[] }[] = []
   const seen = new Set<number>()
@@ -98,14 +113,6 @@ export function WorkoutPage() {
           Done
         </Button>
       </div>
-      {workout && (
-        <RestTimer
-          restSeconds={workout.rest_seconds ?? 90}
-          onChangeRest={(sec) =>
-            updateWorkout.mutate({ id: workout.id, rest_seconds: sec })
-          }
-        />
-      )}
     </div>
   )
 }

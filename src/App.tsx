@@ -6,6 +6,8 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { LoginPage } from '@/pages/LoginPage'
 import { watchSystemTheme } from '@/lib/theme'
+import { RestTimerProvider } from '@/components/strength/RestTimerProvider'
+import { RestTimerBar } from '@/components/strength/RestTimerBar'
 
 const lazyPage = <T extends Record<string, React.ComponentType>>(
   loader: () => Promise<T>,
@@ -50,33 +52,36 @@ function Routed() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <Suspense fallback={<Spinner />}>
-          <Routes>
-            <Route element={<AppLayout />}>
-              <Route index element={<DiaryPage />} />
-              <Route path="strength" element={<StrengthPage />} />
-              <Route path="progress" element={<ProgressPage />} />
-              <Route path="more" element={<MorePage />} />
-              <Route path="profile" element={<ProfilePage />} />
-              <Route path="foods" element={<FoodsPage />} />
-              <Route path="foods/new" element={<FoodFormPage />} />
-              <Route path="foods/:id" element={<FoodFormPage />} />
-              <Route path="recipes" element={<RecipesPage />} />
-              <Route path="meals" element={<MealsPage />} />
-            </Route>
-            <Route path="/diary/add" element={<FoodPickerPage />} />
-            <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />
-            <Route path="/diary/nutrients" element={<DiaryNutrientsPage />} />
-            <Route path="/exercise/add" element={<ExerciseAddPage />} />
-            <Route path="/exercise/edit/:id" element={<ExerciseAddPage />} />
-            <Route path="/workout/:id" element={<WorkoutPage />} />
-            <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
-            <Route path="/lift/exercise/:key" element={<ExerciseDetailPage />} />
-            <Route path="/lift/calendar" element={<WorkoutCalendarPage />} />
-            <Route path="/routines/:id" element={<RoutineEditPage />} />
-            <Route path="/recipes/:id" element={<RecipeEditPage />} />
-          </Routes>
-        </Suspense>
+        <RestTimerProvider>
+          <Suspense fallback={<Spinner />}>
+            <Routes>
+              <Route element={<AppLayout />}>
+                <Route index element={<DiaryPage />} />
+                <Route path="strength" element={<StrengthPage />} />
+                <Route path="progress" element={<ProgressPage />} />
+                <Route path="more" element={<MorePage />} />
+                <Route path="profile" element={<ProfilePage />} />
+                <Route path="foods" element={<FoodsPage />} />
+                <Route path="foods/new" element={<FoodFormPage />} />
+                <Route path="foods/:id" element={<FoodFormPage />} />
+                <Route path="recipes" element={<RecipesPage />} />
+                <Route path="meals" element={<MealsPage />} />
+              </Route>
+              <Route path="/diary/add" element={<FoodPickerPage />} />
+              <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />
+              <Route path="/diary/nutrients" element={<DiaryNutrientsPage />} />
+              <Route path="/exercise/add" element={<ExerciseAddPage />} />
+              <Route path="/exercise/edit/:id" element={<ExerciseAddPage />} />
+              <Route path="/workout/:id" element={<WorkoutPage />} />
+              <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
+              <Route path="/lift/exercise/:key" element={<ExerciseDetailPage />} />
+              <Route path="/lift/calendar" element={<WorkoutCalendarPage />} />
+              <Route path="/routines/:id" element={<RoutineEditPage />} />
+              <Route path="/recipes/:id" element={<RecipeEditPage />} />
+            </Routes>
+          </Suspense>
+          <RestTimerBar />
+        </RestTimerProvider>
       </ErrorBoundary>
     </BrowserRouter>
   )

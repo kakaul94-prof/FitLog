@@ -1,6 +1,7 @@
-import { useCallback, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Plus, X, Link2 } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useBlocker, useNavigate, useParams } from 'react-router-dom'
+import { ChevronLeft, Plus, X, Link2, Save, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,6 +16,7 @@ import {
   useDeleteExercise,
   useLastExerciseNote,
   useUpdateWorkout,
+  useDeleteWorkout,
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
 import { estimated1RM } from '@/lib/calc'
@@ -44,6 +46,29 @@ export function WorkoutPage() {
     workout ? (workout.rest_seconds ?? 90) : undefined,
     onChangeRest,
   )
+
+  // Pressing back (arrow or Android system gesture) asks whether to keep the
+  // workout; discard deletes it (sets + exercises cascade). Navigations deeper
+  // into the workout (add exercise, an exercise's stats) pass through, and
+  // leavingRef lets Done/Save exit without re-prompting.
+  const del = useDeleteWorkout()
+  const leavingRef = useRef(false)
+  const blocker = useBlocker(({ nextLocation }) => {
+    if (leavingRef.current) return false
+    const p = nextLocation.pathname
+    const internal =
+      p.startsWith(`/workout/${id}`) || p.startsWith('/lift/exercise/')
+    return !internal
+  })
+  const showExit = blocker.state === 'blocked'
+  const leave = () => {
+    leavingRef.current = true
+    nav('/strength')
+  }
+  const discardWorkout = async () => {
+    if (id) await del.mutateAsync(id)
+    blocker.proceed?.()
+  }
 
   const blocks: { group: number | null; exercises: WorkoutExercise[] }[] = []
   const seen = new Set<number>()
@@ -109,10 +134,52 @@ export function WorkoutPage() {
         >
           <Plus className="h-4 w-4" /> Add exercise
         </Button>
-        <Button className="w-full" onClick={() => nav('/strength')}>
+        <Button className="w-full" onClick={leave}>
           Done
         </Button>
       </div>
+      {showExit &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => blocker.reset?.()}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="border-b border-border p-3 text-center text-xs text-muted-foreground">
+                  Save this workout?
+                </div>
+                <button
+                  onClick={() => blocker.proceed?.()}
+                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
+                >
+                  <Save className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Save workout</span>
+                </button>
+                <button
+                  onClick={discardWorkout}
+                  disabled={del.isPending}
+                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="text-sm font-medium">
+                    {del.isPending ? 'Discarding…' : 'Discard workout'}
+                  </span>
+                </button>
+              </Card>
+              <button
+                onClick={() => blocker.reset?.()}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

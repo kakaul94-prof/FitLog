@@ -1,4 +1,5 @@
-import { Component, type ReactNode } from 'react'
+import { Component, useEffect, type ReactNode } from 'react'
+import { useRouteError } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 
 const RELOAD_KEY = 'fitlog:chunk-reload'
@@ -89,4 +90,58 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
       </div>
     )
   }
+}
+
+/**
+ * Route-level error element for the data router. React Router catches errors
+ * thrown while rendering a route — including a failed lazy-chunk import — and
+ * routes them here (they don't reach a React error boundary), so the same
+ * chunk-load auto-reload recovery lives here too.
+ */
+export function RouteErrorElement() {
+  const error = useRouteError()
+  const reloading = isChunkLoadError(error) && !alreadyReloaded()
+
+  useEffect(() => {
+    if (!reloading) return
+    try {
+      sessionStorage.setItem(RELOAD_KEY, '1')
+    } catch {
+      /* ignore */
+    }
+    window.location.reload()
+  }, [reloading])
+
+  if (reloading) {
+    return (
+      <div className="flex min-h-svh items-center justify-center bg-background">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-primary" />
+      </div>
+    )
+  }
+
+  const hardReload = () => {
+    try {
+      sessionStorage.removeItem(RELOAD_KEY)
+    } catch {
+      /* ignore */
+    }
+    window.location.reload()
+  }
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : ''
+
+  return (
+    <div className="flex min-h-svh flex-col items-center justify-center gap-4 bg-background p-6 text-center">
+      <p className="text-base font-medium">Something went wrong.</p>
+      <p className="max-w-xs text-sm text-muted-foreground">
+        The app failed to load this page. Reloading usually fixes it.
+      </p>
+      <Button onClick={hardReload}>Reload</Button>
+      {message && (
+        <pre className="max-w-full overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-left text-xs text-muted-foreground">
+          {message}
+        </pre>
+      )}
+    </div>
+  )
 }

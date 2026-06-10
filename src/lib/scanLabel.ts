@@ -65,7 +65,8 @@ function cleanNutrients(input: unknown): Nutrients {
 }
 
 // Cheap post-checks that catch the common misreads; shown to the user.
-function sanityCheck(n: Nutrients): string[] {
+// Shared with the barcode importer (lib/barcode.ts).
+export function sanityCheck(n: Nutrients): string[] {
   const w: string[] = []
   const { kcal, protein, carb, fat } = n
   if (kcal != null && kcal > 0 && protein != null && carb != null && fat != null) {

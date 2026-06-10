@@ -9,6 +9,7 @@ import {
   RotateCcw,
   Pencil,
   Camera,
+  ScanBarcode,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -18,7 +19,8 @@ import { Label } from '@/components/ui/label'
 import { NutrientFields } from '@/components/NutrientFields'
 import { useFood, useSaveFood } from '@/features/foods/useFoods'
 import { useAddIngredient } from '@/features/recipes/useRecipes'
-import { scanLabel } from '@/lib/scanLabel'
+import { scanLabel, type ScannedFood } from '@/lib/scanLabel'
+import { detectBarcodeFromImage, lookupBarcode } from '@/lib/barcode'
 import {
   searchUsdaFoods,
   getUsdaFood,
@@ -60,7 +62,10 @@ export function FoodFormPage() {
   const [uErr, setUErr] = useState('')
 
   const fileRef = useRef<HTMLInputElement>(null)
+  const barcodeRef = useRef<HTMLInputElement>(null)
   const [scanLoading, setScanLoading] = useState(false)
+  const [bcLoading, setBcLoading] = useState(false)
+  const [manualBarcode, setManualBarcode] = useState('')
   const [scanErr, setScanErr] = useState('')
   const [scanWarnings, setScanWarnings] = useState<string[]>([])
 
@@ -201,6 +206,21 @@ export function FoodFormPage() {
     }
   }
 
+  // Fill the form from a scanned label or barcode lookup, for the user to review.
+  const applyScanned = (d: ScannedFood, sourceId: string | null) => {
+    setName(d.name)
+    setBrand(d.brand ?? '')
+    setServingQty(String(d.serving_qty))
+    setServingUnit(d.serving_unit)
+    setServingGrams(d.serving_grams != null ? String(d.serving_grams) : '')
+    setSource('manual')
+    setSourceId(sourceId)
+    setNutrients(roundNutrients(d.nutrients))
+    setPortions([])
+    servingBaseRef.current = d.serving_qty
+    setScanWarnings(d.warnings)
+  }
+
   const onScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = '' // allow re-picking the same file
@@ -209,22 +229,50 @@ export function FoodFormPage() {
     setScanErr('')
     setScanWarnings([])
     try {
-      const d = await scanLabel(file)
-      setName(d.name)
-      setBrand(d.brand ?? '')
-      setServingQty(String(d.serving_qty))
-      setServingUnit(d.serving_unit)
-      setServingGrams(d.serving_grams != null ? String(d.serving_grams) : '')
-      setSource('manual')
-      setSourceId(null)
-      setNutrients(roundNutrients(d.nutrients))
-      setPortions([])
-      servingBaseRef.current = d.serving_qty
-      setScanWarnings(d.warnings)
+      applyScanned(await scanLabel(file), null)
     } catch (err) {
       setScanErr(err instanceof Error ? err.message : 'Scan failed')
     } finally {
       setScanLoading(false)
+    }
+  }
+
+  const onBarcodeFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    setBcLoading(true)
+    setScanErr('')
+    setScanWarnings([])
+    try {
+      const code = await detectBarcodeFromImage(file)
+      if (!code) {
+        setScanErr(
+          'No barcode detected. Get it straight-on and in focus, or type the digits below.',
+        )
+        return
+      }
+      applyScanned(await lookupBarcode(code), code.replace(/\D/g, ''))
+    } catch (err) {
+      setScanErr(err instanceof Error ? err.message : 'Barcode scan failed')
+    } finally {
+      setBcLoading(false)
+    }
+  }
+
+  const onManualBarcode = async () => {
+    const code = manualBarcode.trim()
+    if (!code) return
+    setBcLoading(true)
+    setScanErr('')
+    setScanWarnings([])
+    try {
+      applyScanned(await lookupBarcode(code), code.replace(/\D/g, ''))
+      setManualBarcode('')
+    } catch (err) {
+      setScanErr(err instanceof Error ? err.message : 'Barcode lookup failed')
+    } finally {
+      setBcLoading(false)
     }
   }
 
@@ -281,10 +329,10 @@ export function FoodFormPage() {
       />
 
       <div className="space-y-4 p-4">
-        {/* Scan a nutrition label */}
+        {/* Scan a label or barcode */}
         <Card>
           <CardHeader>
-            <CardTitle>Scan a nutrition label</CardTitle>
+            <CardTitle>Scan a label or barcode</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <input
@@ -295,11 +343,19 @@ export function FoodFormPage() {
               className="hidden"
               onChange={onScanFile}
             />
+            <input
+              ref={barcodeRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={onBarcodeFile}
+            />
             <Button
               variant="outline"
               className="w-full"
               onClick={() => fileRef.current?.click()}
-              disabled={scanLoading}
+              disabled={scanLoading || bcLoading}
             >
               {scanLoading ? (
                 <>
@@ -311,6 +367,38 @@ export function FoodFormPage() {
                 </>
               )}
             </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => barcodeRef.current?.click()}
+              disabled={scanLoading || bcLoading}
+            >
+              {bcLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Looking up…
+                </>
+              ) : (
+                <>
+                  <ScanBarcode className="h-4 w-4" /> Scan barcode
+                </>
+              )}
+            </Button>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Or enter barcode digits"
+                inputMode="numeric"
+                value={manualBarcode}
+                onChange={(e) => setManualBarcode(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && onManualBarcode()}
+              />
+              <Button
+                onClick={onManualBarcode}
+                disabled={scanLoading || bcLoading || !manualBarcode.trim()}
+                size="icon"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+            </div>
             {scanErr && <p className="text-sm text-destructive">{scanErr}</p>}
             {scanWarnings.length > 0 && (
               <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
@@ -320,8 +408,9 @@ export function FoodFormPage() {
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              Take a straight-on photo of the Nutrition Facts panel. The values
-              fill the form below — review them, then save.
+              Photograph the Nutrition Facts panel, or scan/enter a product
+              barcode (via Open Food Facts). The values fill the form below —
+              review them, then save.
             </p>
           </CardContent>
         </Card>

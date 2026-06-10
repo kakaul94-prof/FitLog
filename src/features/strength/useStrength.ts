@@ -386,3 +386,62 @@ export function useExerciseHistory(key: string | undefined) {
     },
   })
 }
+
+export interface ExerciseSessionSet {
+  set_number: number
+  reps: number | null
+  weight_lb: number | null
+  effort: number | null
+}
+export interface ExerciseSession {
+  workoutId: string
+  date: string
+  name: string | null
+  sets: ExerciseSessionSet[]
+}
+
+/** Every past session for one exercise with its actual sets — newest first. */
+export function useExerciseSessions(key: string | undefined) {
+  return useQuery({
+    queryKey: ['exerciseSessions', key],
+    enabled: !!key,
+    queryFn: async (): Promise<ExerciseSession[]> => {
+      const { data: sets, error } = await supabase
+        .from('workout_sets')
+        .select('workout_id,set_number,reps,weight_lb,effort')
+        .eq('exercise_key', key)
+      if (error) throw error
+      const s = (sets ?? []) as (ExerciseSessionSet & { workout_id: string })[]
+      if (!s.length) return []
+      const ids = [...new Set(s.map((x) => x.workout_id))]
+      const { data: ws } = await supabase
+        .from('workouts')
+        .select('id,workout_date,name')
+        .in('id', ids)
+      const meta = new Map(
+        ((ws ?? []) as { id: string; workout_date: string; name: string | null }[]).map(
+          (w) => [w.id, { date: w.workout_date, name: w.name }],
+        ),
+      )
+      const byW = new Map<string, ExerciseSessionSet[]>()
+      for (const x of s) {
+        const arr = byW.get(x.workout_id) ?? []
+        arr.push({
+          set_number: x.set_number,
+          reps: x.reps,
+          weight_lb: x.weight_lb,
+          effort: x.effort,
+        })
+        byW.set(x.workout_id, arr)
+      }
+      const rows: ExerciseSession[] = []
+      for (const [wid, arr] of byW) {
+        const m = meta.get(wid)
+        if (!m) continue
+        arr.sort((a, b) => a.set_number - b.set_number)
+        rows.push({ workoutId: wid, date: m.date, name: m.name, sets: arr })
+      }
+      return rows.sort((a, b) => b.date.localeCompare(a.date))
+    },
+  })
+}

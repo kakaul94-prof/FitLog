@@ -204,6 +204,7 @@ function RoutineExRow({
   onRemove: () => void
   onSuperset?: () => void
 }) {
+  const nav = useNavigate()
   const update = useUpdateRoutineExercise()
   const [sets, setSets] = useState(
     ex.target_sets != null ? String(ex.target_sets) : '',
@@ -219,7 +220,12 @@ function RoutineExRow({
             {label}
           </span>
         )}
-        <span className="flex-1 font-medium">{ex.exercise_name}</span>
+        <button
+          className="flex-1 text-left font-medium"
+          onClick={() => nav(`/lift/exercise/${ex.exercise_key}`)}
+        >
+          {ex.exercise_name}
+        </button>
         <button
           onClick={onRemove}
           className="text-muted-foreground active:text-destructive"

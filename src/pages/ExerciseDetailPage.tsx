@@ -7,8 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { useExerciseHistory } from '@/features/strength/useStrength'
+import { useExerciseHistory, useExerciseSessions } from '@/features/strength/useStrength'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
+import { estimated1RM } from '@/lib/calc'
+import { dateLabel } from '@/lib/date'
 import {
   useExerciseNotes,
   useUpsertExerciseNote,
@@ -25,13 +27,13 @@ const METRICS = [
 type MetricKey = (typeof METRICS)[number]['key']
 
 const GREEN = '#16a34a'
-const TABS = ['form', 'progress'] as const
+const TABS = ['history', 'form', 'progress'] as const
 type Tab = (typeof TABS)[number]
 
 export function ExerciseDetailPage() {
   const { key } = useParams()
   const nav = useNavigate()
-  const [tab, setTab] = useState<Tab>('form')
+  const [tab, setTab] = useState<Tab>('history')
   const { data: custom } = useCustomExercises()
 
   const builtin = EXERCISES.find((e) => e.key === key)
@@ -76,12 +78,88 @@ export function ExerciseDetailPage() {
           ))}
         </div>
 
-        {tab === 'form' ? (
+        {tab === 'history' ? (
+          <HistoryTab exerciseKey={key} />
+        ) : tab === 'form' ? (
           <FormTab exerciseKey={key} formKey={formKey} />
         ) : (
           <ProgressTab exerciseKey={key} />
         )}
       </div>
+    </div>
+  )
+}
+
+function setLabel(weight: number | null, reps: number | null): string {
+  const wt = weight != null ? `${weight} lb` : null
+  const rp = reps != null ? String(reps) : null
+  if (wt && rp) return `${wt} × ${rp}`
+  if (wt) return wt
+  if (rp) return `${rp} reps`
+  return '—'
+}
+
+function HistoryTab({ exerciseKey }: { exerciseKey: string | undefined }) {
+  const { data: sessions, isLoading } = useExerciseSessions(exerciseKey)
+  const rows = sessions ?? []
+
+  if (isLoading)
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+    )
+
+  if (!rows.length)
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          No logged sets yet. Sets you record for this exercise in a workout
+          show up here.
+        </CardContent>
+      </Card>
+    )
+
+  return (
+    <div className="space-y-3">
+      {rows.map((s) => {
+        const best = s.sets.reduce(
+          (m, x) => Math.max(m, estimated1RM(x.weight_lb ?? 0, x.reps ?? 0)),
+          0,
+        )
+        return (
+          <Card key={s.workoutId} className="overflow-hidden">
+            <div className="flex items-center justify-between gap-2 border-b border-border p-3">
+              <div>
+                <div className="text-sm font-semibold">{dateLabel(s.date)}</div>
+                {s.name && (
+                  <div className="text-xs text-muted-foreground">{s.name}</div>
+                )}
+              </div>
+              {best > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  e1RM {Math.round(best)}
+                </span>
+              )}
+            </div>
+            <div className="space-y-1 p-3">
+              {s.sets.map((x, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <span className="w-5 text-center text-xs text-muted-foreground">
+                    {i + 1}
+                  </span>
+                  <span className="font-medium tabular-nums">
+                    {setLabel(x.weight_lb, x.reps)}
+                  </span>
+                  {x.effort != null && (
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      RPE {x.effort}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        )
+      })}
     </div>
   )
 }

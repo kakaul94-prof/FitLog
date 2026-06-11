@@ -15,11 +15,13 @@ import {
 } from '@/features/measurements/useMeasurements'
 import {
   ACTIVITY_LABELS,
+  caloriesForRate,
   cmToFtIn,
   ftInToCm,
   resolveCalorieGoal,
   resolveMacroTargets,
 } from '@/lib/calc'
+import { useAdaptiveTDEE } from '@/features/insights/useAdaptiveTDEE'
 import { todayISO } from '@/lib/date'
 import type {
   ActivityLevel,
@@ -50,8 +52,10 @@ export function ProfilePage() {
   const nav = useNavigate()
   const { data: profile, isLoading } = useProfile()
   const { data: latestWeight } = useLatestWeight()
+  const { data: adaptive } = useAdaptiveTDEE()
   const updateProfile = useUpdateProfile()
   const logWeight = useLogMeasurement()
+  const [adaptiveApplied, setAdaptiveApplied] = useState(false)
 
   const [sex, setSex] = useState<Sex | ''>('')
   const [birthDate, setBirthDate] = useState('')
@@ -132,6 +136,12 @@ export function ProfilePage() {
   )
   const calories = goal.goal ?? goal.calculated ?? 0
 
+  // Goal implied by the data-driven maintenance + the chosen weekly rate.
+  const adaptiveGoal =
+    adaptive?.enough && adaptive.tdee != null
+      ? Math.round(adaptive.tdee + caloriesForRate(parseFloat(rate) || 0))
+      : null
+
   const macroTargets: MacroTargets = {
     protein: { mode: proteinMode, value: parseFloat(proteinVal) || 0 },
     fat: { mode: fatMode, value: parseFloat(fatVal) || 0 },
@@ -169,6 +179,19 @@ export function ProfilePage() {
     }
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
+  }
+
+  // One-tap: switch to manual mode at the data-driven goal and persist it.
+  const applyAdaptive = async () => {
+    if (adaptiveGoal == null) return
+    setManualMode(true)
+    setManualCal(String(adaptiveGoal))
+    await updateProfile.mutateAsync({
+      calorie_goal_mode: 'manual',
+      manual_calorie_goal: adaptiveGoal,
+    })
+    setAdaptiveApplied(true)
+    setTimeout(() => setAdaptiveApplied(false), 2500)
   }
 
   const updatePassword = async () => {
@@ -229,7 +252,7 @@ export function ProfilePage() {
             </p>
             <p className="text-3xl font-bold">
               {calories ? calories.toLocaleString() : '—'}
-              <span className="ml-1 text-base font-medium opacity-80">kcal</span>
+              <span className="ml-1 text-base font-medium opacity-80">calories</span>
             </p>
             <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
               {(['protein', 'carb', 'fat'] as const).map((k) => (
@@ -372,13 +395,65 @@ export function ProfilePage() {
                   <span className="text-muted-foreground">
                     Maintenance (TDEE)
                   </span>
-                  <span className="font-medium">{goal.tdee} kcal</span>
+                  <span className="font-medium">{goal.tdee} calories</span>
                 </div>
                 <div className="mt-1 flex justify-between">
                   <span className="text-muted-foreground">Suggested goal</span>
-                  <span className="font-medium">{goal.calculated} kcal</span>
+                  <span className="font-medium">{goal.calculated} calories</span>
                 </div>
               </div>
+            )}
+            {adaptive?.enough && adaptiveGoal != null ? (
+              <div className="space-y-2 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">From your data</span>
+                  <span className="text-xs text-muted-foreground">
+                    {adaptive.loggedDays} days ·{' '}
+                    {adaptive.trendLbPerWeek != null
+                      ? `${adaptive.trendLbPerWeek < 0 ? '−' : '+'}${Math.abs(
+                          adaptive.trendLbPerWeek,
+                        ).toFixed(1)} lb/wk`
+                      : ''}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Maintenance — your data
+                  </span>
+                  <span className="font-semibold">{adaptive.tdee} calories</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    Maintenance — formula
+                  </span>
+                  <span>{goal.tdee != null ? `${goal.tdee} calories` : '—'}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={applyAdaptive}
+                  disabled={updateProfile.isPending}
+                >
+                  {adaptiveApplied
+                    ? 'Applied ✓'
+                    : `Set my goal to ${adaptiveGoal.toLocaleString()} calories`}
+                </Button>
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Maintenance measured from your average intake and real weight
+                  trend over {adaptive.spanDays} days. The goal applies your
+                  weekly rate to it.
+                </p>
+              </div>
+            ) : (
+              adaptive?.reason && (
+                <p className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    Adaptive goal:{' '}
+                  </span>
+                  {adaptive.reason}
+                </p>
+              )
             )}
             <label className="flex items-center gap-2 text-sm">
               <input

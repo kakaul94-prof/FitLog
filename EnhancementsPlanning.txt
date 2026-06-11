@@ -36,11 +36,13 @@ For a recipe - in the ingredients section - i should be able to click on that in
 
 - Nutrition trends on the Progress tab. ProgressPage.tsx only charts body metrics (weight/body fat/waist). Add a Nutrition view: 7/30-day calories vs goal, average macros vs targets, days-logged. Data already in diary_entries. Effort: medium; reuses recharts + calc helpers.
 
-- Adaptive TDEE / goal calibration. calc.ts uses pure Mifflin-St Jeor, which drifts. Compute actual maintenance from logged intake + real weight change over ~2-4 weeks, then show "Your data suggests ~X kcal; formula says Y" with a one-tap adjust. Effort: medium.
+- [DONE 2026-06-11] Adaptive TDEE / goal calibration. calc.ts uses pure Mifflin-St Jeor, which drifts. Compute actual maintenance from logged intake + real weight change over ~2-4 weeks, then show "Your data suggests ~X kcal; formula says Y" with a one-tap adjust. (Profile → Calorie goal now has a "From your data" panel. New `estimateAdaptiveTDEE` in calc.ts: maintenance = avg logged intake − weight-trend×3500/day, where the trend is a least-squares slope over weigh-ins; intake averages only logged days within the weigh-in span, dropping <500 kcal days as incomplete. Needs ≥14-day span + ≥10 logged days else shows a "keep logging" hint. Data fetched by new `useAdaptiveTDEE` hook (src/features/insights/, 28-day window). Panel shows measured vs formula maintenance + trend; one-tap button switches to manual mode at measured-maintenance + weekly-rate and persists it. Added `daysBetweenISO` to date.ts.)
 
 - Micronutrient targets + weekly "you're low on..." insights. App already stores 31 nutrients (nutrients.ts) but only macros have targets. Add DV-based micro targets and a weekly summary flagging consistent shortfalls (fiber, iron, potassium...). DV reference already in nutrients.ts. Effort: low-medium.
 
 -- Strength & resilience --
+
+- [DONE 2026-06-11] Per-set start/end times + a "Completed" section in a live workout. Each set row got Start (stamps wall-clock start) + Done (stamps end, marks the set complete) controls and shows the clock window, e.g. "3:45–3:47p". An exercise — or a whole superset block — drops into a collapsible "Completed (n)" section at the bottom of the workout once all its sets are ended; tapping the filled Done reopens a set and pops its block back up to active. New nullable workout_sets.started_at / ended_at (supabase/migration_set_timing.sql; ended_at non-null = done); timeLabel() added to date.ts; UI in WorkoutPage.tsx reusing useUpdateSet (no new hook/table).
 
 - Automatic PR detection & celebration. useExerciseHistory already computes max weight / volume / est. 1RM (Epley in calc.ts). Detect when a set beats prior bests and surface a PR badge on the workout + a Records view per lift. Effort: low-medium.
 

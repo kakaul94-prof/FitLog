@@ -4,6 +4,7 @@ import type {
   Profile,
   Sex,
 } from './database.types'
+import { daysBetweenISO } from './date'
 
 // ---------- unit conversions ----------
 export const LB_PER_KG = 2.2046226218
@@ -129,6 +130,119 @@ export function resolveCalorieGoal(
     goal,
     mode: profile.calorie_goal_mode,
     missing,
+  }
+}
+
+// ---------- adaptive TDEE (data-driven maintenance) ----------
+// Pure energy balance: if you average `intake` kcal/day and your weight trends
+// by `s` lb/day, then maintenance = intake - s*3500. The slope comes from a
+// least-squares fit over your weigh-ins (robust to day-to-day water noise), and
+// intake is averaged over *logged* days only, within the weigh-in span.
+
+export interface AdaptiveWeight {
+  date: string
+  value: number
+}
+export interface AdaptiveIntakeDay {
+  date: string
+  kcal: number
+}
+
+export interface AdaptiveTDEEResult {
+  enough: boolean
+  tdee: number | null // measured maintenance kcal/day
+  avgIntake: number | null
+  loggedDays: number
+  spanDays: number // days between first & last weigh-in
+  trendLbPerWeek: number | null // negative = losing
+  reason: string | null // why there isn't enough data yet
+}
+
+export const ADAPTIVE_MIN_SPAN_DAYS = 14
+export const ADAPTIVE_MIN_LOGGED_DAYS = 10
+// Days below this kcal are treated as incomplete logging and ignored.
+const ADAPTIVE_MIN_DAY_KCAL = 500
+
+/** Least-squares slope of y over x; null if x has no spread. */
+function regressionSlope(xs: number[], ys: number[]): number | null {
+  const n = xs.length
+  if (n < 2) return null
+  const mx = xs.reduce((s, x) => s + x, 0) / n
+  const my = ys.reduce((s, y) => s + y, 0) / n
+  let num = 0
+  let den = 0
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - mx) * (ys[i] - my)
+    den += (xs[i] - mx) ** 2
+  }
+  return den === 0 ? null : num / den
+}
+
+/** Estimate maintenance kcal from logged intake + measured weight trend. */
+export function estimateAdaptiveTDEE(
+  intakeDays: AdaptiveIntakeDay[],
+  weights: AdaptiveWeight[],
+): AdaptiveTDEEResult {
+  const base: AdaptiveTDEEResult = {
+    enough: false,
+    tdee: null,
+    avgIntake: null,
+    loggedDays: 0,
+    spanDays: 0,
+    trendLbPerWeek: null,
+    reason: null,
+  }
+  const w = [...weights].sort((a, b) => a.date.localeCompare(b.date))
+  if (w.length < 2)
+    return { ...base, reason: 'Log at least two weigh-ins a couple weeks apart.' }
+
+  const first = w[0]
+  const last = w[w.length - 1]
+  const spanDays = daysBetweenISO(first.date, last.date)
+  if (spanDays < ADAPTIVE_MIN_SPAN_DAYS)
+    return {
+      ...base,
+      spanDays,
+      reason: `Need ~2 weeks between weigh-ins (have ${spanDays}).`,
+    }
+
+  const inSpan = intakeDays.filter(
+    (d) =>
+      d.date >= first.date &&
+      d.date <= last.date &&
+      d.kcal >= ADAPTIVE_MIN_DAY_KCAL,
+  )
+  const loggedDays = inSpan.length
+  if (loggedDays < ADAPTIVE_MIN_LOGGED_DAYS)
+    return {
+      ...base,
+      spanDays,
+      loggedDays,
+      reason: `Keep logging — ${loggedDays} of ~${ADAPTIVE_MIN_LOGGED_DAYS} days needed.`,
+    }
+
+  const slope = regressionSlope(
+    w.map((p) => daysBetweenISO(first.date, p.date)),
+    w.map((p) => p.value),
+  )
+  if (slope == null)
+    return {
+      ...base,
+      spanDays,
+      loggedDays,
+      reason: 'Not enough weight change to calibrate yet.',
+    }
+
+  const avgIntake = inSpan.reduce((s, d) => s + d.kcal, 0) / loggedDays
+  const tdee = Math.round(avgIntake - slope * KCAL_PER_LB)
+  return {
+    enough: true,
+    tdee,
+    avgIntake: Math.round(avgIntake),
+    loggedDays,
+    spanDays,
+    trendLbPerWeek: slope * 7,
+    reason: null,
   }
 }
 

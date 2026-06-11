@@ -33,6 +33,7 @@ import {
 } from '@/lib/usda'
 import { todayISO, addDaysISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
+import { useLongPress } from '@/lib/useLongPress'
 import type { Food, Meal } from '@/lib/database.types'
 
 type Pick = { food: Food; servings: string }
@@ -64,6 +65,7 @@ export function FoodPickerPage() {
   const [usdaLoading, setUsdaLoading] = useState(false)
   const [usdaErr, setUsdaErr] = useState('')
   const [importing, setImporting] = useState<number | null>(null)
+  const [menuFood, setMenuFood] = useState<Food | null>(null)
 
   const isPicked = (id: string) => picks.some((p) => p.food.id === id)
 
@@ -90,8 +92,8 @@ export function FoodPickerPage() {
     )
   }
 
+  // The long-press menu is the confirmation step (matches the diary entries).
   const removeFood = (f: Food) => {
-    if (!confirm(`Remove "${f.name}" from your foods?`)) return
     setPicks((prev) => prev.filter((p) => p.food.id !== f.id))
     del.mutate(f.id)
   }
@@ -275,44 +277,16 @@ export function FoodPickerPage() {
           </Button>
         </div>
         <Card className="divide-y divide-border overflow-hidden">
-          {visible.map((f) => {
-            const active = multi && isPicked(f.id)
-            return (
-              <div
-                key={f.id}
-                className={cn('flex items-center', active && 'bg-accent')}
-              >
-                <button
-                  onClick={() => onRowTap(f)}
-                  className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left active:bg-accent"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium">{f.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {Math.round(f.nutrients.kcal ?? 0)} kcal · {f.serving_qty}{' '}
-                      {f.serving_unit}
-                      {f.brand ? ` · ${f.brand}` : ''}
-                    </div>
-                  </div>
-                  {multi &&
-                    (isPicked(f.id) ? (
-                      <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
-                    ) : (
-                      <Circle className="h-5 w-5 shrink-0 text-muted-foreground/40" />
-                    ))}
-                </button>
-                {!multi && (
-                  <button
-                    onClick={() => removeFood(f)}
-                    className="shrink-0 p-3 text-muted-foreground active:text-destructive"
-                    aria-label={`Remove ${f.name}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            )
-          })}
+          {visible.map((f) => (
+            <FoodRow
+              key={f.id}
+              food={f}
+              multi={multi}
+              picked={multi && isPicked(f.id)}
+              onTap={() => onRowTap(f)}
+              onMenu={() => setMenuFood(f)}
+            />
+          ))}
           {visible.length === 0 && (
             <div className="p-4 text-center text-sm text-muted-foreground">
               {tab === 'all'
@@ -540,6 +514,89 @@ export function FoodPickerPage() {
           </div>,
           document.body,
         )}
+
+      {menuFood &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => setMenuFood(null)}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="truncate border-b border-border p-3 text-center text-xs text-muted-foreground">
+                  {menuFood.name}
+                </div>
+                <button
+                  onClick={() => {
+                    removeFood(menuFood)
+                    setMenuFood(null)
+                  }}
+                  className="flex w-full items-center gap-3 p-4 text-left text-destructive active:bg-accent"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="text-sm font-medium">Delete food</span>
+                </button>
+              </Card>
+              <button
+                onClick={() => setMenuFood(null)}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
+  )
+}
+
+const ROW_CLASS =
+  'flex w-full select-none items-center gap-3 p-3 text-left [-webkit-touch-callout:none] active:bg-accent'
+
+function FoodRow({
+  food,
+  multi,
+  picked,
+  onTap,
+  onMenu,
+}: {
+  food: Food
+  multi: boolean
+  picked: boolean
+  onTap: () => void
+  onMenu: () => void
+}) {
+  const press = useLongPress(onMenu, onTap)
+  const body = (
+    <div className="min-w-0 flex-1">
+      <div className="text-sm font-medium">{food.name}</div>
+      <div className="text-xs text-muted-foreground">
+        {Math.round(food.nutrients.kcal ?? 0)} kcal · {food.serving_qty}{' '}
+        {food.serving_unit}
+        {food.brand ? ` · ${food.brand}` : ''}
+      </div>
+    </div>
+  )
+  // Multi-add: plain tap toggles the pick (no long-press menu, matches diary).
+  if (multi) {
+    return (
+      <button onClick={onTap} className={cn(ROW_CLASS, picked && 'bg-accent')}>
+        {body}
+        {picked ? (
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" />
+        ) : (
+          <Circle className="h-5 w-5 shrink-0 text-muted-foreground/40" />
+        )}
+      </button>
+    )
+  }
+  return (
+    <button {...press} className={ROW_CLASS}>
+      {body}
+    </button>
   )
 }

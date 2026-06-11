@@ -6,14 +6,20 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { EXERCISES } from '@/data/exercises'
-import { useCustomExercises } from '@/features/strength/useCustomExercises'
+import {
+  useCustomExercises,
+  useCreateCustomExercise,
+} from '@/features/strength/useCustomExercises'
 import {
   useRoutine,
   useCreateRoutine,
   useSaveRoutine,
   useDeleteRoutine,
 } from '@/features/strength/useRoutines'
+import type { ExerciseType } from '@/lib/database.types'
 
 type DraftEx = {
   localId: string
@@ -50,6 +56,7 @@ export function RoutineEditPage() {
   const saveRoutine = useSaveRoutine()
   const delRoutine = useDeleteRoutine()
   const { data: custom } = useCustomExercises()
+  const createCustom = useCreateCustomExercise()
 
   const [name, setName] = useState('')
   const [draft, setDraft] = useState<DraftEx[]>([])
@@ -57,6 +64,12 @@ export function RoutineEditPage() {
   const [adding, setAdding] = useState(false)
   const [supersetWith, setSupersetWith] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
+  // Inline "new custom exercise" form inside the add panel.
+  const [creating, setCreating] = useState(false)
+  const [cname, setCname] = useState('')
+  const [cmuscle, setCmuscle] = useState('')
+  const [cequip, setCequip] = useState('')
+  const [ctype, setCtype] = useState<ExerciseType>('weighted')
   const loadedRef = useRef(false)
   const leavingRef = useRef(false)
 
@@ -140,9 +153,18 @@ export function RoutineEditPage() {
   const openAdd = (ssWith?: string) => {
     setSupersetWith(ssWith)
     setAdding(true)
+    setCreating(false)
     setSearch('')
   }
-  const pick = (key: string, exName: string) => {
+  const closeAdd = () => {
+    setAdding(false)
+    setCreating(false)
+    setCname('')
+    setCmuscle('')
+    setCequip('')
+    setCtype('weighted')
+  }
+  const addToDraft = (key: string, exName: string) => {
     setDraft((prev) => {
       let group: number | null = null
       let next = prev
@@ -171,7 +193,23 @@ export function RoutineEditPage() {
         },
       ]
     })
-    setAdding(false)
+  }
+  const pick = (key: string, exName: string) => {
+    addToDraft(key, exName)
+    closeAdd()
+  }
+  // Custom exercises are reusable library items, so the row is created right
+  // away (like the live workout's picker) and then dropped into the draft.
+  const saveCustom = async () => {
+    if (!cname.trim()) return
+    const c = await createCustom.mutateAsync({
+      name: cname.trim(),
+      muscle: cmuscle.trim() || null,
+      equipment: cequip.trim() || null,
+      type: ctype,
+    })
+    addToDraft(`custom:${c.id}`, c.name)
+    closeAdd()
   }
   const removeEx = (localId: string) =>
     setDraft((prev) => prev.filter((e) => e.localId !== localId))
@@ -245,37 +283,105 @@ export function RoutineEditPage() {
 
         {adding ? (
           <Card className="p-2">
-            <div className="relative mb-2">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                autoFocus
-                placeholder="Search exercises"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <div className="max-h-64 divide-y divide-border overflow-y-auto">
-              {filtered.map((e) => (
-                <button
-                  key={e.key}
-                  onClick={() => pick(e.key, e.name)}
-                  className="block w-full p-2 text-left text-sm active:bg-accent"
+            {creating ? (
+              <div className="space-y-3 p-2">
+                <div className="text-sm font-semibold">New custom exercise</div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="cname">Name</Label>
+                  <Input
+                    id="cname"
+                    autoFocus
+                    value={cname}
+                    onChange={(e) => setCname(e.target.value)}
+                    placeholder="e.g. Preacher Curl"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor="cmuscle">Muscle</Label>
+                    <Input
+                      id="cmuscle"
+                      value={cmuscle}
+                      onChange={(e) => setCmuscle(e.target.value)}
+                      placeholder="Biceps"
+                    />
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <Label htmlFor="cequip">Equipment</Label>
+                    <Input
+                      id="cequip"
+                      value={cequip}
+                      onChange={(e) => setCequip(e.target.value)}
+                      placeholder="Barbell"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Type</Label>
+                  <Select
+                    value={ctype}
+                    onChange={(e) => setCtype(e.target.value as ExerciseType)}
+                  >
+                    <option value="weighted">Weighted</option>
+                    <option value="bodyweight">Bodyweight</option>
+                    <option value="timed">Timed</option>
+                  </Select>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    onClick={saveCustom}
+                    disabled={!cname.trim() || createCustom.isPending}
+                  >
+                    Add to template
+                  </Button>
+                  <Button variant="ghost" onClick={() => setCreating(false)}>
+                    Back
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    autoFocus
+                    placeholder="Search exercises"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <div className="max-h-64 divide-y divide-border overflow-y-auto">
+                  {filtered.map((e) => (
+                    <button
+                      key={e.key}
+                      onClick={() => pick(e.key, e.name)}
+                      className="block w-full p-2 text-left text-sm active:bg-accent"
+                    >
+                      {e.name}{' '}
+                      <span className="text-xs text-muted-foreground">
+                        · {e.muscle}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  className="mt-1 w-full"
+                  onClick={() => setCreating(true)}
                 >
-                  {e.name}{' '}
-                  <span className="text-xs text-muted-foreground">
-                    · {e.muscle}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <Button
-              variant="ghost"
-              className="mt-1 w-full"
-              onClick={() => setAdding(false)}
-            >
-              Cancel
-            </Button>
+                  <Plus className="h-4 w-4" /> New custom exercise
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="mt-1 w-full"
+                  onClick={closeAdd}
+                >
+                  Cancel
+                </Button>
+              </>
+            )}
           </Card>
         ) : (
           <Button

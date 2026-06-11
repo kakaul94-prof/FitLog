@@ -1,8 +1,4 @@
-import { useRef, useState } from 'react'
-import type {
-  MouseEvent as ReactMouseEvent,
-  PointerEvent as ReactPointerEvent,
-} from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -40,6 +36,7 @@ import { useLatestWeight } from '@/features/measurements/useMeasurements'
 import { resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
+import { useLongPress } from '@/lib/useLongPress'
 import { cn } from '@/lib/utils'
 import type { DiaryEntry, ExerciseEntry, Meal } from '@/lib/database.types'
 
@@ -463,49 +460,6 @@ export function DiaryPage() {
 
 const ROW_CLASS =
   'flex w-full select-none items-center gap-2 p-3 text-left [-webkit-touch-callout:none] active:bg-accent'
-
-// Tap = onClick; press-and-hold (450ms) = onLongPress. Moving >10px cancels.
-function useLongPress(onLongPress: () => void, onClick: () => void) {
-  const timer = useRef<number | null>(null)
-  const fired = useRef(false)
-  const start = useRef<{ x: number; y: number } | null>(null)
-  const clear = () => {
-    if (timer.current) {
-      clearTimeout(timer.current)
-      timer.current = null
-    }
-  }
-  return {
-    onPointerDown: (e: ReactPointerEvent) => {
-      fired.current = false
-      start.current = { x: e.clientX, y: e.clientY }
-      clear()
-      timer.current = window.setTimeout(() => {
-        fired.current = true
-        onLongPress()
-      }, 450)
-    },
-    onPointerMove: (e: ReactPointerEvent) => {
-      if (
-        start.current &&
-        Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) >
-          10
-      )
-        clear()
-    },
-    onPointerUp: clear,
-    onPointerLeave: clear,
-    onPointerCancel: clear,
-    onContextMenu: (e: ReactMouseEvent) => e.preventDefault(),
-    onClick: () => {
-      if (fired.current) {
-        fired.current = false
-        return
-      }
-      onClick()
-    },
-  }
-}
 
 function FoodEntryRow({
   entry,

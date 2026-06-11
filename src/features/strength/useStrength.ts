@@ -121,6 +121,8 @@ export function useUpdateWorkout() {
           ? { ...prev, workout: { ...prev.workout, ...patch } }
           : prev,
       )
+      // Keep the recent-workouts list + calendar in sync (e.g. rename / re-date).
+      qc.invalidateQueries({ queryKey: ['workouts'] })
     },
   })
 }

@@ -4,11 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useWorkouts, useCreateWorkout } from '@/features/strength/useStrength'
-import {
-  useRoutines,
-  useCreateRoutine,
-  useStartFromRoutine,
-} from '@/features/strength/useRoutines'
+import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
 import { todayISO, dateLabel } from '@/lib/date'
 
 export function StrengthPage() {
@@ -16,17 +12,13 @@ export function StrengthPage() {
   const { data: workouts } = useWorkouts()
   const { data: routines } = useRoutines()
   const create = useCreateWorkout()
-  const createRoutine = useCreateRoutine()
   const startFrom = useStartFromRoutine()
 
   const startEmpty = async () => {
     const w = await create.mutateAsync({ workout_date: todayISO(), name: 'Workout' })
     nav(`/workout/${w.id}`)
   }
-  const newTemplate = async () => {
-    const r = await createRoutine.mutateAsync('New template')
-    nav(`/routines/${r.id}`)
-  }
+  const newTemplate = () => nav('/routines/new')
   const startTemplate = async (rid: string, name: string) => {
     const id = await startFrom.mutateAsync({ routineId: rid, name, date: todayISO() })
     nav(`/workout/${id}`)
@@ -34,7 +26,7 @@ export function StrengthPage() {
 
   return (
     <div>
-      <PageHeader title="Lift" />
+      <PageHeader title="Exercise" />
       <div className="space-y-5 p-4">
         <Button
           className="w-full"

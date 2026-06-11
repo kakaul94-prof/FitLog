@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Plus, X, Link2, Trash2, Search } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useBlocker, useNavigate, useParams } from 'react-router-dom'
+import { ChevronLeft, Plus, X, Link2, Trash2, Search, Save } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,44 +10,129 @@ import { EXERCISES } from '@/data/exercises'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import {
   useRoutine,
-  useUpdateRoutine,
+  useCreateRoutine,
+  useSaveRoutine,
   useDeleteRoutine,
-  useAddRoutineExercise,
-  useUpdateRoutineExercise,
-  useRemoveRoutineExercise,
 } from '@/features/strength/useRoutines'
-import type { RoutineExercise } from '@/lib/database.types'
+
+type DraftEx = {
+  localId: string
+  exercise_key: string
+  exercise_name: string
+  target_sets: number | null
+  target_reps: number | null
+  superset_group: number | null
+}
+
+const uid = () => Math.random().toString(36).slice(2)
+// Stable signature of the editable state, used to detect unsaved changes
+// (localId is a render-only key, so it's excluded).
+const serialize = (name: string, d: DraftEx[]) =>
+  JSON.stringify({
+    name: name.trim(),
+    ex: d.map((e) => ({
+      exercise_key: e.exercise_key,
+      exercise_name: e.exercise_name,
+      target_sets: e.target_sets,
+      target_reps: e.target_reps,
+      superset_group: e.superset_group,
+    })),
+  })
 
 export function RoutineEditPage() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { data } = useRoutine(id)
-  const routine = data?.routine
-  const exercises = data?.exercises ?? []
-  const updateRoutine = useUpdateRoutine()
+  // `/routines/new` defers creating the row until Save, so discarding a brand
+  // new template leaves no empty orphan behind.
+  const isNew = id === 'new'
+  const { data } = useRoutine(isNew ? undefined : id)
+  const createRoutine = useCreateRoutine()
+  const saveRoutine = useSaveRoutine()
   const delRoutine = useDeleteRoutine()
-  const addEx = useAddRoutineExercise()
-  const removeEx = useRemoveRoutineExercise()
   const { data: custom } = useCustomExercises()
 
   const [name, setName] = useState('')
+  const [draft, setDraft] = useState<DraftEx[]>([])
+  const [original, setOriginal] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [supersetWith, setSupersetWith] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
+  const loadedRef = useRef(false)
+  const leavingRef = useRef(false)
 
+  // Load the template into local draft state once. From here every edit stays
+  // local until the user taps Save (or Discard throws them away) — nothing is
+  // written on blur the way it used to be.
   useEffect(() => {
-    if (routine) setName(routine.name)
-  }, [routine])
+    if (loadedRef.current) return
+    if (isNew) {
+      loadedRef.current = true
+      setName('New template')
+      setDraft([])
+      setOriginal(serialize('New template', []))
+    } else if (data?.routine) {
+      loadedRef.current = true
+      const d: DraftEx[] = data.exercises.map((e) => ({
+        localId: uid(),
+        exercise_key: e.exercise_key,
+        exercise_name: e.exercise_name,
+        target_sets: e.target_sets,
+        target_reps: e.target_reps,
+        superset_group: e.superset_group,
+      }))
+      setName(data.routine.name)
+      setDraft(d)
+      setOriginal(serialize(data.routine.name, d))
+    }
+  }, [isNew, data])
 
-  const blocks: { group: number | null; exercises: RoutineExercise[] }[] = []
+  const dirty = original != null && serialize(name, draft) !== original
+  const saving = saveRoutine.isPending || createRoutine.isPending
+
+  // Prompt before leaving with unsaved edits (back arrow / Android gesture).
+  // Clean state, an explicit Save/Discard, or staying within the editor all
+  // pass straight through.
+  const blocker = useBlocker(({ nextLocation }) => {
+    if (leavingRef.current || !dirty) return false
+    return !nextLocation.pathname.startsWith(`/routines/${id}`)
+  })
+  const showExit = blocker.state === 'blocked'
+
+  const persist = async () => {
+    const clean = name.trim() || 'New template'
+    if (isNew) {
+      const r = await createRoutine.mutateAsync(clean)
+      await saveRoutine.mutateAsync({ id: r.id, name: clean, exercises: draft })
+    } else {
+      await saveRoutine.mutateAsync({ id: id!, name: clean, exercises: draft })
+    }
+  }
+  const save = async () => {
+    await persist()
+    leavingRef.current = true
+    nav('/strength')
+  }
+  const saveAndProceed = async () => {
+    await persist()
+    blocker.proceed?.()
+  }
+  const discard = () => {
+    if (dirty && !confirm('Discard your changes?')) return
+    leavingRef.current = true
+    nav('/strength')
+  }
+
+  // Group into superset blocks (same scheme as the live workout): a block is
+  // anchored at the first member of each shared superset_group.
+  const blocks: { group: number | null; exercises: DraftEx[] }[] = []
   const seen = new Set<number>()
-  for (const ex of exercises) {
+  for (const ex of draft) {
     if (ex.superset_group == null) blocks.push({ group: null, exercises: [ex] })
     else if (!seen.has(ex.superset_group)) {
       seen.add(ex.superset_group)
       blocks.push({
         group: ex.superset_group,
-        exercises: exercises.filter((e) => e.superset_group === ex.superset_group),
+        exercises: draft.filter((e) => e.superset_group === ex.superset_group),
       })
     }
   }
@@ -56,10 +142,43 @@ export function RoutineEditPage() {
     setAdding(true)
     setSearch('')
   }
-  const pick = async (key: string, exName: string) => {
-    await addEx.mutateAsync({ routineId: id!, key, name: exName, supersetWithId: supersetWith })
+  const pick = (key: string, exName: string) => {
+    setDraft((prev) => {
+      let group: number | null = null
+      let next = prev
+      if (supersetWith) {
+        const anchor = prev.find((e) => e.localId === supersetWith)
+        if (anchor) {
+          if (anchor.superset_group != null) group = anchor.superset_group
+          else {
+            group =
+              prev.reduce((m, e) => Math.max(m, e.superset_group ?? 0), 0) + 1
+            next = prev.map((e) =>
+              e.localId === anchor.localId ? { ...e, superset_group: group } : e,
+            )
+          }
+        }
+      }
+      return [
+        ...next,
+        {
+          localId: uid(),
+          exercise_key: key,
+          exercise_name: exName,
+          target_sets: null,
+          target_reps: null,
+          superset_group: group,
+        },
+      ]
+    })
     setAdding(false)
   }
+  const removeEx = (localId: string) =>
+    setDraft((prev) => prev.filter((e) => e.localId !== localId))
+  const setTarget = (localId: string, patch: Partial<DraftEx>) =>
+    setDraft((prev) =>
+      prev.map((e) => (e.localId === localId ? { ...e, ...patch } : e)),
+    )
 
   const q = search.toLowerCase()
   const allEx = [
@@ -77,7 +196,7 @@ export function RoutineEditPage() {
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background">
       <PageHeader
-        title="Edit template"
+        title={isNew ? 'New template' : 'Edit template'}
         left={
           <Button variant="ghost" size="icon" onClick={() => nav('/strength')}>
             <ChevronLeft className="h-5 w-5" />
@@ -90,10 +209,6 @@ export function RoutineEditPage() {
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onBlur={() => {
-              if (name.trim() && name !== routine?.name)
-                updateRoutine.mutate({ id: id!, name: name.trim() })
-            }}
             placeholder="e.g. Push Day"
           />
         </div>
@@ -109,23 +224,21 @@ export function RoutineEditPage() {
               </div>
               {b.exercises.map((ex, i) => (
                 <RoutineExRow
-                  key={ex.id}
+                  key={ex.localId}
                   ex={ex}
-                  routineId={id!}
                   label={`${i + 1}`}
-                  onRemove={() => removeEx.mutate({ id: ex.id, routineId: id! })}
+                  onRemove={() => removeEx(ex.localId)}
+                  onTarget={(patch) => setTarget(ex.localId, patch)}
                 />
               ))}
             </div>
           ) : (
             <RoutineExRow
-              key={b.exercises[0].id}
+              key={b.exercises[0].localId}
               ex={b.exercises[0]}
-              routineId={id!}
-              onRemove={() =>
-                removeEx.mutate({ id: b.exercises[0].id, routineId: id! })
-              }
-              onSuperset={() => openAdd(b.exercises[0].id)}
+              onRemove={() => removeEx(b.exercises[0].localId)}
+              onTarget={(patch) => setTarget(b.exercises[0].localId, patch)}
+              onSuperset={() => openAdd(b.exercises[0].localId)}
             />
           ),
         )}
@@ -174,38 +287,97 @@ export function RoutineEditPage() {
           </Button>
         )}
 
-        <Button
-          variant="outline"
-          className="w-full text-destructive"
-          onClick={() => {
-            if (confirm('Delete this template?')) {
-              delRoutine.mutate(id!)
-              nav('/strength')
-            }
-          }}
-        >
-          <Trash2 className="h-4 w-4" /> Delete template
-        </Button>
+        <div className="flex gap-2 pt-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={discard}
+            disabled={saving}
+          >
+            Discard
+          </Button>
+          <Button className="flex-1" onClick={save} disabled={saving}>
+            <Save className="h-4 w-4" /> {saving ? 'Saving…' : 'Save template'}
+          </Button>
+        </div>
+
+        {!isNew && (
+          <Button
+            variant="ghost"
+            className="w-full text-destructive"
+            onClick={() => {
+              if (confirm('Delete this template?')) {
+                leavingRef.current = true
+                delRoutine.mutate(id!)
+                nav('/strength')
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" /> Delete template
+          </Button>
+        )}
       </div>
+
+      {showExit &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => blocker.reset?.()}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="border-b border-border p-3 text-center text-xs text-muted-foreground">
+                  Save changes to this template?
+                </div>
+                <button
+                  onClick={saveAndProceed}
+                  disabled={saving}
+                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent disabled:opacity-50"
+                >
+                  <Save className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    {saving ? 'Saving…' : 'Save changes'}
+                  </span>
+                </button>
+                <button
+                  onClick={() => blocker.proceed?.()}
+                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="text-sm font-medium">Discard changes</span>
+                </button>
+              </Card>
+              <button
+                onClick={() => blocker.reset?.()}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
 
 function RoutineExRow({
   ex,
-  routineId,
   label,
   onRemove,
   onSuperset,
+  onTarget,
 }: {
-  ex: RoutineExercise
-  routineId: string
+  ex: DraftEx
   label?: string
   onRemove: () => void
   onSuperset?: () => void
+  onTarget: (patch: Partial<DraftEx>) => void
 }) {
   const nav = useNavigate()
-  const update = useUpdateRoutineExercise()
   const [sets, setSets] = useState(
     ex.target_sets != null ? String(ex.target_sets) : '',
   )
@@ -242,13 +414,7 @@ function RoutineExRow({
           placeholder="sets"
           value={sets}
           onChange={(e) => setSets(e.target.value)}
-          onBlur={() =>
-            update.mutate({
-              id: ex.id,
-              routineId,
-              target_sets: sets ? parseInt(sets) : null,
-            })
-          }
+          onBlur={() => onTarget({ target_sets: sets ? parseInt(sets) : null })}
         />
         <span className="text-muted-foreground">×</span>
         <Input
@@ -258,13 +424,7 @@ function RoutineExRow({
           placeholder="reps"
           value={reps}
           onChange={(e) => setReps(e.target.value)}
-          onBlur={() =>
-            update.mutate({
-              id: ex.id,
-              routineId,
-              target_reps: reps ? parseInt(reps) : null,
-            })
-          }
+          onBlur={() => onTarget({ target_reps: reps ? parseInt(reps) : null })}
         />
         <span className="text-xs text-muted-foreground">target</span>
         {onSuperset && (

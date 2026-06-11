@@ -57,24 +57,6 @@ export function useCreateRoutine() {
   })
 }
 
-export function useUpdateRoutine() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      const { error } = await supabase
-        .from('routines')
-        .update({ name })
-        .eq('id', id)
-      if (error) throw error
-      return { id }
-    },
-    onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ['routines'] })
-      qc.invalidateQueries({ queryKey: ['routine', d.id] })
-    },
-  })
-}
-
 export function useDeleteRoutine() {
   const qc = useQueryClient()
   return useMutation({
@@ -86,89 +68,60 @@ export function useDeleteRoutine() {
   })
 }
 
-export function useAddRoutineExercise() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async ({
-      routineId,
-      key,
-      name,
-      supersetWithId,
-    }: {
-      routineId: string
-      key: string
-      name: string
-      supersetWithId?: string
-    }) => {
-      const { data: existing } = await supabase
-        .from('routine_exercises')
-        .select('id,position,superset_group')
-        .eq('routine_id', routineId)
-      const ex = (existing ?? []) as {
-        id: string
-        position: number
-        superset_group: number | null
-      }[]
-      const position = ex.length
-      let group: number | null = null
-      if (supersetWithId) {
-        const anchor = ex.find((e) => e.id === supersetWithId)
-        group = anchor?.superset_group ?? null
-        if (group == null) {
-          group = ex.reduce((m, e) => Math.max(m, e.superset_group ?? 0), 0) + 1
-          if (anchor) {
-            await supabase
-              .from('routine_exercises')
-              .update({ superset_group: group })
-              .eq('id', anchor.id)
-          }
-        }
-      }
-      const { error } = await supabase.from('routine_exercises').insert({
-        routine_id: routineId,
-        exercise_key: key,
-        exercise_name: name,
-        position,
-        superset_group: group,
-      })
-      if (error) throw error
-      return { routineId }
-    },
-    onSuccess: (d) => qc.invalidateQueries({ queryKey: ['routine', d.routineId] }),
-  })
-}
-
-export function useUpdateRoutineExercise() {
+/** Persist a template in one shot: update the name and replace its whole
+ *  exercise list (delete-all + re-insert in order). The editor stages edits in
+ *  local state so the user can Save (this) or Discard — nothing is written on
+ *  blur. Templates are tiny, so a replace is simpler/safer than diffing. */
+export function useSaveRoutine() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({
       id,
-      routineId,
-      ...patch
-    }: { id: string; routineId: string } & Partial<RoutineExercise>) => {
-      const { error } = await supabase
-        .from('routine_exercises')
-        .update(patch)
+      name,
+      exercises,
+    }: {
+      id: string
+      name: string
+      exercises: Pick<
+        RoutineExercise,
+        | 'exercise_key'
+        | 'exercise_name'
+        | 'target_sets'
+        | 'target_reps'
+        | 'superset_group'
+      >[]
+    }) => {
+      const { error: ue } = await supabase
+        .from('routines')
+        .update({ name })
         .eq('id', id)
-      if (error) throw error
-      return { routineId }
-    },
-    onSuccess: (d) => qc.invalidateQueries({ queryKey: ['routine', d.routineId] }),
-  })
-}
-
-export function useRemoveRoutineExercise() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ id, routineId }: { id: string; routineId: string }) => {
-      const { error } = await supabase
+      if (ue) throw ue
+      const { error: de } = await supabase
         .from('routine_exercises')
         .delete()
-        .eq('id', id)
-      if (error) throw error
-      return { routineId }
+        .eq('routine_id', id)
+      if (de) throw de
+      if (exercises.length) {
+        const rows = exercises.map((e, i) => ({
+          routine_id: id,
+          exercise_key: e.exercise_key,
+          exercise_name: e.exercise_name,
+          position: i,
+          target_sets: e.target_sets,
+          target_reps: e.target_reps,
+          superset_group: e.superset_group,
+        }))
+        const { error: ie } = await supabase
+          .from('routine_exercises')
+          .insert(rows)
+        if (ie) throw ie
+      }
+      return { id }
     },
-    onSuccess: (d) => qc.invalidateQueries({ queryKey: ['routine', d.routineId] }),
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ['routines'] })
+      qc.invalidateQueries({ queryKey: ['routine', d.id] })
+    },
   })
 }
 

@@ -262,6 +262,8 @@ export interface WorkoutSet {
   distance: number | null
   effort: number | null
   is_warmup: boolean
+  started_at: string | null
+  ended_at: string | null
   created_at: string
 }
 

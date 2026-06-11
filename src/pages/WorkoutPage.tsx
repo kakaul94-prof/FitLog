@@ -1,7 +1,17 @@
 import { useCallback, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Plus, X, Link2, Save, Trash2, Check } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronDown,
+  Plus,
+  X,
+  Link2,
+  Save,
+  Trash2,
+  Check,
+  Play,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,12 +30,14 @@ import {
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
 import { estimated1RM } from '@/lib/calc'
-import { dateLabel } from '@/lib/date'
+import { dateLabel, timeLabel } from '@/lib/date'
+import { cn } from '@/lib/utils'
 import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
 
 export function WorkoutPage() {
   const { id } = useParams()
   const nav = useNavigate()
+  const [showCompleted, setShowCompleted] = useState(false)
   const updateWorkout = useUpdateWorkout()
   const { data } = useWorkout(id)
   const workout = data?.workout
@@ -91,6 +103,46 @@ export function WorkoutPage() {
   const setsFor = (weId: string) =>
     sets.filter((s) => s.workout_exercise_id === weId)
 
+  // A block (standalone exercise or a superset group) drops into "Completed"
+  // once it has sets and every one of them is ended. Supersets move as a unit.
+  const blockDone = (b: { exercises: WorkoutExercise[] }) => {
+    const bs = b.exercises.flatMap((e) => setsFor(e.id))
+    return bs.length > 0 && bs.every((s) => s.ended_at != null)
+  }
+  const activeBlocks = blocks.filter((b) => !blockDone(b))
+  const completedBlocks = blocks.filter(blockDone)
+
+  const renderBlock = (b: {
+    group: number | null
+    exercises: WorkoutExercise[]
+  }) =>
+    b.group != null ? (
+      <div
+        key={`sg-${b.group}`}
+        className="space-y-2 rounded-xl border-2 border-primary/30 p-2"
+      >
+        <div className="px-1 text-xs font-semibold uppercase tracking-wide text-primary">
+          Superset
+        </div>
+        {b.exercises.map((ex, i) => (
+          <ExerciseCard
+            key={ex.id}
+            ex={ex}
+            sets={setsFor(ex.id)}
+            workoutId={id!}
+            label={`${i + 1}`}
+          />
+        ))}
+      </div>
+    ) : (
+      <ExerciseCard
+        key={b.exercises[0].id}
+        ex={b.exercises[0]}
+        sets={setsFor(b.exercises[0].id)}
+        workoutId={id!}
+      />
+    )
+
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background">
       <PageHeader
@@ -103,33 +155,28 @@ export function WorkoutPage() {
         }
       />
       <div className="space-y-4 p-4 pb-32">
-        {blocks.map((b, bi) =>
-          b.group != null ? (
-            <div
-              key={bi}
-              className="space-y-2 rounded-xl border-2 border-primary/30 p-2"
+        {activeBlocks.map(renderBlock)}
+
+        {completedBlocks.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-border">
+            <button
+              onClick={() => setShowCompleted((v) => !v)}
+              className="flex w-full items-center gap-2 p-3 text-sm font-semibold active:bg-accent"
             >
-              <div className="px-1 text-xs font-semibold uppercase tracking-wide text-primary">
-                Superset
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 transition-transform',
+                  showCompleted ? '' : '-rotate-90',
+                )}
+              />
+              Completed ({completedBlocks.length})
+            </button>
+            {showCompleted && (
+              <div className="space-y-4 border-t border-border p-3">
+                {completedBlocks.map(renderBlock)}
               </div>
-              {b.exercises.map((ex, i) => (
-                <ExerciseCard
-                  key={ex.id}
-                  ex={ex}
-                  sets={setsFor(ex.id)}
-                  workoutId={id!}
-                  label={`${i + 1}`}
-                />
-              ))}
-            </div>
-          ) : (
-            <ExerciseCard
-              key={b.exercises[0].id}
-              ex={b.exercises[0]}
-              sets={setsFor(b.exercises[0].id)}
-              workoutId={id!}
-            />
-          ),
+            )}
+          </div>
         )}
 
         <Button
@@ -322,47 +369,80 @@ function SetRow({
   const del = useDeleteSet()
   const save = (patch: Partial<WorkoutSet>) =>
     update.mutate({ id: set.id, workout_id: workoutId, ...patch })
+  const done = set.ended_at != null
 
   return (
-    <div className="grid grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem] items-center gap-2 py-1">
-      <span className="text-center text-sm text-muted-foreground">{index}</span>
-      <Input
-        className="h-9"
-        type="number"
-        inputMode="decimal"
-        value={weight}
-        onChange={(e) => setWeight(e.target.value)}
-        onBlur={() => save({ weight_lb: weight ? parseFloat(weight) : null })}
-      />
-      <Input
-        className="h-9"
-        type="number"
-        inputMode="numeric"
-        value={reps}
-        onChange={(e) => setReps(e.target.value)}
-        onBlur={() => save({ reps: reps ? parseFloat(reps) : null })}
-      />
-      <Select
-        className="h-9 px-1"
-        value={set.effort != null ? String(set.effort) : ''}
-        onChange={(e) =>
-          save({ effort: e.target.value ? parseInt(e.target.value) : null })
-        }
-      >
-        <option value="">–</option>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <option key={n} value={n}>
-            {n}
-          </option>
-        ))}
-      </Select>
-      <button
-        onClick={() => del.mutate({ id: set.id, workout_id: workoutId })}
-        className="text-muted-foreground active:text-destructive"
-        aria-label="Delete set"
-      >
-        <X className="h-4 w-4" />
-      </button>
+    <div className="py-1">
+      <div className="grid grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem] items-center gap-2">
+        <span className="text-center text-sm text-muted-foreground">{index}</span>
+        <Input
+          className="h-9"
+          type="number"
+          inputMode="decimal"
+          value={weight}
+          onChange={(e) => setWeight(e.target.value)}
+          onBlur={() => save({ weight_lb: weight ? parseFloat(weight) : null })}
+        />
+        <Input
+          className="h-9"
+          type="number"
+          inputMode="numeric"
+          value={reps}
+          onChange={(e) => setReps(e.target.value)}
+          onBlur={() => save({ reps: reps ? parseFloat(reps) : null })}
+        />
+        <Select
+          className="h-9 px-1"
+          value={set.effort != null ? String(set.effort) : ''}
+          onChange={(e) =>
+            save({ effort: e.target.value ? parseInt(e.target.value) : null })
+          }
+        >
+          <option value="">–</option>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </Select>
+        <button
+          onClick={() => del.mutate({ id: set.id, workout_id: workoutId })}
+          className="text-muted-foreground active:text-destructive"
+          aria-label="Delete set"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mt-1 flex items-center gap-2 pl-10 pr-8 text-xs text-muted-foreground">
+        {done ? (
+          <span className="tabular-nums">
+            {set.started_at ? `${timeLabel(set.started_at)}–` : ''}
+            {timeLabel(set.ended_at!)}
+          </span>
+        ) : set.started_at ? (
+          <span className="tabular-nums">{timeLabel(set.started_at)} –</span>
+        ) : (
+          <button
+            onClick={() => save({ started_at: new Date().toISOString() })}
+            className="flex items-center gap-1 font-medium text-primary active:opacity-70"
+          >
+            <Play className="h-3 w-3" /> Start
+          </button>
+        )}
+        <button
+          onClick={() =>
+            save({ ended_at: done ? null : new Date().toISOString() })
+          }
+          className={cn(
+            'ml-auto flex items-center gap-1 rounded-md px-2 py-1 font-medium',
+            done
+              ? 'bg-primary text-primary-foreground'
+              : 'bg-primary/10 text-primary active:bg-primary/20',
+          )}
+        >
+          <Check className="h-3.5 w-3.5" /> Done
+        </button>
+      </div>
     </div>
   )
 }

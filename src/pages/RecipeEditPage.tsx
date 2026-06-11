@@ -120,7 +120,7 @@ export function RecipeEditPage() {
                     {food?.name ?? 'Unknown'}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {Math.round((food?.nutrients.kcal ?? 0) * ri.servings)} kcal
+                    {Math.round((food?.nutrients.kcal ?? 0) * ri.servings)} calories
                   </div>
                 </div>
                 <Input
@@ -178,7 +178,7 @@ export function RecipeEditPage() {
                 >
                   {f.name}{' '}
                   <span className="text-xs text-muted-foreground">
-                    · {Math.round(f.nutrients.kcal ?? 0)} kcal
+                    · {Math.round(f.nutrients.kcal ?? 0)} calories
                   </span>
                 </button>
               ))}

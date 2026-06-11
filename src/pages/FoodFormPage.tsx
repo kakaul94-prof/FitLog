@@ -633,7 +633,7 @@ export function FoodFormPage() {
                       {overridden
                         ? 'Custom facts'
                         : computed
-                          ? `${Math.round(computed.kcal ?? 0)} kcal · auto`
+                          ? `${Math.round(computed.kcal ?? 0)} calories · auto`
                           : 'Set a weight, or customize facts'}
                     </span>
                     {overridden ? (

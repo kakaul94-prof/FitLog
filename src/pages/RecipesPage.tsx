@@ -53,7 +53,7 @@ export function RecipesPage() {
                 <div className="flex-1">
                   <div className="text-sm font-medium">{r.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {Math.round(r.nutrients.kcal ?? 0)} kcal/serving · makes{' '}
+                    {Math.round(r.nutrients.kcal ?? 0)} calories/serving · makes{' '}
                     {r.recipe_servings ?? 1}
                   </div>
                 </div>

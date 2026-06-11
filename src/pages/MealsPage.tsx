@@ -52,7 +52,7 @@ export function MealsPage() {
                   <div className="truncate text-sm font-medium">{m.name}</div>
                   <div className="text-xs text-muted-foreground">
                     {m.items.length} {m.items.length === 1 ? 'item' : 'items'} ·{' '}
-                    {kcal} kcal
+                    {kcal} calories
                   </div>
                 </div>
                 <button
@@ -84,8 +84,7 @@ export function MealsPage() {
                     >
                       <span className="min-w-0 truncate">{it.food_name}</span>
                       <span className="shrink-0 text-xs text-muted-foreground">
-                        {it.servings} × {it.serving_qty} {it.serving_unit} ·{' '}
-                        {Math.round((it.nutrients.kcal ?? 0) * it.servings)} kcal
+                        {Math.round((it.nutrients.kcal ?? 0) * it.servings)} calories
                       </span>
                     </li>
                   ))}

@@ -58,7 +58,7 @@ export function FoodsPage() {
                 >
                   <div className="text-sm font-medium">{f.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {Math.round(f.nutrients.kcal ?? 0)} kcal · {f.serving_qty}{' '}
+                    {Math.round(f.nutrients.kcal ?? 0)} calories · {f.serving_qty}{' '}
                     {f.serving_unit}
                     {f.brand ? ` · ${f.brand}` : ''}
                   </div>

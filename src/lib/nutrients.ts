@@ -20,7 +20,7 @@ export interface NutrientDef {
 
 // Daily Values per FDA (adults & children 4+). Used for "% DV" displays.
 export const NUTRIENTS: NutrientDef[] = [
-  { key: 'kcal', label: 'Calories', unit: 'kcal', dv: null, group: 'energy', usda: 1008 },
+  { key: 'kcal', label: 'Calories', unit: '', dv: null, group: 'energy', usda: 1008 },
   { key: 'protein', label: 'Protein', unit: 'g', dv: 50, group: 'macro', usda: 1003 },
   { key: 'carb', label: 'Carbs', unit: 'g', dv: 275, group: 'macro', usda: 1005 },
   { key: 'fat', label: 'Fat', unit: 'g', dv: 78, group: 'macro', usda: 1004 },

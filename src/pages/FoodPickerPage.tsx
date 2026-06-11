@@ -252,7 +252,7 @@ export function FoodPickerPage() {
                     <div className="text-sm font-medium">{m.name}</div>
                     <div className="text-xs text-muted-foreground">
                       {m.items.length} {m.items.length === 1 ? 'item' : 'items'}{' '}
-                      · {kcal} kcal
+                      · {kcal} calories
                     </div>
                   </div>
                   <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -371,7 +371,7 @@ export function FoodPickerPage() {
             <span className="text-muted-foreground">
               {picks.length} {picks.length === 1 ? 'food' : 'foods'} selected
             </span>
-            <span className="font-semibold">{Math.round(multiKcal)} kcal</span>
+            <span className="font-semibold">{Math.round(multiKcal)} calories</span>
           </div>
           <Button
             className="w-full"
@@ -414,7 +414,7 @@ export function FoodPickerPage() {
                         >
                           <span className="truncate">{e.food_name}</span>
                           <span className="shrink-0">
-                            {Math.round((e.nutrients.kcal ?? 0) * e.servings)} kcal
+                            {Math.round((e.nutrients.kcal ?? 0) * e.servings)} calories
                           </span>
                         </li>
                       ))}
@@ -479,7 +479,7 @@ export function FoodPickerPage() {
                         <span className="truncate">{it.food_name}</span>
                         <span className="shrink-0">
                           {Math.round((it.nutrients.kcal ?? 0) * it.servings)}{' '}
-                          kcal
+                          calories
                         </span>
                       </li>
                     ))}
@@ -575,7 +575,7 @@ function FoodRow({
     <div className="min-w-0 flex-1">
       <div className="text-sm font-medium">{food.name}</div>
       <div className="text-xs text-muted-foreground">
-        {Math.round(food.nutrients.kcal ?? 0)} kcal · {food.serving_qty}{' '}
+        {Math.round(food.nutrients.kcal ?? 0)} calories · {food.serving_qty}{' '}
         {food.serving_unit}
         {food.brand ? ` · ${food.brand}` : ''}
       </div>

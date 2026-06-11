@@ -225,7 +225,7 @@ export function DiaryPage() {
               <span className="text-2xl font-bold text-foreground">
                 {consumedKcal}
               </span>{' '}
-              kcal eaten.{' '}
+              calories eaten.{' '}
               <button
                 className="text-primary underline"
                 onClick={() => nav('/profile')}
@@ -255,7 +255,7 @@ export function DiaryPage() {
               <div className="flex items-center justify-between border-b border-border p-3">
                 <span className="font-semibold">{m.label}</span>
                 <span className="text-xs text-muted-foreground">
-                  {mealKcal} kcal
+                  {mealKcal} calories
                 </span>
               </div>
               <div className="divide-y divide-border">
@@ -286,7 +286,7 @@ export function DiaryPage() {
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-border p-3">
             <span className="font-semibold">Exercise</span>
-            <span className="text-xs text-muted-foreground">{burned} kcal</span>
+            <span className="text-xs text-muted-foreground">{burned} calories</span>
           </div>
           <div className="divide-y divide-border">
             {(exEntries ?? []).map((e) => (
@@ -481,8 +481,7 @@ function FoodEntryRow({
     <div className="min-w-0 flex-1">
       <div className="truncate text-sm font-medium">{entry.food_name}</div>
       <div className="text-xs text-muted-foreground">
-        {entry.servings} × {entry.serving_qty} {entry.serving_unit} ·{' '}
-        {Math.round((entry.nutrients.kcal ?? 0) * entry.servings)} kcal
+        {Math.round((entry.nutrients.kcal ?? 0) * entry.servings)} calories
       </div>
     </div>
   )
@@ -525,7 +524,7 @@ function ExerciseEntryRow({
         <div className="text-xs text-muted-foreground">
           {entry.duration_min ? `${entry.duration_min} min` : ''}
           {entry.distance_mi ? ` · ${entry.distance_mi} mi` : ''} ·{' '}
-          {entry.calories} kcal
+          {entry.calories} calories
         </div>
       </div>
     </button>

@@ -405,7 +405,7 @@ export function ExerciseAddPage() {
                 <span className="text-2xl font-bold">
                   {calories}{' '}
                   <span className="text-sm font-medium text-muted-foreground">
-                    kcal
+                    calories
                   </span>
                 </span>
               </div>

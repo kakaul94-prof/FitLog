@@ -138,7 +138,7 @@ function MacroPie({ nutrients }: { nutrients: Nutrients }) {
                 : formatNutrient(totalG)}
             </span>
             <span className="text-[10px] text-muted-foreground">
-              {basis === 'cal' ? 'kcal' : 'g'}
+              {basis === 'cal' ? 'calories' : 'g'}
             </span>
           </div>
         </div>

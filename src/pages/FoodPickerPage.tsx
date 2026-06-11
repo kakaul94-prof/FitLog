@@ -9,7 +9,6 @@ import {
   ListChecks,
   CheckCircle2,
   Circle,
-  Pencil,
   Trash2,
   Loader2,
   Database,
@@ -24,9 +23,8 @@ import {
   useFoodHistory,
   useSaveFood,
 } from '@/features/foods/useFoods'
-import { useDiary, useLogFood, useLogFoods, useCopyMeal } from '@/features/diary/useDiary'
+import { useDiary, useLogFoods, useCopyMeal } from '@/features/diary/useDiary'
 import { useMeals, useLogMeal, type MealWithItems } from '@/features/meals/useMeals'
-import { scaleNutrients, servingOptions } from '@/lib/nutrients'
 import {
   searchUsdaFoods,
   getUsdaFood,
@@ -48,11 +46,7 @@ export function FoodPickerPage() {
   const [search, setSearch] = useState('')
   const { data: foods } = useFoods(search)
   const [multi, setMulti] = useState(false)
-  const [selected, setSelected] = useState<Food | null>(null)
-  const [servings, setServings] = useState('1')
-  const [unitId, setUnitId] = useState('base')
   const [picks, setPicks] = useState<Pick[]>([])
-  const log = useLogFood()
   const logMany = useLogFoods()
   const del = useDeleteFood()
   const { data: history } = useFoodHistory()
@@ -74,22 +68,19 @@ export function FoodPickerPage() {
   const isPicked = (id: string) => picks.some((p) => p.food.id === id)
 
   const toggleMulti = () => {
-    if (multi) {
-      setMulti(false)
-      setPicks([])
-    } else {
-      // carry a single selection over so you don't lose it switching modes
-      setPicks(selected ? [{ food: selected, servings }] : [])
-      setSelected(null)
-      setMulti(true)
-    }
+    setMulti((m) => !m)
+    setPicks([])
+  }
+
+  // Tapping a food opens its page (set details there + "Add to {meal}").
+  const openFood = (f: Food) => {
+    const back = encodeURIComponent(location.pathname + location.search)
+    nav(`/foods/${f.id}?meal=${meal}&date=${date}&returnTo=${back}`)
   }
 
   const onRowTap = (f: Food) => {
     if (!multi) {
-      setSelected(f)
-      setUnitId('base')
-      setServings('1')
+      openFood(f)
       return
     }
     setPicks((prev) =>
@@ -99,32 +90,10 @@ export function FoodPickerPage() {
     )
   }
 
-  const editFood = (f: Food) => {
-    const back = encodeURIComponent(location.pathname + location.search)
-    nav(`/foods/${f.id}?returnTo=${back}`)
-  }
-
   const removeFood = (f: Food) => {
     if (!confirm(`Remove "${f.name}" from your foods?`)) return
-    if (selected?.id === f.id) setSelected(null)
     setPicks((prev) => prev.filter((p) => p.food.id !== f.id))
     del.mutate(f.id)
-  }
-
-  const add = async () => {
-    if (!selected || !chosen) return
-    await log.mutateAsync({
-      entry_date: date,
-      meal,
-      food: selected,
-      servings: parseFloat(servings) || 1,
-      unit: {
-        serving_qty: chosen.qty,
-        serving_unit: chosen.label,
-        nutrients: chosen.nutrients,
-      },
-    })
-    nav('/')
   }
 
   const addMany = async () => {
@@ -158,7 +127,7 @@ export function FoodPickerPage() {
   }
 
   // Import a USDA result into the library (per 100 g), then drop it into the
-  // normal log flow — select it (serving sheet) or add to the multi-add picks.
+  // normal log flow — open its food page, or add to the multi-add picks.
   const pickUsda = async (item: UsdaSearchItem) => {
     setImporting(item.fdcId)
     setUsdaErr('')
@@ -183,9 +152,7 @@ export function FoodPickerPage() {
             : [...prev, { food: saved, servings: '1' }],
         )
       } else {
-        setSelected(saved)
-        setUnitId('base')
-        setServings('1')
+        openFood(saved)
       }
     } catch (e) {
       setUsdaErr(e instanceof Error ? e.message : 'Import failed')
@@ -207,12 +174,6 @@ export function FoodPickerPage() {
   const mealList = (meals ?? []).filter(
     (m) => !q || m.name.toLowerCase().includes(q),
   )
-
-  const options = selected ? servingOptions(selected) : []
-  const chosen = options.find((o) => o.id === unitId) ?? options[0]
-  const preview = chosen
-    ? scaleNutrients(chosen.nutrients, parseFloat(servings) || 0)
-    : null
 
   const multiKcal = picks.reduce(
     (s, p) => s + (p.food.nutrients.kcal ?? 0) * (parseFloat(p.servings) || 0),
@@ -315,7 +276,7 @@ export function FoodPickerPage() {
         </div>
         <Card className="divide-y divide-border overflow-hidden">
           {visible.map((f) => {
-            const active = multi ? isPicked(f.id) : selected?.id === f.id
+            const active = multi && isPicked(f.id)
             return (
               <div
                 key={f.id}
@@ -341,22 +302,13 @@ export function FoodPickerPage() {
                     ))}
                 </button>
                 {!multi && (
-                  <>
-                    <button
-                      onClick={() => editFood(f)}
-                      className="shrink-0 p-3 text-muted-foreground active:text-primary"
-                      aria-label={`Edit ${f.name}`}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => removeFood(f)}
-                      className="shrink-0 p-3 text-muted-foreground active:text-destructive"
-                      aria-label={`Remove ${f.name}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </>
+                  <button
+                    onClick={() => removeFood(f)}
+                    className="shrink-0 p-3 text-muted-foreground active:text-destructive"
+                    aria-label={`Remove ${f.name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 )}
               </div>
             )
@@ -438,45 +390,6 @@ export function FoodPickerPage() {
           </>
         )}
       </div>
-
-      {!multi && selected && (
-        <div className="fixed bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 space-y-2 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <div className="text-sm font-medium">{selected.name}</div>
-          <div className="flex items-center gap-2">
-            <Input
-              type="number"
-              inputMode="decimal"
-              className="w-20"
-              value={servings}
-              onChange={(e) => setServings(e.target.value)}
-            />
-            <span className="text-sm text-muted-foreground">×</span>
-            {options.length > 1 ? (
-              <select
-                value={chosen?.id}
-                onChange={(e) => setUnitId(e.target.value)}
-                className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm"
-              >
-                {options.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.qty === 1 ? o.label : `${o.qty} ${o.label}`}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-sm text-muted-foreground">
-                {selected.serving_qty} {selected.serving_unit}
-              </span>
-            )}
-            <span className="ml-auto shrink-0 text-sm font-semibold">
-              {Math.round(preview?.kcal ?? 0)} kcal
-            </span>
-          </div>
-          <Button className="w-full" onClick={add} disabled={log.isPending}>
-            {log.isPending ? 'Adding…' : `Add to ${meal}`}
-          </Button>
-        </div>
-      )}
 
       {multi && picks.length > 0 && (
         <div className="fixed bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 space-y-2 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">

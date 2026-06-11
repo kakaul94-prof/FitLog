@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label'
 import { NutrientFields } from '@/components/NutrientFields'
 import { useFood, useSaveFood } from '@/features/foods/useFoods'
 import { useAddIngredient } from '@/features/recipes/useRecipes'
+import { useLogFood } from '@/features/diary/useDiary'
 import { scanLabel, type ScannedFood } from '@/lib/scanLabel'
 import { detectBarcodeFromImage, lookupBarcode } from '@/lib/barcode'
 import {
@@ -33,7 +34,7 @@ import {
   massUnitToGrams,
   computePortionNutrients,
 } from '@/lib/nutrients'
-import type { Food, NutrientKey, Nutrients, Portion } from '@/lib/database.types'
+import type { Food, Meal, NutrientKey, Nutrients, Portion } from '@/lib/database.types'
 
 export function FoodFormPage() {
   const nav = useNavigate()
@@ -42,9 +43,15 @@ export function FoodFormPage() {
   const addToRecipe = params.get('addToRecipe')
   const returnTo = params.get('returnTo')
   const backTo = returnTo || (addToRecipe ? `/recipes/${addToRecipe}` : '/foods')
+  // When opened from "Add to {meal}", we can log this food straight to the diary.
+  const mealParam = params.get('meal')
+  const dateParam = params.get('date')
+  const logTo =
+    mealParam && dateParam ? { meal: mealParam as Meal, date: dateParam } : null
   const { data: existing } = useFood(id)
   const saveFood = useSaveFood()
   const addIng = useAddIngredient()
+  const log = useLogFood()
 
   const [name, setName] = useState('')
   const [brand, setBrand] = useState('')
@@ -276,8 +283,8 @@ export function FoodFormPage() {
     }
   }
 
-  const onSave = async () => {
-    if (!name.trim()) return
+  // Persist the current form to the food library, returning the saved food.
+  const persist = async (): Promise<Food> => {
     const r = scaleToServing()
     setNutrients(r.nutrients)
     setServingGrams(r.servingGrams)
@@ -294,7 +301,7 @@ export function FoodFormPage() {
           ? { nutrients: p.nutrients }
           : {}),
       }))
-    const saved = await saveFood.mutateAsync({
+    return saveFood.mutateAsync({
       id,
       name: name.trim(),
       brand: brand.trim() || null,
@@ -307,6 +314,11 @@ export function FoodFormPage() {
       nutrients: r.nutrients,
       portions: cleanPortions,
     })
+  }
+
+  const onSave = async () => {
+    if (!name.trim()) return
+    const saved = await persist()
     if (addToRecipe && !id) {
       await addIng.mutateAsync({
         recipeFoodId: addToRecipe,
@@ -315,6 +327,19 @@ export function FoodFormPage() {
       })
     }
     nav(backTo)
+  }
+
+  // Save any edits, then log one serving of this food to the meal we came from.
+  const addToMeal = async () => {
+    if (!name.trim() || !logTo) return
+    const saved = await persist()
+    await log.mutateAsync({
+      entry_date: logTo.date,
+      meal: logTo.meal,
+      food: saved,
+      servings: 1,
+    })
+    nav('/')
   }
 
   return (
@@ -645,9 +670,22 @@ export function FoodFormPage() {
           </CardContent>
         </Card>
 
+        {logTo && (
+          <Button
+            className="w-full"
+            size="lg"
+            onClick={addToMeal}
+            disabled={saveFood.isPending || log.isPending || !name.trim()}
+          >
+            {saveFood.isPending || log.isPending
+              ? 'Adding…'
+              : `Add to ${logTo.meal}`}
+          </Button>
+        )}
         <Button
           className="w-full"
           size="lg"
+          variant={logTo ? 'outline' : 'default'}
           onClick={onSave}
           disabled={saveFood.isPending || addIng.isPending || !name.trim()}
         >

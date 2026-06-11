@@ -36,3 +36,39 @@ export function useCreateCustomExercise() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['customExercises'] }),
   })
 }
+
+export function useUpdateCustomExercise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...patch
+    }: { id: string } & Partial<
+      Pick<CustomExercise, 'name' | 'muscle' | 'equipment' | 'type'>
+    >) => {
+      const { error } = await supabase
+        .from('custom_exercises')
+        .update(patch)
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['customExercises'] }),
+  })
+}
+
+// Deletes the library row only. Past workouts/templates keep their own
+// exercise_key + exercise_name snapshot (no FK), so history is unaffected — the
+// lift just stops appearing in the pickers.
+export function useDeleteCustomExercise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('custom_exercises')
+        .delete()
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['customExercises'] }),
+  })
+}

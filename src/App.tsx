@@ -35,6 +35,7 @@ const WorkoutPage = lazyPage(() => import('@/pages/WorkoutPage'), 'WorkoutPage')
 const ExercisePickerPage = lazyPage(() => import('@/pages/ExercisePickerPage'), 'ExercisePickerPage')
 const ExerciseDetailPage = lazyPage(() => import('@/pages/ExerciseDetailPage'), 'ExerciseDetailPage')
 const WorkoutCalendarPage = lazyPage(() => import('@/pages/WorkoutCalendarPage'), 'WorkoutCalendarPage')
+const CustomExercisesPage = lazyPage(() => import('@/pages/CustomExercisesPage'), 'CustomExercisesPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
 const RecipesPage = lazyPage(() => import('@/pages/RecipesPage'), 'RecipesPage')
 const MealsPage = lazyPage(() => import('@/pages/MealsPage'), 'MealsPage')
@@ -89,6 +90,7 @@ const router = createBrowserRouter(
       <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
       <Route path="/lift/exercise/:key" element={<ExerciseDetailPage />} />
       <Route path="/lift/calendar" element={<WorkoutCalendarPage />} />
+      <Route path="/lift/custom-exercises" element={<CustomExercisesPage />} />
       <Route path="/routines/:id" element={<RoutineEditPage />} />
       <Route path="/recipes/:id" element={<RecipeEditPage />} />
     </Route>,

@@ -127,7 +127,7 @@ export function useUpdateWorkout() {
   })
 }
 
-/** Add an exercise to a workout: pre-fills sets from last time; optionally supersets with another. */
+/** Add an exercise to a workout: matches last time's set count (blank reps/weight); optionally supersets with another. */
 export function useAddExercise() {
   const qc = useQueryClient()
   return useMutation({
@@ -202,8 +202,8 @@ export function useAddExercise() {
           exercise_key: key,
           exercise_name: name,
           set_number: s.set_number,
-          reps: s.reps,
-          weight_lb: s.weight_lb,
+          reps: null,
+          weight_lb: null,
         }))
       } else {
         rows = [

@@ -219,15 +219,14 @@ function ExerciseCard({
   )
 
   const addSetRow = () => {
-    const last = sets[sets.length - 1]
     addSet.mutate({
       workout_id: workoutId,
       workout_exercise_id: ex.id,
       exercise_key: ex.exercise_key,
       exercise_name: ex.exercise_name,
       set_number: sets.length + 1,
-      reps: last?.reps ?? null,
-      weight_lb: last?.weight_lb ?? null,
+      reps: null,
+      weight_lb: null,
     })
   }
 

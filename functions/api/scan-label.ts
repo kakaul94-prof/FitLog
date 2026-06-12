@@ -45,6 +45,7 @@ Rules:
 - Use the PER SERVING amounts.
 - Units per field — ${unitLine()}
 - "Includes Xg Added Sugars" maps to added_sugar.
+- A value may be written as "<percent>% <amount><unit>" (e.g. "Total Fat 12% 8 g"); the percent is the Daily Value — use the <amount> with its <unit> and IGNORE the percent.
 - serving_qty = the serving amount as a number; serving_unit = its text (e.g. "cup", "g", "fl oz"); serving_grams = the gram weight in parentheses, or null.
 - name = the product name if present, otherwise "".
 - If a value is missing or unreadable, OMIT that key entirely. Never guess and never output 0 for a value that is not stated.
@@ -169,10 +170,11 @@ export const onRequestPost = async (context: {
   if (hasValues(direct)) return json(direct)
 
   let parsed: unknown
+  let raw = ''
   try {
     // No response_format / json_schema: some models back-fill every schema
     // property as 0. The prompt already mandates JSON-only; extractJson copes.
-    const out = await runWithAgree(ai, TEXT_MODEL, {
+    raw = await runWithAgree(ai, TEXT_MODEL, {
       messages: [
         {
           role: 'system',
@@ -184,7 +186,7 @@ export const onRequestPost = async (context: {
       max_tokens: 1024,
       temperature: 0,
     })
-    parsed = extractJson(out)
+    parsed = extractJson(raw)
   } catch (e) {
     return json(
       {
@@ -204,7 +206,11 @@ export const onRequestPost = async (context: {
     return json(
       {
         error: "Couldn't read the label. Try a clearer, straight-on photo.",
-        detail: 'no values parsed | read: ' + labelText.slice(0, 600),
+        detail:
+          'no values parsed | structured: ' +
+          raw.slice(0, 400) +
+          ' | read: ' +
+          labelText.slice(0, 400),
       },
       422,
     )

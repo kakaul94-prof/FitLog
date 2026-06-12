@@ -14,7 +14,7 @@ interface Env {
 }
 
 const VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct'
-const TEXT_MODEL = '@cf/zai-org/glm-4.7-flash'
+const TEXT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
 
 // key -> unit. Mirrors src/lib/nutrients.ts; kept inline so the function stays
 // self-contained (the `@/` alias / browser modules don't apply to Functions).
@@ -90,6 +90,23 @@ function hasValues(obj: unknown): boolean {
   )
 }
 
+// Pull the assistant text out of a model response. Workers AI native models
+// return { response }, while OpenAI-compatible partner models return
+// { choices: [{ message: { content, reasoning } }] }.
+function extractText(res: unknown): string {
+  const r = res as {
+    response?: unknown
+    choices?: Array<{ message?: { content?: unknown; reasoning?: unknown } }>
+  }
+  if (typeof r?.response === 'string') return r.response
+  const msg = r?.choices?.[0]?.message
+  if (typeof msg?.content === 'string' && msg.content.trim()) return msg.content
+  if (typeof msg?.reasoning === 'string' && msg.reasoning.trim())
+    return msg.reasoning
+  if (r?.response != null) return JSON.stringify(r.response)
+  return JSON.stringify(res)
+}
+
 // Run a model, accepting Meta's license on first use (Workers AI error 5016),
 // then retrying. The binding is authenticated, so no token is needed.
 async function runWithAgree(
@@ -106,8 +123,7 @@ async function runWithAgree(
     await ai.run(model, { prompt: 'agree' })
     res = await ai.run(model, input)
   }
-  const r = res as { response?: unknown }
-  return typeof r?.response === 'string' ? r.response : JSON.stringify(r?.response ?? res)
+  return extractText(res)
 }
 
 export const onRequestPost = async (context: {

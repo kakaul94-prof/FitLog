@@ -14,7 +14,7 @@ interface Env {
 }
 
 const VISION_MODEL = '@cf/meta/llama-3.2-11b-vision-instruct'
-const TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct'
+const TEXT_MODEL = '@cf/zai-org/glm-4.7-flash'
 
 // key -> unit. Mirrors src/lib/nutrients.ts; kept inline so the function stays
 // self-contained (the `@/` alias / browser modules don't apply to Functions).

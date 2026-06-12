@@ -36,7 +36,7 @@ const unitLine = () => {
 }
 
 // Step 1 — let the vision model do what it's good at: read the label as text.
-const READ_PROMPT = `Transcribe the Nutrition Facts label in this image as plain text. Output ONLY the text printed on the label — do NOT describe the image, the layout, or the language, and add no commentary. For the serving size, servings per container, calories, and EVERY nutrient, vitamin, and mineral listed, write the name followed by its PER SERVING number and unit, one per line (e.g. "Calories 150", "Total Fat 8 g", "Sodium 200 mg", "Protein 5 g"). Copy all numbers exactly — do not round, convert, or omit. Include the product name and brand if visible.`
+const READ_PROMPT = `Transcribe the Nutrition Facts label in this image as plain text. Output ONLY the text printed on the label — do NOT describe the image, the layout, or the language, and add no commentary. For the serving size, servings per container, calories, and EVERY nutrient, vitamin, and mineral listed, write the name followed by its PER SERVING number and unit, one per line (e.g. "Calories 150", "Total Fat 8 g", "Sodium 200 mg", "Protein 5 g"). Always give the actual amount with its unit (g, mg, or mcg) — not only the % Daily Value. Copy all numbers exactly — do not round, convert, or omit. Include the product name and brand if visible.`
 
 // Step 2 — a text model turns that transcription into our JSON shape.
 const structPrompt = (labelText: string) =>
@@ -46,7 +46,7 @@ Rules:
 - Units per field — ${unitLine()}
 - "Includes Xg Added Sugars" maps to added_sugar.
 - A value may be written as "<percent>% <amount><unit>" (e.g. "Total Fat 12% 8 g"); the percent is the Daily Value — use the <amount> with its <unit> and IGNORE the percent.
-- serving_qty = the serving amount as a number; serving_unit = its text (e.g. "cup", "g", "fl oz"); serving_grams = the gram weight in parentheses, or null.
+- serving_qty = the serving amount as a decimal number, never a fraction (write "2/3" as 0.67, "1 1/2" as 1.5); serving_unit = its text (e.g. "cup", "g", "fl oz"); serving_grams = the gram weight in parentheses, or null.
 - name = the product name if present, otherwise "".
 - If a value is missing or unreadable, OMIT that key entirely. Never guess and never output 0 for a value that is not stated.
 JSON keys: name (string), brand (string), serving_qty (number), serving_unit (string), serving_grams (number or null), nutrients (object whose keys come ONLY from this list: ${KEYS.join(', ')}).
@@ -68,12 +68,22 @@ function decodeBase64(b64: string): Uint8Array {
   return bytes
 }
 
-// Extract the first {...} object from a response that may include prose/```json.
+// Extract the first {...} object from a response that may include prose/```json,
+// repairing the two defects LLMs commonly emit: bare fractions as values
+// (e.g. "serving_qty": 2/3) and trailing commas.
 function extractJson(text: string): unknown {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start === -1 || end === -1 || end < start) throw new Error('no json')
-  return JSON.parse(text.slice(start, end + 1))
+  const body = text
+    .slice(start, end + 1)
+    .replace(
+      /(:\s*)(\d+)\s*\/\s*(\d+)(\s*[,}\]\n])/g,
+      (_m, pre, n, d, post) =>
+        `${pre}${String(parseFloat((Number(n) / Number(d)).toFixed(4)))}${post}`,
+    )
+    .replace(/,(\s*[}\]])/g, '$1')
+  return JSON.parse(body)
 }
 
 // A usable result has at least one positive nutrient value. Guards against the

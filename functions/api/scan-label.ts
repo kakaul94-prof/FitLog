@@ -36,7 +36,7 @@ const unitLine = () => {
 }
 
 // Step 1 — let the vision model do what it's good at: read the label as text.
-const READ_PROMPT = `Read the Nutrition Facts label in this image and transcribe it precisely as plain text. Include the serving size, the servings per container, and the PER SERVING amount and unit for calories and every nutrient listed (including any vitamins and minerals). Also include the product name and brand if visible. Do not convert, round, or omit anything.`
+const READ_PROMPT = `Transcribe the Nutrition Facts label in this image as plain text. Output ONLY the text printed on the label — do NOT describe the image, the layout, or the language, and add no commentary. For the serving size, servings per container, calories, and EVERY nutrient, vitamin, and mineral listed, write the name followed by its PER SERVING number and unit, one per line (e.g. "Calories 150", "Total Fat 8 g", "Sodium 200 mg", "Protein 5 g"). Copy all numbers exactly — do not round, convert, or omit. Include the product name and brand if visible.`
 
 // Step 2 — a text model turns that transcription into our JSON shape.
 const structPrompt = (labelText: string) =>
@@ -52,22 +52,6 @@ JSON keys: name (string), brand (string), serving_qty (number), serving_unit (st
 
 Nutrition Facts text:
 ${labelText}`
-
-const SCHEMA = {
-  type: 'object',
-  properties: {
-    name: { type: 'string' },
-    brand: { type: 'string' },
-    serving_qty: { type: 'number' },
-    serving_unit: { type: 'string' },
-    serving_grams: { type: ['number', 'null'] },
-    nutrients: {
-      type: 'object',
-      properties: Object.fromEntries(KEYS.map((k) => [k, { type: 'number' }])),
-    },
-  },
-  required: ['nutrients'],
-}
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -89,6 +73,20 @@ function extractJson(text: string): unknown {
   const end = text.lastIndexOf('}')
   if (start === -1 || end === -1 || end < start) throw new Error('no json')
   return JSON.parse(text.slice(start, end + 1))
+}
+
+// A usable result has at least one positive nutrient value. Guards against the
+// model returning an empty or all-zero `nutrients` object (which would silently
+// fill the form with zeros).
+function hasValues(obj: unknown): boolean {
+  const n = (obj as { nutrients?: Record<string, unknown> } | null)?.nutrients
+  return (
+    !!n &&
+    typeof n === 'object' &&
+    Object.values(n).some(
+      (v) => typeof v === 'number' && Number.isFinite(v) && v > 0,
+    )
+  )
 }
 
 // Run a model, accepting Meta's license on first use (Workers AI error 5016),
@@ -168,10 +166,12 @@ export const onRequestPost = async (context: {
   } catch {
     direct = null
   }
-  if (direct && typeof direct === 'object' && 'nutrients' in (direct as object))
-    return json(direct)
+  if (hasValues(direct)) return json(direct)
 
+  let parsed: unknown
   try {
+    // No response_format / json_schema: some models back-fill every schema
+    // property as 0. The prompt already mandates JSON-only; extractJson copes.
     const out = await runWithAgree(ai, TEXT_MODEL, {
       messages: [
         {
@@ -183,9 +183,8 @@ export const onRequestPost = async (context: {
       ],
       max_tokens: 1024,
       temperature: 0,
-      response_format: { type: 'json_schema', json_schema: SCHEMA },
     })
-    return json(extractJson(out))
+    parsed = extractJson(out)
   } catch (e) {
     return json(
       {
@@ -193,9 +192,21 @@ export const onRequestPost = async (context: {
         detail:
           (e instanceof Error ? e.message : String(e)) +
           ' | read: ' +
-          labelText.slice(0, 200),
+          labelText.slice(0, 600),
       },
       422,
     )
   }
+
+  // Structured but empty/all-zero — treat as an unreadable label rather than
+  // silently zeroing the form. labelText is surfaced to aid diagnosis.
+  if (!hasValues(parsed))
+    return json(
+      {
+        error: "Couldn't read the label. Try a clearer, straight-on photo.",
+        detail: 'no values parsed | read: ' + labelText.slice(0, 600),
+      },
+      422,
+    )
+  return json(parsed)
 }

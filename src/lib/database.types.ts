@@ -245,6 +245,10 @@ export interface WorkoutExercise {
   position: number
   notes: string | null
   superset_group: number | null
+  // Wall-clock timing for the whole exercise: Start stamps when you begin the
+  // first set, Done stamps the end. ended_at non-null = the exercise is done.
+  started_at: string | null
+  ended_at: string | null
   created_at: string
 }
 
@@ -262,8 +266,6 @@ export interface WorkoutSet {
   distance: number | null
   effort: number | null
   is_warmup: boolean
-  started_at: string | null
-  ended_at: string | null
   created_at: string
 }
 

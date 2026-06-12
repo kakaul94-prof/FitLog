@@ -310,9 +310,16 @@ alter table public.workout_sets
 create index if not exists workout_sets_we_idx
   on public.workout_sets(workout_exercise_id);
 
--- Per-set wall-clock timing (started_at / ended_at). ended_at non-null = the
--- set is "done"; an exercise drops into the workout's Completed section once
--- all its sets are ended.
+-- Per-exercise wall-clock timing (started_at / ended_at). Tap Start on an
+-- exercise to stamp when you begin the first set; Done stamps the end and rolls
+-- the exercise (or its whole superset block) into the workout's Completed
+-- section. ended_at non-null = the exercise is done.
+alter table public.workout_exercises
+  add column if not exists started_at timestamptz,
+  add column if not exists ended_at  timestamptz;
+
+-- Legacy per-set timing columns, superseded by the per-exercise columns above.
+-- Unused by the app but kept so existing rows aren't dropped.
 alter table public.workout_sets
   add column if not exists started_at timestamptz,
   add column if not exists ended_at  timestamptz;

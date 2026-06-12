@@ -245,6 +245,34 @@ export function useUpdateExercise() {
   })
 }
 
+/**
+ * Stamp start/end timing on every exercise in a superset group at once, so the
+ * whole block shares one Start/Done (filters by workout + superset_group).
+ */
+export function useUpdateSupersetTiming() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      workoutId,
+      group,
+      patch,
+    }: {
+      workoutId: string
+      group: number
+      patch: { started_at?: string | null; ended_at?: string | null }
+    }) => {
+      const { error } = await supabase
+        .from('workout_exercises')
+        .update(patch)
+        .eq('workout_id', workoutId)
+        .eq('superset_group', group)
+      if (error) throw error
+      return { workoutId }
+    },
+    onSuccess: (d) => qc.invalidateQueries({ queryKey: ['workout', d.workoutId] }),
+  })
+}
+
 export function useDeleteExercise() {
   const qc = useQueryClient()
   return useMutation({

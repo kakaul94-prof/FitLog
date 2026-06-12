@@ -23,6 +23,7 @@ import {
   useUpdateSet,
   useDeleteSet,
   useUpdateExercise,
+  useUpdateSupersetTiming,
   useDeleteExercise,
   useLastExerciseNote,
   useUpdateWorkout,
@@ -104,11 +105,10 @@ export function WorkoutPage() {
     sets.filter((s) => s.workout_exercise_id === weId)
 
   // A block (standalone exercise or a superset group) drops into "Completed"
-  // once it has sets and every one of them is ended. Supersets move as a unit.
-  const blockDone = (b: { exercises: WorkoutExercise[] }) => {
-    const bs = b.exercises.flatMap((e) => setsFor(e.id))
-    return bs.length > 0 && bs.every((s) => s.ended_at != null)
-  }
+  // once every exercise in it is marked done (ended_at set). Supersets move as
+  // a unit — the whole block waits until all its exercises are done.
+  const blockDone = (b: { exercises: WorkoutExercise[] }) =>
+    b.exercises.every((e) => e.ended_at != null)
   const activeBlocks = blocks.filter((b) => !blockDone(b))
   const completedBlocks = blocks.filter(blockDone)
 
@@ -117,23 +117,13 @@ export function WorkoutPage() {
     exercises: WorkoutExercise[]
   }) =>
     b.group != null ? (
-      <div
+      <SupersetBlock
         key={`sg-${b.group}`}
-        className="space-y-2 rounded-xl border-2 border-primary/30 p-2"
-      >
-        <div className="px-1 text-xs font-semibold uppercase tracking-wide text-primary">
-          Superset
-        </div>
-        {b.exercises.map((ex, i) => (
-          <ExerciseCard
-            key={ex.id}
-            ex={ex}
-            sets={setsFor(ex.id)}
-            workoutId={id!}
-            label={`${i + 1}`}
-          />
-        ))}
-      </div>
+        group={b.group}
+        exercises={b.exercises}
+        setsFor={setsFor}
+        workoutId={id!}
+      />
     ) : (
       <ExerciseCard
         key={b.exercises[0].id}
@@ -242,16 +232,132 @@ export function WorkoutPage() {
   )
 }
 
+// Start/Done control + clock window, shared by a standalone exercise and a
+// whole superset block. Start stamps the begin time; Done (toggle) stamps/clears
+// the end. `className` defaults to a bottom margin for use inside a card body.
+function TimingRow({
+  startedAt,
+  endedAt,
+  onStart,
+  onToggleDone,
+  className = 'mb-2',
+}: {
+  startedAt: string | null
+  endedAt: string | null
+  onStart: () => void
+  onToggleDone: () => void
+  className?: string
+}) {
+  const done = endedAt != null
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-2 px-1 text-xs text-muted-foreground',
+        className,
+      )}
+    >
+      {done ? (
+        <span className="tabular-nums">
+          {startedAt ? `${timeLabel(startedAt)}–` : ''}
+          {timeLabel(endedAt!)}
+        </span>
+      ) : startedAt ? (
+        <span className="tabular-nums">{timeLabel(startedAt)} –</span>
+      ) : (
+        <button
+          onClick={onStart}
+          className="flex items-center gap-1 font-medium text-primary active:opacity-70"
+        >
+          <Play className="h-3 w-3" /> Start
+        </button>
+      )}
+      <button
+        onClick={onToggleDone}
+        className={cn(
+          'ml-auto flex items-center gap-1 rounded-md px-2 py-1 font-medium',
+          done
+            ? 'bg-primary text-primary-foreground'
+            : 'bg-primary/10 text-primary active:bg-primary/20',
+        )}
+      >
+        <Check className="h-3.5 w-3.5" /> Done
+      </button>
+    </div>
+  )
+}
+
+// A superset: one shared Start/Done for the block (stamps all its exercises
+// together), then the member exercise cards with their own timing hidden.
+function SupersetBlock({
+  group,
+  exercises,
+  setsFor,
+  workoutId,
+}: {
+  group: number
+  exercises: WorkoutExercise[]
+  setsFor: (weId: string) => WorkoutSet[]
+  workoutId: string
+}) {
+  const timing = useUpdateSupersetTiming()
+  // The block's window is derived from its exercises (stamped together): start
+  // = earliest start; the block is done only once every exercise is ended.
+  const startedAt =
+    exercises
+      .map((e) => e.started_at)
+      .filter((x): x is string => x != null)
+      .sort()[0] ?? null
+  const allDone = exercises.every((e) => e.ended_at != null)
+  const endedAt = allDone
+    ? exercises.map((e) => e.ended_at!).sort().slice(-1)[0]
+    : null
+  const stamp = (patch: {
+    started_at?: string | null
+    ended_at?: string | null
+  }) => timing.mutate({ workoutId, group, patch })
+
+  return (
+    <div className="space-y-2 rounded-xl border-2 border-primary/30 p-2">
+      <div className="px-1 text-xs font-semibold uppercase tracking-wide text-primary">
+        Superset
+      </div>
+      <TimingRow
+        className=""
+        startedAt={startedAt}
+        endedAt={endedAt}
+        onStart={() => stamp({ started_at: new Date().toISOString() })}
+        onToggleDone={() =>
+          stamp({ ended_at: allDone ? null : new Date().toISOString() })
+        }
+      />
+      {exercises.map((ex, i) => (
+        <ExerciseCard
+          key={ex.id}
+          ex={ex}
+          sets={setsFor(ex.id)}
+          workoutId={workoutId}
+          label={`${i + 1}`}
+          showTiming={false}
+        />
+      ))}
+    </div>
+  )
+}
+
 function ExerciseCard({
   ex,
   sets,
   workoutId,
   label,
+  showTiming = true,
 }: {
   ex: WorkoutExercise
   sets: WorkoutSet[]
   workoutId: string
   label?: string
+  // Standalone exercises carry their own Start/Done; superset members hide it
+  // because the block shows a single shared control instead.
+  showTiming?: boolean
 }) {
   const nav = useNavigate()
   const addSet = useAddSet()
@@ -276,6 +382,13 @@ function ExerciseCard({
       weight_lb: null,
     })
   }
+
+  // Whole-exercise timing: Start stamps the beginning of the first set, Done
+  // stamps the end (and rolls the exercise into "Completed"). Tapping the
+  // filled Done again clears ended_at and reopens the exercise.
+  const done = ex.ended_at != null
+  const stamp = (patch: Partial<WorkoutExercise>) =>
+    updateEx.mutate({ id: ex.id, workoutId, ...patch })
 
   return (
     <Card className="overflow-hidden">
@@ -308,6 +421,16 @@ function ExerciseCard({
         </button>
       </div>
       <div className="p-2">
+        {showTiming && (
+          <TimingRow
+            startedAt={ex.started_at}
+            endedAt={ex.ended_at}
+            onStart={() => stamp({ started_at: new Date().toISOString() })}
+            onToggleDone={() =>
+              stamp({ ended_at: done ? null : new Date().toISOString() })
+            }
+          />
+        )}
         <div className="grid grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem] gap-2 px-1 pb-1 text-xs text-muted-foreground">
           <span className="text-center">Set</span>
           <span>lb</span>
@@ -369,7 +492,6 @@ function SetRow({
   const del = useDeleteSet()
   const save = (patch: Partial<WorkoutSet>) =>
     update.mutate({ id: set.id, workout_id: workoutId, ...patch })
-  const done = set.ended_at != null
 
   return (
     <div className="py-1">
@@ -411,36 +533,6 @@ function SetRow({
           aria-label="Delete set"
         >
           <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="mt-1 flex items-center gap-2 pl-10 pr-8 text-xs text-muted-foreground">
-        {done ? (
-          <span className="tabular-nums">
-            {set.started_at ? `${timeLabel(set.started_at)}–` : ''}
-            {timeLabel(set.ended_at!)}
-          </span>
-        ) : set.started_at ? (
-          <span className="tabular-nums">{timeLabel(set.started_at)} –</span>
-        ) : (
-          <button
-            onClick={() => save({ started_at: new Date().toISOString() })}
-            className="flex items-center gap-1 font-medium text-primary active:opacity-70"
-          >
-            <Play className="h-3 w-3" /> Start
-          </button>
-        )}
-        <button
-          onClick={() =>
-            save({ ended_at: done ? null : new Date().toISOString() })
-          }
-          className={cn(
-            'ml-auto flex items-center gap-1 rounded-md px-2 py-1 font-medium',
-            done
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-primary/10 text-primary active:bg-primary/20',
-          )}
-        >
-          <Check className="h-3.5 w-3.5" /> Done
         </button>
       </div>
     </div>

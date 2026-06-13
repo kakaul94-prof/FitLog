@@ -6,6 +6,7 @@ import {
   Dumbbell,
   Play,
   CalendarDays,
+  PersonStanding,
   ClipboardList,
   Pencil,
   Trash2,
@@ -105,12 +106,20 @@ export function StrengthPage() {
             <h2 className="text-sm font-semibold text-muted-foreground">
               Recent workouts
             </h2>
-            <Link
-              to="/lift/calendar"
-              className="flex items-center gap-1 text-sm font-medium text-primary"
-            >
-              <CalendarDays className="h-4 w-4" /> Calendar
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link
+                to="/lift/volume"
+                className="flex items-center gap-1 text-sm font-medium text-primary"
+              >
+                <PersonStanding className="h-4 w-4" /> Muscle map
+              </Link>
+              <Link
+                to="/lift/calendar"
+                className="flex items-center gap-1 text-sm font-medium text-primary"
+              >
+                <CalendarDays className="h-4 w-4" /> Calendar
+              </Link>
+            </div>
           </div>
           <Card className="divide-y divide-border overflow-hidden">
             {(workouts ?? []).slice(0, 5).map((w) => (

@@ -199,6 +199,8 @@ export interface ExerciseNote {
   user_id: string
   exercise_key: string
   notes: string | null
+  // Exact curated-cue strings the user has hidden for this exercise.
+  hidden_cues: string[]
   created_at: string
   updated_at: string
 }

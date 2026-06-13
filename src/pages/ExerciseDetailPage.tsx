@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { useLongPress } from '@/lib/useLongPress'
 import { useExerciseHistory, useExerciseSessions } from '@/features/strength/useStrength'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import { estimated1RM } from '@/lib/calc'
@@ -174,18 +175,44 @@ function FormTab({
   const form = getExerciseForm(formKey)
   const { data: note } = useExerciseNotes(exerciseKey)
   const upsert = useUpsertExerciseNote()
-  const [notes, setNotes] = useState('')
+  const [draft, setDraft] = useState('')
 
-  // Populate the editor once the saved note loads (and on later changes).
-  useEffect(() => {
-    setNotes(note?.notes ?? '')
-  }, [note?.notes])
+  // "Your notes" is stored as newline-joined bullets in the notes column.
+  const noteLines = (note?.notes ?? '')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const hidden = note?.hidden_cues ?? []
 
-  const save = () => {
+  const addNote = () => {
+    const trimmed = draft.trim()
+    if (!exerciseKey || !trimmed) return
+    upsert.mutate({
+      exercise_key: exerciseKey,
+      notes: [...noteLines, trimmed].join('\n'),
+    })
+    setDraft('')
+  }
+
+  const removeNote = (idx: number) => {
+    if (!exerciseKey || !window.confirm('Remove this note?')) return
+    const next = noteLines.filter((_, i) => i !== idx)
+    upsert.mutate({
+      exercise_key: exerciseKey,
+      notes: next.length ? next.join('\n') : null,
+    })
+  }
+
+  // Curated cues ship in code, so "removing" one hides it for this exercise.
+  const hideCue = (text: string) => {
+    if (!exerciseKey || hidden.includes(text)) return
+    if (!window.confirm('Hide this cue for this exercise?')) return
+    upsert.mutate({ exercise_key: exerciseKey, hidden_cues: [...hidden, text] })
+  }
+
+  const restoreCues = () => {
     if (!exerciseKey) return
-    const trimmed = notes.trim()
-    if (trimmed === (note?.notes ?? '')) return
-    upsert.mutate({ exercise_key: exerciseKey, notes: trimmed || null })
+    upsert.mutate({ exercise_key: exerciseKey, hidden_cues: [] })
   }
 
   return (
@@ -193,11 +220,28 @@ function FormTab({
       {form ? (
         <>
           {form.setup && (
-            <FormSection title="Setup" items={form.setup} />
+            <FormSection
+              title="Setup"
+              items={form.setup}
+              hidden={hidden}
+              onHide={hideCue}
+            />
           )}
-          <FormSection title="Execution cues" items={form.cues} ordered />
+          <FormSection
+            title="Execution cues"
+            items={form.cues}
+            ordered
+            hidden={hidden}
+            onHide={hideCue}
+          />
           {form.mistakes && (
-            <FormSection title="Common mistakes" items={form.mistakes} cross />
+            <FormSection
+              title="Common mistakes"
+              items={form.mistakes}
+              cross
+              hidden={hidden}
+              onHide={hideCue}
+            />
           )}
         </>
       ) : (
@@ -209,22 +253,55 @@ function FormTab({
         </Card>
       )}
 
+      {hidden.length > 0 && (
+        <button
+          onClick={restoreCues}
+          className="px-1 text-xs font-medium text-primary"
+        >
+          Restore hidden cues ({hidden.length})
+        </button>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Your notes</CardTitle>
         </CardHeader>
-        <CardContent>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            onBlur={save}
-            placeholder="Add your own cues, reminders, or setup details…"
-            rows={4}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-          {upsert.isPending && (
-            <p className="mt-1 text-xs text-muted-foreground">Saving…</p>
+        <CardContent className="space-y-3">
+          {noteLines.length > 0 && (
+            <ul className="space-y-2">
+              {noteLines.map((line, i) => (
+                <BulletRow
+                  key={i}
+                  marker="•"
+                  markerClass="text-primary"
+                  text={line}
+                  onRemove={() => removeNote(i)}
+                />
+              ))}
+            </ul>
           )}
+          <div className="flex gap-2">
+            <input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  addNote()
+                }
+              }}
+              placeholder="Add a cue, reminder, or setup detail…"
+              className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <Button onClick={addNote} disabled={!draft.trim()}>
+              Add
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {upsert.isPending
+              ? 'Saving…'
+              : 'Press and hold any bullet to remove it.'}
+          </p>
         </CardContent>
       </Card>
 
@@ -236,17 +313,54 @@ function FormTab({
   )
 }
 
+// One bullet row: tap does nothing, press-and-hold (450ms) removes it.
+function BulletRow({
+  marker,
+  markerClass,
+  text,
+  onRemove,
+}: {
+  marker: string | number
+  markerClass?: string
+  text: string
+  onRemove: () => void
+}) {
+  const press = useLongPress(onRemove, () => {})
+  return (
+    <li
+      {...press}
+      className="flex cursor-pointer select-none gap-2.5 text-sm active:opacity-60"
+    >
+      <span
+        className={cn(
+          'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+          markerClass,
+        )}
+      >
+        {marker}
+      </span>
+      <span className="leading-snug">{text}</span>
+    </li>
+  )
+}
+
 function FormSection({
   title,
   items,
   ordered,
   cross,
+  hidden,
+  onHide,
 }: {
   title: string
   items: string[]
   ordered?: boolean
   cross?: boolean
+  hidden: string[]
+  onHide: (text: string) => void
 }) {
+  const visible = items.filter((it) => !hidden.includes(it))
+  if (!visible.length) return null
   return (
     <Card>
       <CardHeader>
@@ -254,22 +368,20 @@ function FormSection({
       </CardHeader>
       <CardContent>
         <ul className="space-y-2">
-          {items.map((it, i) => (
-            <li key={i} className="flex gap-2.5 text-sm">
-              <span
-                className={cn(
-                  'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-                  ordered
-                    ? 'bg-primary/15 text-primary'
-                    : cross
-                      ? 'text-destructive'
-                      : 'text-primary',
-                )}
-              >
-                {ordered ? i + 1 : cross ? '✕' : '•'}
-              </span>
-              <span className="leading-snug">{it}</span>
-            </li>
+          {visible.map((it, i) => (
+            <BulletRow
+              key={it}
+              marker={ordered ? i + 1 : cross ? '✕' : '•'}
+              markerClass={
+                ordered
+                  ? 'bg-primary/15 text-primary'
+                  : cross
+                    ? 'text-destructive'
+                    : 'text-primary'
+              }
+              text={it}
+              onRemove={() => onHide(it)}
+            />
           ))}
         </ul>
       </CardContent>

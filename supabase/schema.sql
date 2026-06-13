@@ -338,10 +338,14 @@ create table if not exists public.exercise_notes (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   exercise_key text not null,
   notes text,
+  hidden_cues jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, exercise_key)
 );
+-- hidden_cues = exact curated-cue strings the user dismissed (added later).
+alter table public.exercise_notes
+  add column if not exists hidden_cues jsonb not null default '[]'::jsonb;
 alter table public.exercise_notes enable row level security;
 drop policy if exists exercise_notes_rw_own on public.exercise_notes;
 create policy exercise_notes_rw_own on public.exercise_notes

@@ -3,11 +3,13 @@ import { supabase } from '@/lib/supabase'
 import {
   BUILTIN_TAG,
   EXERCISE_OVERRIDE,
+  NAME_CONTRIB,
   REGION_IDS,
   REGION_LABEL,
-  TAG_CONTRIB,
+  contribForTag,
   type RegionId,
 } from '@/data/bodyMap'
+import { normalizeExerciseName } from '@/data/exerciseAliases'
 
 export interface MuscleBar {
   id: RegionId
@@ -46,11 +48,12 @@ export function useMuscleVolume(start: string, end: string) {
       if (ids.length) {
         const { data: setsData, error: se } = await supabase
           .from('workout_sets')
-          .select('exercise_key,reps,weight_lb')
+          .select('exercise_key,exercise_name,reps,weight_lb')
           .in('workout_id', ids)
         if (se) throw se
         const sets = (setsData ?? []) as {
           exercise_key: string
+          exercise_name: string | null
           reps: number | null
           weight_lb: number | null
         }[]
@@ -73,8 +76,11 @@ export function useMuscleVolume(start: string, end: string) {
           const tag = s.exercise_key.startsWith('custom:')
             ? customTag.get(s.exercise_key) ?? null
             : BUILTIN_TAG[s.exercise_key] ?? null
+          const nameContrib = s.exercise_name
+            ? NAME_CONTRIB[normalizeExerciseName(s.exercise_name)]
+            : undefined
           const contrib =
-            EXERCISE_OVERRIDE[s.exercise_key] ?? (tag ? TAG_CONTRIB[tag] : undefined)
+            EXERCISE_OVERRIDE[s.exercise_key] ?? nameContrib ?? contribForTag(tag)
           if (!contrib) {
             unmapped++
             continue

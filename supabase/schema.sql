@@ -399,5 +399,47 @@ create policy meal_items_rw_own on public.meal_items
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ============================================================
+-- form_videos — per-user form-check video for one exercise.
+-- exercise_key = built-in slug or 'custom:<uuid>'. Keep-last-1 via
+-- unique(user_id, exercise_key): a new clip replaces the prior one
+-- (the app deletes the old file on upload). The video lives in the
+-- private 'form-videos' Storage bucket; this row points at it.
+-- ============================================================
+create table if not exists public.form_videos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  exercise_key text not null,
+  storage_path text not null,
+  duration_sec integer,
+  size_bytes bigint,
+  created_at timestamptz not null default now(),
+  unique (user_id, exercise_key)
+);
+create index if not exists form_videos_user_idx on public.form_videos(user_id);
+alter table public.form_videos enable row level security;
+drop policy if exists form_videos_rw_own on public.form_videos;
+create policy form_videos_rw_own on public.form_videos
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Private Storage bucket + owner-scoped object policies (path "<uid>/...").
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('form-videos', 'form-videos', false, 209715200)
+on conflict (id) do update
+  set public = excluded.public,
+      file_size_limit = excluded.file_size_limit;
+drop policy if exists form_videos_obj_select on storage.objects;
+create policy form_videos_obj_select on storage.objects
+  for select to authenticated
+  using (bucket_id = 'form-videos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists form_videos_obj_insert on storage.objects;
+create policy form_videos_obj_insert on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'form-videos' and (storage.foldername(name))[1] = auth.uid()::text);
+drop policy if exists form_videos_obj_delete on storage.objects;
+create policy form_videos_obj_delete on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'form-videos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ============================================================
 -- Done. All tables have RLS enabled with owner-only access.
 -- ============================================================

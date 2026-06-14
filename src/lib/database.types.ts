@@ -205,6 +205,19 @@ export interface ExerciseNote {
   updated_at: string
 }
 
+// Per-user form-check video for one exercise (built-in slug or 'custom:<uuid>').
+// "Keep last 1": one row per user per exercise; recording a new clip replaces
+// it. The file lives in the private 'form-videos' Storage bucket at storage_path.
+export interface FormVideo {
+  id: string
+  user_id: string
+  exercise_key: string
+  storage_path: string
+  duration_sec: number | null
+  size_bytes: number | null
+  created_at: string
+}
+
 export interface Routine {
   id: string
   user_id: string
@@ -302,6 +315,7 @@ export interface Database {
       exercise_entries: Tbl<ExerciseEntry>
       custom_exercises: Tbl<CustomExercise>
       exercise_notes: Tbl<ExerciseNote>
+      form_videos: Tbl<FormVideo>
       routines: Tbl<Routine>
       routine_exercises: Tbl<RoutineExercise>
       workouts: Tbl<Workout>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
@@ -10,6 +10,11 @@ import { cn } from '@/lib/utils'
 import { useLongPress } from '@/lib/useLongPress'
 import { useExerciseHistory, useExerciseSessions } from '@/features/strength/useStrength'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
+import {
+  useFormVideo,
+  useUploadFormVideo,
+  useDeleteFormVideo,
+} from '@/features/strength/useFormVideos'
 import { estimated1RM } from '@/lib/calc'
 import { dateLabel } from '@/lib/date'
 import {
@@ -28,8 +33,13 @@ const METRICS = [
 type MetricKey = (typeof METRICS)[number]['key']
 
 const GREEN = '#16a34a'
-const TABS = ['history', 'form', 'progress'] as const
+const TABS = ['history', 'form', 'videos', 'progress'] as const
 type Tab = (typeof TABS)[number]
+
+// Stored clips are capped at ~30s; the grace keeps a clip that lands at 31s
+// from being bounced. Clips whose duration can't be read fall through to the
+// bucket's 200 MB size cap instead.
+const MAX_CLIP_SEC = 33
 
 export function ExerciseDetailPage() {
   const { key } = useParams()
@@ -83,6 +93,8 @@ export function ExerciseDetailPage() {
           <HistoryTab exerciseKey={key} />
         ) : tab === 'form' ? (
           <FormTab exerciseKey={key} formKey={formKey} />
+        ) : tab === 'videos' ? (
+          <VideosTab exerciseKey={key} />
         ) : (
           <ProgressTab exerciseKey={key} />
         )}
@@ -448,4 +460,136 @@ function ProgressTab({ exerciseKey }: { exerciseKey: string | undefined }) {
       </Card>
     </div>
   )
+}
+
+function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
+  const { data, isLoading } = useFormVideo(exerciseKey)
+  const upload = useUploadFormVideo()
+  const del = useDeleteFormVideo()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const err = (upload.error ?? del.error) as Error | null
+
+  const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // let the same file be re-picked later
+    if (!file || !exerciseKey) return
+    const duration_sec = await readDuration(file)
+    if (duration_sec != null && duration_sec > MAX_CLIP_SEC) {
+      window.alert(
+        `Clip is ${fmtDuration(duration_sec)} — please keep it under 30s.`,
+      )
+      return
+    }
+    if (
+      data &&
+      !window.confirm('Replace your current clip? The old one is deleted.')
+    )
+      return
+    upload.mutate({ exercise_key: exerciseKey, file, duration_sec })
+  }
+
+  const onDelete = () => {
+    if (!exerciseKey || !data || !window.confirm('Delete this form clip?')) return
+    del.mutate({ exercise_key: exerciseKey, storage_path: data.row.storage_path })
+  }
+
+  return (
+    <div className="space-y-4">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="video/*"
+        className="hidden"
+        onChange={onPick}
+      />
+
+      {isLoading ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+      ) : data ? (
+        <Card className="overflow-hidden">
+          <video
+            key={data.url}
+            src={data.url}
+            controls
+            playsInline
+            preload="metadata"
+            className="aspect-video w-full bg-black"
+          />
+          <CardContent className="flex items-center justify-between gap-2 py-3">
+            <span className="text-xs text-muted-foreground">
+              {[
+                dateLabel(data.row.created_at.slice(0, 10)),
+                data.row.duration_sec ? fmtDuration(data.row.duration_sec) : null,
+                data.row.size_bytes ? fmtSize(data.row.size_bytes) : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onDelete}
+              disabled={del.isPending}
+            >
+              Delete
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            No form clip yet. Record one to review your technique over time.
+          </CardContent>
+        </Card>
+      )}
+
+      <Button
+        className="w-full"
+        onClick={() => inputRef.current?.click()}
+        disabled={upload.isPending}
+      >
+        {upload.isPending
+          ? 'Uploading…'
+          : data
+            ? 'Replace clip'
+            : 'Record / add clip'}
+      </Button>
+
+      {err && <p className="px-1 text-xs text-destructive">{err.message}</p>}
+
+      <p className="px-1 text-xs text-muted-foreground">
+        One clip is kept per exercise — a new recording replaces it. Clips must
+        be under 30s; film ~20–30s at 720p to keep files small.
+      </p>
+    </div>
+  )
+}
+
+// Best-effort duration read from the file's metadata (null if it won't load).
+function readDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const vid = document.createElement('video')
+    vid.preload = 'metadata'
+    vid.onloadedmetadata = () => {
+      URL.revokeObjectURL(url)
+      resolve(Number.isFinite(vid.duration) ? Math.round(vid.duration) : null)
+    }
+    vid.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(null)
+    }
+    vid.src = url
+  })
+}
+
+function fmtDuration(sec: number): string {
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function fmtSize(bytes: number): string {
+  const mb = bytes / (1024 * 1024)
+  return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`
 }

@@ -347,21 +347,32 @@ export function RoutineEditPage() {
       window.addEventListener('click', swallow, true)
       setTimeout(() => window.removeEventListener('click', swallow, true), 350)
     }
-    const preventScroll = (e: TouchEvent) => e.preventDefault()
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
     document.addEventListener('pointercancel', onUp)
-    document.addEventListener('touchmove', preventScroll, { passive: false })
     raf = requestAnimationFrame(autoScroll)
     return () => {
       cancelAnimationFrame(raf)
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
       document.removeEventListener('pointercancel', onUp)
-      document.removeEventListener('touchmove', preventScroll)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragKey])
+
+  // Block native scroll / pull-to-refresh *only* while a block is held. This is
+  // registered once for the page's lifetime (not per-drag) on purpose: a
+  // non-passive touchmove listener must exist before the gesture begins, or
+  // Chrome claims the touch for scrolling — cancelling the pointer (drag dies)
+  // and triggering pull-to-refresh at the top. Gated on dragKeyRef so normal
+  // scrolling works whenever a block isn't picked up.
+  useEffect(() => {
+    const onTouchMove = (e: TouchEvent) => {
+      if (dragKeyRef.current != null) e.preventDefault()
+    }
+    document.addEventListener('touchmove', onTouchMove, { passive: false })
+    return () => document.removeEventListener('touchmove', onTouchMove)
+  }, [])
 
   const q = search.toLowerCase()
   const allEx = [

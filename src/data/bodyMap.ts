@@ -235,6 +235,7 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   squat: { quads: 1, glutes: 0.5 },
   'front squat': { quads: 1, glutes: 0.5 },
   'leg extension': { quads: 1 },
+  'dumbbell romanian deadlift': { hams: 1, glutes: 1, erector_spinae: 0.5 },
   'dumbbell romanian deadlifts': { hams: 1, glutes: 1, erector_spinae: 0.5 },
   'barbell romanian deadlifts': { hams: 1, glutes: 1, erector_spinae: 0.5 },
   // tibialis is the antagonist of the calf; no shin region exists, so folded

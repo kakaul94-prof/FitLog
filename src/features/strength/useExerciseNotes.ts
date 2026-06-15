@@ -26,6 +26,7 @@ export function useUpsertExerciseNote() {
       exercise_key: string
       notes?: string | null
       hidden_cues?: string[]
+      starred_cues?: string[]
     }): Promise<ExerciseNote> => {
       const { data: u } = await supabase.auth.getUser()
       const user_id = u.user?.id
@@ -44,6 +45,10 @@ export function useUpsertExerciseNote() {
           v.hidden_cues !== undefined
             ? v.hidden_cues
             : (current?.hidden_cues ?? []),
+        starred_cues:
+          v.starred_cues !== undefined
+            ? v.starred_cues
+            : (current?.starred_cues ?? []),
       }
       const { data, error } = await supabase
         .from('exercise_notes')

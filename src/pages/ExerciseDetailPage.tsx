@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, EyeOff, Star } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { ActionSheet } from '@/components/ActionSheet'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -193,6 +194,8 @@ function FormTab({
   const [menuIdx, setMenuIdx] = useState<number | null>(null)
   const [editIdx, setEditIdx] = useState<number | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  // Long-press a curated cue → star / hide menu (keyed by the cue string).
+  const [cueMenu, setCueMenu] = useState<string | null>(null)
 
   // "Your notes" is stored as newline-joined bullets in the notes column.
   const noteLines = (note?.notes ?? '')
@@ -200,6 +203,7 @@ function FormTab({
     .map((s) => s.trim())
     .filter(Boolean)
   const hidden = note?.hidden_cues ?? []
+  const starred = note?.starred_cues ?? []
 
   const addNote = () => {
     const trimmed = draft.trim()
@@ -241,8 +245,16 @@ function FormTab({
   // Curated cues ship in code, so "removing" one hides it for this exercise.
   const hideCue = (text: string) => {
     if (!exerciseKey || hidden.includes(text)) return
-    if (!window.confirm('Hide this cue for this exercise?')) return
     upsert.mutate({ exercise_key: exerciseKey, hidden_cues: [...hidden, text] })
+  }
+
+  // Star / unstar a curated cue the user finds especially helpful.
+  const toggleStar = (text: string) => {
+    if (!exerciseKey) return
+    const next = starred.includes(text)
+      ? starred.filter((c) => c !== text)
+      : [...starred, text]
+    upsert.mutate({ exercise_key: exerciseKey, starred_cues: next })
   }
 
   const restoreCues = () => {
@@ -259,7 +271,8 @@ function FormTab({
               title="Setup"
               items={form.setup}
               hidden={hidden}
-              onHide={hideCue}
+              starred={starred}
+              onLongPress={setCueMenu}
             />
           )}
           <FormSection
@@ -267,7 +280,8 @@ function FormTab({
             items={form.cues}
             ordered
             hidden={hidden}
-            onHide={hideCue}
+            starred={starred}
+            onLongPress={setCueMenu}
           />
           {form.mistakes && (
             <FormSection
@@ -275,7 +289,8 @@ function FormTab({
               items={form.mistakes}
               cross
               hidden={hidden}
-              onHide={hideCue}
+              starred={starred}
+              onLongPress={setCueMenu}
             />
           )}
         </>
@@ -385,6 +400,22 @@ function FormTab({
         />
       )}
 
+      {cueMenu !== null && (
+        <CueActionSheet
+          text={cueMenu}
+          starred={starred.includes(cueMenu)}
+          onToggleStar={() => {
+            toggleStar(cueMenu)
+            setCueMenu(null)
+          }}
+          onHide={() => {
+            hideCue(cueMenu)
+            setCueMenu(null)
+          }}
+          onClose={() => setCueMenu(null)}
+        />
+      )}
+
       <p className="px-1 text-xs text-muted-foreground">
         Form cues are general guidance, not a substitute for a qualified coach.
         Adjust for your body and stop if something hurts.
@@ -399,11 +430,13 @@ function BulletRow({
   marker,
   markerClass,
   text,
+  starred,
   onLongPress,
 }: {
   marker: string | number
   markerClass?: string
   text: string
+  starred?: boolean
   onLongPress: () => void
 }) {
   const press = useLongPress(onLongPress, () => {})
@@ -421,7 +454,73 @@ function BulletRow({
         {marker}
       </span>
       <span className="leading-snug">{text}</span>
+      {starred && (
+        <Star className="ml-auto mt-0.5 h-4 w-4 shrink-0 fill-amber-400 text-amber-400" />
+      )}
     </li>
+  )
+}
+
+// Long-press menu for a curated cue: star it as especially helpful, or hide it.
+function CueActionSheet({
+  text,
+  starred,
+  onToggleStar,
+  onHide,
+  onClose,
+}: {
+  text: string
+  starred: boolean
+  onToggleStar: () => void
+  onHide: () => void
+  onClose: () => void
+}) {
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="mx-auto w-full max-w-md p-3"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <Card className="overflow-hidden">
+          <div className="truncate border-b border-border p-3 text-center text-xs text-muted-foreground">
+            {text}
+          </div>
+          <button
+            onClick={onToggleStar}
+            className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
+          >
+            <Star
+              className={cn(
+                'h-4 w-4',
+                starred
+                  ? 'fill-amber-400 text-amber-400'
+                  : 'text-muted-foreground',
+              )}
+            />
+            <span className="text-sm font-medium">
+              {starred ? 'Unstar cue' : 'Star cue'}
+            </span>
+          </button>
+          <button
+            onClick={onHide}
+            className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent"
+          >
+            <EyeOff className="h-4 w-4" />
+            <span className="text-sm font-medium">Hide cue</span>
+          </button>
+        </Card>
+        <button
+          onClick={onClose}
+          className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -431,14 +530,16 @@ function FormSection({
   ordered,
   cross,
   hidden,
-  onHide,
+  starred,
+  onLongPress,
 }: {
   title: string
   items: string[]
   ordered?: boolean
   cross?: boolean
   hidden: string[]
-  onHide: (text: string) => void
+  starred: string[]
+  onLongPress: (text: string) => void
 }) {
   const visible = items.filter((it) => !hidden.includes(it))
   if (!visible.length) return null
@@ -461,7 +562,8 @@ function FormSection({
                     : 'text-primary'
               }
               text={it}
-              onLongPress={() => onHide(it)}
+              starred={starred.includes(it)}
+              onLongPress={() => onLongPress(it)}
             />
           ))}
         </ul>

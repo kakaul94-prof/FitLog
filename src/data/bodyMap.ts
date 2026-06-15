@@ -232,10 +232,19 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'good mornings': { hams: 1, glutes: 0.5, erector_spinae: 0.5 },
   // legs
   'bulgarian split squat': { quads: 1, glutes: 1 },
+  squat: { quads: 1, glutes: 0.5 },
+  'front squat': { quads: 1, glutes: 0.5 },
+  'leg extension': { quads: 1 },
+  'dumbbell romanian deadlifts': { hams: 1, glutes: 1, erector_spinae: 0.5 },
+  'barbell romanian deadlifts': { hams: 1, glutes: 1, erector_spinae: 0.5 },
+  // tibialis is the antagonist of the calf; no shin region exists, so folded
+  // into calves (lower leg) by user preference.
+  'tibialis raises': { calves: 1 },
   // arms — forearm-heavy curls
   'cross body hammer curl': { biceps: 1, forearm: 0.5 },
   'rope hammer curls': { biceps: 1, forearm: 0.5 },
   'zottman curl': { biceps: 1, forearm: 0.5 },
+  'reverse curls': { forearm: 1, biceps: 0.5 },
   // triceps — compound (chest assist)
   'close grip bench press': { triceps: 1, chest: 0.5 },
   'close grip dumbbell bench press': { triceps: 1, chest: 0.5 },

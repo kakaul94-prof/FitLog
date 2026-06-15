@@ -20,9 +20,16 @@ export interface UnmappedExercise {
   name: string
   sets: number
 }
+/** One exercise's weighted set contribution to a single muscle region. */
+export interface MuscleExercise {
+  name: string
+  sets: number
+}
 export interface MuscleVolume {
   byRegion: Record<RegionId, number>
   bars: MuscleBar[]
+  /** Per region: the exercises that built its volume, weighted sets, desc. */
+  byRegionExercises: Record<RegionId, MuscleExercise[]>
   totalSets: number
   unmapped: number
   unmappedList: UnmappedExercise[]
@@ -47,6 +54,9 @@ export function useMuscleVolume(start: string, end: string) {
       const ids = ((ws ?? []) as { id: string }[]).map((w) => w.id)
 
       const byRegion = zeroRegions()
+      const regionExercises = Object.fromEntries(
+        REGION_IDS.map((r) => [r, new Map<string, number>()]),
+      ) as Record<RegionId, Map<string, number>>
       let totalSets = 0
       let unmapped = 0
       const unmappedCounts = new Map<string, number>()
@@ -93,8 +103,12 @@ export function useMuscleVolume(start: string, end: string) {
             unmappedCounts.set(name, (unmappedCounts.get(name) ?? 0) + 1)
             continue
           }
+          const exName = s.exercise_name?.trim() || s.exercise_key
           for (const [region, w] of Object.entries(contrib)) {
-            if (w) byRegion[region as RegionId] += w
+            if (!w) continue
+            byRegion[region as RegionId] += w
+            const m = regionExercises[region as RegionId]
+            m.set(exName, (m.get(exName) ?? 0) + w)
           }
         }
       }
@@ -106,11 +120,20 @@ export function useMuscleVolume(start: string, end: string) {
         sets: byRegion[id],
       })).sort((a, b) => b.sets - a.sets)
 
+      const byRegionExercises = Object.fromEntries(
+        REGION_IDS.map((id) => [
+          id,
+          [...regionExercises[id].entries()]
+            .map(([name, sets]) => ({ name, sets: round1(sets) }))
+            .sort((a, b) => b.sets - a.sets),
+        ]),
+      ) as Record<RegionId, MuscleExercise[]>
+
       const unmappedList = [...unmappedCounts.entries()]
         .map(([name, sets]) => ({ name, sets }))
         .sort((a, b) => b.sets - a.sets)
 
-      return { byRegion, bars, totalSets, unmapped, unmappedList }
+      return { byRegion, bars, byRegionExercises, totalSets, unmapped, unmappedList }
     },
   })
 }

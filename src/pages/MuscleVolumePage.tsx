@@ -182,7 +182,32 @@ export function MuscleVolumePage() {
         )}
 
         <Card className="p-3 text-sm">
-          {caption ?? (
+          {selected && data ? (
+            <div className="space-y-2">
+              <div>{caption}</div>
+              {data.byRegionExercises[selected].length > 0 ? (
+                <ul className="space-y-1 border-t border-border pt-2">
+                  {data.byRegionExercises[selected].map((e) => (
+                    <li
+                      key={e.name}
+                      className="flex justify-between gap-2 text-xs"
+                    >
+                      <span className="truncate text-muted-foreground">
+                        {e.name}
+                      </span>
+                      <span className="tabular-nums">
+                        {e.sets} set{e.sets === 1 ? '' : 's'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="border-t border-border pt-2 text-xs text-muted-foreground">
+                  No sets logged for this muscle in the last 7 days.
+                </div>
+              )}
+            </div>
+          ) : (
             <span className="text-muted-foreground">
               Tap a muscle to see its weekly sets vs goal.
             </span>

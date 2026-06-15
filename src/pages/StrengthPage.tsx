@@ -8,6 +8,7 @@ import {
   CalendarDays,
   PersonStanding,
   ClipboardList,
+  List,
   Pencil,
   Trash2,
 } from 'lucide-react'
@@ -177,15 +178,18 @@ export function StrengthPage() {
                   <ClipboardList className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Template</span>
                 </button>
+                <div className="border-y border-border p-3 text-center text-xs text-muted-foreground">
+                  Manage
+                </div>
                 <button
                   onClick={() => {
                     setMenuOpen(false)
-                    nav('/lift/custom-exercises?add=1')
+                    nav('/lift/custom-exercises')
                   }}
-                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left active:bg-accent"
+                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
                 >
-                  <Plus className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Custom exercise</span>
+                  <List className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">My exercises</span>
                 </button>
               </Card>
               <button

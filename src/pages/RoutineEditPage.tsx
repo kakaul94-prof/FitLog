@@ -364,7 +364,7 @@ export function RoutineEditPage() {
     let raf = 0
     const autoScroll = () => {
       const EDGE = 70
-      const MAX = 16
+      const MAX = 8 // px/frame at the very edge (~480px/s); ramps from 0 at EDGE
       const h = window.innerHeight
       let dy = 0
       if (lastY < EDGE) dy = -Math.ceil(((EDGE - lastY) / EDGE) * MAX)

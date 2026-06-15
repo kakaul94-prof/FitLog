@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -241,27 +242,63 @@ export function RoutineEditPage() {
     )
 
   // --- Long-press drag-to-reorder (whole blocks; a superset moves as a unit) ---
-  // Blocks are keyed by their first exercise's localId. A press that's held
-  // (not a tap or scroll) "picks up" the block; while held we follow the finger,
-  // reorder live, block page scroll, and swallow the trailing click.
+  // Press-and-hold "picks up" a block; it then follows the finger while the
+  // other blocks slide out of the way to open a gap, and the dropped block
+  // glides into its slot. The new order is computed from positions measured at
+  // pickup and only committed on release — the list isn't mutated mid-drag, so
+  // the layout the transforms are based on stays put.
   const containerRef = useRef<HTMLDivElement>(null)
   const [dragKey, setDragKey] = useState<string | null>(null)
   const dragKeyRef = useRef<string | null>(null)
   const pressRef = useRef<{ key: string; x: number; y: number } | null>(null)
   const timerRef = useRef<number | null>(null)
+  // Block layout captured at pickup, in page coords so mid-drag scrolling is OK.
+  const dragRef = useRef<{
+    els: HTMLElement[]
+    keys: string[]
+    tops: number[]
+    centers: number[]
+    heights: number[]
+    d: number
+    gap: number
+    startPageY: number
+    order: string[]
+  } | null>(null)
+  // Handoff to the drop animation (glide the dragged block into its slot).
+  const dropRef = useRef<{ key: string; fromTop: number } | null>(null)
   const clearTimer = () => {
     if (timerRef.current != null) clearTimeout(timerRef.current)
     timerRef.current = null
   }
+  const EASE = 'transform 200ms cubic-bezier(0.2, 0, 0, 1)'
 
-  const moveBlock = (from: number, to: number) =>
-    setDraft((prev) => {
-      const bl = toBlocks(prev)
-      if (from < 0 || to < 0 || from >= bl.length || to >= bl.length) return prev
-      const [m] = bl.splice(from, 1)
-      bl.splice(to, 0, m)
-      return bl.flatMap((b) => b.exercises)
+  // Position every block for the finger's current Y: the held block tracks the
+  // finger; the rest translate to the slots they'd occupy with it inserted at
+  // the computed index (heights differ, so slots are summed, not assumed equal).
+  const layout = (clientY: number) => {
+    const st = dragRef.current
+    if (!st) return
+    const delta = clientY + window.scrollY - st.startPageY
+    const draggedCenter = st.centers[st.d] + delta
+    let insert = 0
+    for (let i = 0; i < st.keys.length; i++)
+      if (i !== st.d && st.centers[i] < draggedCenter) insert++
+    const order = st.keys.filter((_, i) => i !== st.d)
+    order.splice(insert, 0, st.keys[st.d])
+    st.order = order
+    const targetTop = new Map<string, number>()
+    let y = st.tops[0]
+    for (const k of order) {
+      targetTop.set(k, y)
+      y += st.heights[st.keys.indexOf(k)] + st.gap
+    }
+    st.els.forEach((el, i) => {
+      el.style.transform =
+        i === st.d
+          ? `translateY(${delta}px) scale(1.03)`
+          : `translateY(${targetTop.get(st.keys[i])! - st.tops[i]}px)`
     })
+  }
 
   const startPress = (key: string) => (e: ReactPointerEvent) => {
     // Don't arm a drag from form fields — let them focus/type normally.
@@ -286,36 +323,45 @@ export function RoutineEditPage() {
     pressRef.current = null
   }
 
+  // Measure all blocks the instant one is picked up, then lift it. Runs before
+  // paint so the very first frame already reflects the captured layout.
+  useLayoutEffect(() => {
+    if (dragKey == null) return
+    const cont = containerRef.current
+    if (!cont) return
+    const els = Array.from(cont.querySelectorAll<HTMLElement>('[data-block]'))
+    const keys = els.map((el) => el.dataset.block!)
+    const d = keys.indexOf(dragKey)
+    if (d < 0) return
+    const sY = window.scrollY
+    const rects = els.map((el) => el.getBoundingClientRect())
+    const gap =
+      rects.length > 1 ? Math.max(0, rects[1].top - rects[0].bottom) : 16
+    dragRef.current = {
+      els,
+      keys,
+      tops: rects.map((r) => r.top + sY),
+      centers: rects.map((r) => r.top + sY + r.height / 2),
+      heights: rects.map((r) => r.height),
+      d,
+      gap,
+      startPageY: (pressRef.current?.y ?? rects[d].top) + sY,
+      order: keys.slice(),
+    }
+    els.forEach((el, i) => {
+      el.style.willChange = 'transform'
+      el.style.transition = i === d ? 'none' : EASE
+      el.style.transform =
+        i === d ? 'translateY(0px) scale(1.03)' : 'translateY(0px)'
+    })
+  }, [dragKey])
+
+  // Pointer move/up + edge auto-scroll while a block is held.
   useEffect(() => {
     if (dragKey == null) return
     // Seed from the press point so we don't auto-scroll before the first move.
     let lastY = pressRef.current?.y ?? window.innerHeight / 2
     let raf = 0
-    const hover = (clientY: number) => {
-      const cont = containerRef.current
-      if (!cont) return
-      const els = Array.from(cont.querySelectorAll<HTMLElement>('[data-block]'))
-      const from = els.findIndex((el) => el.dataset.block === dragKeyRef.current)
-      if (from < 0) return
-      let to = -1
-      for (let i = 0; i < els.length; i++) {
-        const r = els[i].getBoundingClientRect()
-        if (clientY >= r.top && clientY <= r.bottom) {
-          to = i
-          break
-        }
-      }
-      if (to < 0) {
-        // Off the ends → clamp to first/last; in a gap between → ignore.
-        if (clientY < els[0].getBoundingClientRect().top) to = 0
-        else if (clientY > els[els.length - 1].getBoundingClientRect().bottom)
-          to = els.length - 1
-        else return
-      }
-      if (to !== from) moveBlock(from, to)
-    }
-    // Auto-scroll the page when the finger nears the top/bottom edge, and keep
-    // reordering as fresh rows scroll under a stationary finger.
     const autoScroll = () => {
       const EDGE = 70
       const MAX = 16
@@ -326,15 +372,31 @@ export function RoutineEditPage() {
         dy = Math.ceil(((lastY - (h - EDGE)) / EDGE) * MAX)
       if (dy !== 0) {
         window.scrollBy(0, dy)
-        hover(lastY)
+        layout(lastY)
       }
       raf = requestAnimationFrame(autoScroll)
     }
     const onMove = (e: PointerEvent) => {
       lastY = e.clientY
-      hover(e.clientY)
+      layout(e.clientY)
     }
     const onUp = () => {
+      const st = dragRef.current
+      if (st) {
+        // Hand the dragged element to the drop glide, then commit the new order.
+        dropRef.current = {
+          key: st.keys[st.d],
+          fromTop: st.els[st.d].getBoundingClientRect().top,
+        }
+        const order = st.order
+        setDraft((prev) => {
+          const byKey = new Map(
+            toBlocks(prev).map((b) => [b.exercises[0].localId, b]),
+          )
+          return order.flatMap((k) => byKey.get(k)?.exercises ?? [])
+        })
+      }
+      dragRef.current = null
       dragKeyRef.current = null
       setDragKey(null)
       pressRef.current = null
@@ -359,6 +421,40 @@ export function RoutineEditPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragKey])
+
+  // Once the new order is committed, glide the dragged block from where the
+  // finger released it into its settled slot, then strip the inline styles.
+  useLayoutEffect(() => {
+    const drop = dropRef.current
+    if (!drop) return
+    dropRef.current = null
+    const cont = containerRef.current
+    if (!cont) return
+    const els = Array.from(cont.querySelectorAll<HTMLElement>('[data-block]'))
+    els.forEach((el) => {
+      el.style.transition = 'none'
+      el.style.transform = ''
+      el.style.willChange = ''
+    })
+    const el = els.find((e) => e.dataset.block === drop.key)
+    if (!el) return
+    const dy = drop.fromTop - el.getBoundingClientRect().top
+    if (Math.abs(dy) < 1) return
+    el.style.zIndex = '20' // stay above neighbors while gliding into the slot
+    el.style.transform = `translateY(${dy}px) scale(1.03)`
+    requestAnimationFrame(() => {
+      el.style.transition = EASE
+      el.style.transform = ''
+      const done = () => {
+        el.style.transition = ''
+        el.style.zIndex = ''
+        el.removeEventListener('transitionend', done)
+      }
+      el.addEventListener('transitionend', done, { once: true })
+      setTimeout(done, 260)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft])
 
   // Block native scroll / pull-to-refresh *only* while a block is held. This is
   // registered once for the page's lifetime (not per-drag) on purpose: a
@@ -422,8 +518,7 @@ export function RoutineEditPage() {
                 onContextMenu={(e) => e.preventDefault()}
                 className={cn(
                   'relative select-none',
-                  dragging &&
-                    'z-10 scale-[1.02] rounded-xl opacity-95 shadow-xl ring-2 ring-primary',
+                  dragging && 'z-10 rounded-xl opacity-95 shadow-xl ring-2 ring-primary',
                 )}
               >
                 {b.group != null ? (

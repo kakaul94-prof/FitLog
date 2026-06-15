@@ -263,6 +263,7 @@ export function RoutineEditPage() {
     gap: number
     startPageY: number
     order: string[]
+    insert: number
   } | null>(null)
   // Handoff to the drop animation (glide the dragged block into its slot).
   const dropRef = useRef<{ key: string; fromTop: number } | null>(null)
@@ -280,11 +281,24 @@ export function RoutineEditPage() {
     if (!st) return
     const delta = clientY + window.scrollY - st.startPageY
     const draggedCenter = st.centers[st.d] + delta
-    let insert = 0
+    // Non-dragged blocks in natural order.
+    const ndKeys: string[] = []
+    const ndCenters: number[] = []
     for (let i = 0; i < st.keys.length; i++)
-      if (i !== st.d && st.centers[i] < draggedCenter) insert++
-    const order = st.keys.filter((_, i) => i !== st.d)
-    order.splice(insert, 0, st.keys[st.d])
+      if (i !== st.d) {
+        ndKeys.push(st.keys[i])
+        ndCenters.push(st.centers[i])
+      }
+    // Hysteresis: flipping the insertion point requires crossing a block's
+    // center by H px, so lingering on a (tall) neighbour's midpoint doesn't
+    // oscillate between two slots.
+    const H = 16
+    let ins = st.insert
+    while (ins < ndCenters.length && ndCenters[ins] + H < draggedCenter) ins++
+    while (ins > 0 && ndCenters[ins - 1] - H > draggedCenter) ins--
+    st.insert = ins
+    const order = ndKeys.slice()
+    order.splice(ins, 0, st.keys[st.d])
     st.order = order
     const targetTop = new Map<string, number>()
     let y = st.tops[0]
@@ -347,6 +361,7 @@ export function RoutineEditPage() {
       gap,
       startPageY: (pressRef.current?.y ?? rects[d].top) + sY,
       order: keys.slice(),
+      insert: d, // dragged's own slot keeps the list unchanged until it moves
     }
     els.forEach((el, i) => {
       el.style.willChange = 'transform'

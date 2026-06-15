@@ -2,6 +2,7 @@ import { useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
+import { ActionSheet } from '@/components/ActionSheet'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -188,6 +189,10 @@ function FormTab({
   const { data: note } = useExerciseNotes(exerciseKey)
   const upsert = useUpsertExerciseNote()
   const [draft, setDraft] = useState('')
+  // Long-press a note → action menu (which note), then optionally inline edit.
+  const [menuIdx, setMenuIdx] = useState<number | null>(null)
+  const [editIdx, setEditIdx] = useState<number | null>(null)
+  const [editDraft, setEditDraft] = useState('')
 
   // "Your notes" is stored as newline-joined bullets in the notes column.
   const noteLines = (note?.notes ?? '')
@@ -207,12 +212,30 @@ function FormTab({
   }
 
   const removeNote = (idx: number) => {
-    if (!exerciseKey || !window.confirm('Remove this note?')) return
+    if (!exerciseKey) return
     const next = noteLines.filter((_, i) => i !== idx)
     upsert.mutate({
       exercise_key: exerciseKey,
       notes: next.length ? next.join('\n') : null,
     })
+  }
+
+  const startEdit = (idx: number) => {
+    setEditDraft(noteLines[idx])
+    setEditIdx(idx)
+  }
+
+  const cancelEdit = () => {
+    setEditIdx(null)
+    setEditDraft('')
+  }
+
+  const saveEdit = () => {
+    const trimmed = editDraft.trim()
+    if (!exerciseKey || editIdx === null || !trimmed) return
+    const next = noteLines.map((l, i) => (i === editIdx ? trimmed : l))
+    upsert.mutate({ exercise_key: exerciseKey, notes: next.join('\n') })
+    cancelEdit()
   }
 
   // Curated cues ship in code, so "removing" one hides it for this exercise.
@@ -281,15 +304,43 @@ function FormTab({
         <CardContent className="space-y-3">
           {noteLines.length > 0 && (
             <ul className="space-y-2">
-              {noteLines.map((line, i) => (
-                <BulletRow
-                  key={i}
-                  marker="•"
-                  markerClass="text-primary"
-                  text={line}
-                  onRemove={() => removeNote(i)}
-                />
-              ))}
+              {noteLines.map((line, i) =>
+                editIdx === i ? (
+                  <li key={i} className="flex items-center gap-2">
+                    <input
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          saveEdit()
+                        } else if (e.key === 'Escape') {
+                          cancelEdit()
+                        }
+                      }}
+                      autoFocus
+                      className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    />
+                    <Button onClick={saveEdit} disabled={!editDraft.trim()}>
+                      Save
+                    </Button>
+                    <button
+                      onClick={cancelEdit}
+                      className="px-1 text-xs font-medium text-muted-foreground"
+                    >
+                      Cancel
+                    </button>
+                  </li>
+                ) : (
+                  <BulletRow
+                    key={i}
+                    marker="•"
+                    markerClass="text-primary"
+                    text={line}
+                    onLongPress={() => setMenuIdx(i)}
+                  />
+                ),
+              )}
             </ul>
           )}
           <div className="flex gap-2">
@@ -312,10 +363,27 @@ function FormTab({
           <p className="text-xs text-muted-foreground">
             {upsert.isPending
               ? 'Saving…'
-              : 'Press and hold any bullet to remove it.'}
+              : 'Press and hold a note to edit or delete it.'}
           </p>
         </CardContent>
       </Card>
+
+      {menuIdx !== null && noteLines[menuIdx] !== undefined && (
+        <ActionSheet
+          title={noteLines[menuIdx]}
+          editLabel="Edit note"
+          deleteLabel="Delete note"
+          onEdit={() => {
+            startEdit(menuIdx)
+            setMenuIdx(null)
+          }}
+          onDelete={() => {
+            removeNote(menuIdx)
+            setMenuIdx(null)
+          }}
+          onClose={() => setMenuIdx(null)}
+        />
+      )}
 
       <p className="px-1 text-xs text-muted-foreground">
         Form cues are general guidance, not a substitute for a qualified coach.
@@ -325,19 +393,20 @@ function FormTab({
   )
 }
 
-// One bullet row: tap does nothing, press-and-hold (450ms) removes it.
+// One bullet row: tap does nothing, press-and-hold (450ms) fires onLongPress
+// (your notes → an Edit/Delete menu; curated cues → hide).
 function BulletRow({
   marker,
   markerClass,
   text,
-  onRemove,
+  onLongPress,
 }: {
   marker: string | number
   markerClass?: string
   text: string
-  onRemove: () => void
+  onLongPress: () => void
 }) {
-  const press = useLongPress(onRemove, () => {})
+  const press = useLongPress(onLongPress, () => {})
   return (
     <li
       {...press}
@@ -392,7 +461,7 @@ function FormSection({
                     : 'text-primary'
               }
               text={it}
-              onRemove={() => onHide(it)}
+              onLongPress={() => onHide(it)}
             />
           ))}
         </ul>

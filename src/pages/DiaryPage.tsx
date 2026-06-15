@@ -7,8 +7,6 @@ import {
   Plus,
   Trash2,
   Flame,
-  Pencil,
-  ListChecks,
   CheckCircle2,
   Circle,
   X,
@@ -16,6 +14,7 @@ import {
   Copy,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { ActionSheet } from '@/components/ActionSheet'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -556,71 +555,6 @@ function SelectAction({
       <Icon className="h-5 w-5" />
       {label}
     </button>
-  )
-}
-
-function ActionSheet({
-  title,
-  onSelect,
-  onEdit,
-  onDelete,
-  onClose,
-}: {
-  title: string
-  onSelect?: () => void
-  onEdit: () => void
-  onDelete: () => void
-  onClose: () => void
-}) {
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
-      onClick={onClose}
-    >
-      <div
-        className="mx-auto w-full max-w-md p-3"
-        onClick={(ev) => ev.stopPropagation()}
-      >
-        <Card className="overflow-hidden">
-          <div className="truncate border-b border-border p-3 text-center text-xs text-muted-foreground">
-            {title}
-          </div>
-          {onSelect && (
-            <button
-              onClick={onSelect}
-              className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
-            >
-              <ListChecks className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Select multiple</span>
-            </button>
-          )}
-          <button
-            onClick={onEdit}
-            className={cn(
-              'flex w-full items-center gap-3 p-4 text-left active:bg-accent',
-              onSelect && 'border-t border-border',
-            )}
-          >
-            <Pencil className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Edit entry</span>
-          </button>
-          <button
-            onClick={onDelete}
-            className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span className="text-sm font-medium">Delete entry</span>
-          </button>
-        </Card>
-        <button
-          onClick={onClose}
-          className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>,
-    document.body,
   )
 }
 

@@ -1,7 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Plus, X, Link2, Trash2, Search, Save } from 'lucide-react'
+import {
+  ChevronLeft,
+  Plus,
+  X,
+  Link2,
+  Trash2,
+  Search,
+  Save,
+  GripVertical,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -20,6 +34,7 @@ import {
   useDeleteRoutine,
 } from '@/features/strength/useRoutines'
 import type { ExerciseType } from '@/lib/database.types'
+import { cn } from '@/lib/utils'
 
 type DraftEx = {
   localId: string
@@ -44,6 +59,26 @@ const serialize = (name: string, d: DraftEx[]) =>
       superset_group: e.superset_group,
     })),
   })
+
+type Block = { group: number | null; exercises: DraftEx[] }
+// Group into superset blocks (same scheme as the live workout): a block is
+// anchored at the first member of each shared superset_group; singles stand
+// alone. Reused by the renderer and the drag-reorder (a block moves as a unit).
+const toBlocks = (draft: DraftEx[]): Block[] => {
+  const blocks: Block[] = []
+  const seen = new Set<number>()
+  for (const ex of draft) {
+    if (ex.superset_group == null) blocks.push({ group: null, exercises: [ex] })
+    else if (!seen.has(ex.superset_group)) {
+      seen.add(ex.superset_group)
+      blocks.push({
+        group: ex.superset_group,
+        exercises: draft.filter((e) => e.superset_group === ex.superset_group),
+      })
+    }
+  }
+  return blocks
+}
 
 export function RoutineEditPage() {
   const { id } = useParams()
@@ -135,20 +170,7 @@ export function RoutineEditPage() {
     nav('/strength')
   }
 
-  // Group into superset blocks (same scheme as the live workout): a block is
-  // anchored at the first member of each shared superset_group.
-  const blocks: { group: number | null; exercises: DraftEx[] }[] = []
-  const seen = new Set<number>()
-  for (const ex of draft) {
-    if (ex.superset_group == null) blocks.push({ group: null, exercises: [ex] })
-    else if (!seen.has(ex.superset_group)) {
-      seen.add(ex.superset_group)
-      blocks.push({
-        group: ex.superset_group,
-        exercises: draft.filter((e) => e.superset_group === ex.superset_group),
-      })
-    }
-  }
+  const blocks = toBlocks(draft)
 
   const openAdd = (ssWith?: string) => {
     setSupersetWith(ssWith)
@@ -218,6 +240,129 @@ export function RoutineEditPage() {
       prev.map((e) => (e.localId === localId ? { ...e, ...patch } : e)),
     )
 
+  // --- Long-press drag-to-reorder (whole blocks; a superset moves as a unit) ---
+  // Blocks are keyed by their first exercise's localId. A press that's held
+  // (not a tap or scroll) "picks up" the block; while held we follow the finger,
+  // reorder live, block page scroll, and swallow the trailing click.
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const dragKeyRef = useRef<string | null>(null)
+  const pressRef = useRef<{ key: string; x: number; y: number } | null>(null)
+  const timerRef = useRef<number | null>(null)
+  const clearTimer = () => {
+    if (timerRef.current != null) clearTimeout(timerRef.current)
+    timerRef.current = null
+  }
+
+  const moveBlock = (from: number, to: number) =>
+    setDraft((prev) => {
+      const bl = toBlocks(prev)
+      if (from < 0 || to < 0 || from >= bl.length || to >= bl.length) return prev
+      const [m] = bl.splice(from, 1)
+      bl.splice(to, 0, m)
+      return bl.flatMap((b) => b.exercises)
+    })
+
+  const startPress = (key: string) => (e: ReactPointerEvent) => {
+    // Don't arm a drag from form fields — let them focus/type normally.
+    if ((e.target as HTMLElement).closest('input, textarea, select')) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    pressRef.current = { key, x: e.clientX, y: e.clientY }
+    clearTimer()
+    timerRef.current = window.setTimeout(() => {
+      dragKeyRef.current = key
+      setDragKey(key)
+      navigator.vibrate?.(30)
+    }, 450)
+  }
+  const movePress = (e: ReactPointerEvent) => {
+    if (dragKeyRef.current) return
+    const p = pressRef.current
+    if (p && (Math.abs(e.clientX - p.x) > 10 || Math.abs(e.clientY - p.y) > 10))
+      clearTimer() // moved before the hold elapsed → it's a scroll, not a drag
+  }
+  const endPress = () => {
+    clearTimer()
+    pressRef.current = null
+  }
+
+  useEffect(() => {
+    if (dragKey == null) return
+    // Seed from the press point so we don't auto-scroll before the first move.
+    let lastY = pressRef.current?.y ?? window.innerHeight / 2
+    let raf = 0
+    const hover = (clientY: number) => {
+      const cont = containerRef.current
+      if (!cont) return
+      const els = Array.from(cont.querySelectorAll<HTMLElement>('[data-block]'))
+      const from = els.findIndex((el) => el.dataset.block === dragKeyRef.current)
+      if (from < 0) return
+      let to = -1
+      for (let i = 0; i < els.length; i++) {
+        const r = els[i].getBoundingClientRect()
+        if (clientY >= r.top && clientY <= r.bottom) {
+          to = i
+          break
+        }
+      }
+      if (to < 0) {
+        // Off the ends → clamp to first/last; in a gap between → ignore.
+        if (clientY < els[0].getBoundingClientRect().top) to = 0
+        else if (clientY > els[els.length - 1].getBoundingClientRect().bottom)
+          to = els.length - 1
+        else return
+      }
+      if (to !== from) moveBlock(from, to)
+    }
+    // Auto-scroll the page when the finger nears the top/bottom edge, and keep
+    // reordering as fresh rows scroll under a stationary finger.
+    const autoScroll = () => {
+      const EDGE = 70
+      const MAX = 16
+      const h = window.innerHeight
+      let dy = 0
+      if (lastY < EDGE) dy = -Math.ceil(((EDGE - lastY) / EDGE) * MAX)
+      else if (lastY > h - EDGE)
+        dy = Math.ceil(((lastY - (h - EDGE)) / EDGE) * MAX)
+      if (dy !== 0) {
+        window.scrollBy(0, dy)
+        hover(lastY)
+      }
+      raf = requestAnimationFrame(autoScroll)
+    }
+    const onMove = (e: PointerEvent) => {
+      lastY = e.clientY
+      hover(e.clientY)
+    }
+    const onUp = () => {
+      dragKeyRef.current = null
+      setDragKey(null)
+      pressRef.current = null
+      // Swallow the click that fires after a held press (e.g. on the name).
+      const swallow = (ev: MouseEvent) => {
+        ev.stopPropagation()
+        ev.preventDefault()
+        window.removeEventListener('click', swallow, true)
+      }
+      window.addEventListener('click', swallow, true)
+      setTimeout(() => window.removeEventListener('click', swallow, true), 350)
+    }
+    const preventScroll = (e: TouchEvent) => e.preventDefault()
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    document.addEventListener('pointercancel', onUp)
+    document.addEventListener('touchmove', preventScroll, { passive: false })
+    raf = requestAnimationFrame(autoScroll)
+    return () => {
+      cancelAnimationFrame(raf)
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.removeEventListener('pointercancel', onUp)
+      document.removeEventListener('touchmove', preventScroll)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragKey])
+
   const q = search.toLowerCase()
   const allEx = [
     ...(custom ?? []).map((c) => ({
@@ -251,35 +396,54 @@ export function RoutineEditPage() {
           />
         </div>
 
-        {blocks.map((b, bi) =>
-          b.group != null ? (
-            <div
-              key={bi}
-              className="space-y-2 rounded-xl border-2 border-primary/30 p-2"
-            >
-              <div className="px-1 text-xs font-semibold uppercase tracking-wide text-primary">
-                Superset
+        <div ref={containerRef} className="space-y-4 empty:hidden">
+          {blocks.map((b) => {
+            const key = b.exercises[0].localId
+            const dragging = dragKey === key
+            return (
+              <div
+                key={key}
+                data-block={key}
+                onPointerDown={startPress(key)}
+                onPointerMove={movePress}
+                onPointerUp={endPress}
+                onPointerCancel={endPress}
+                onContextMenu={(e) => e.preventDefault()}
+                className={cn(
+                  'relative select-none',
+                  dragging &&
+                    'z-10 scale-[1.02] rounded-xl opacity-95 shadow-xl ring-2 ring-primary',
+                )}
+              >
+                {b.group != null ? (
+                  <div className="space-y-2 rounded-xl border-2 border-primary/30 p-2">
+                    <div className="flex items-center gap-1 px-1 text-xs font-semibold uppercase tracking-wide text-primary">
+                      <GripVertical className="h-4 w-4 text-primary/40" />
+                      Superset
+                    </div>
+                    {b.exercises.map((ex, i) => (
+                      <RoutineExRow
+                        key={ex.localId}
+                        ex={ex}
+                        label={`${i + 1}`}
+                        onRemove={() => removeEx(ex.localId)}
+                        onTarget={(patch) => setTarget(ex.localId, patch)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <RoutineExRow
+                    ex={b.exercises[0]}
+                    showGrip
+                    onRemove={() => removeEx(b.exercises[0].localId)}
+                    onTarget={(patch) => setTarget(b.exercises[0].localId, patch)}
+                    onSuperset={() => openAdd(b.exercises[0].localId)}
+                  />
+                )}
               </div>
-              {b.exercises.map((ex, i) => (
-                <RoutineExRow
-                  key={ex.localId}
-                  ex={ex}
-                  label={`${i + 1}`}
-                  onRemove={() => removeEx(ex.localId)}
-                  onTarget={(patch) => setTarget(ex.localId, patch)}
-                />
-              ))}
-            </div>
-          ) : (
-            <RoutineExRow
-              key={b.exercises[0].localId}
-              ex={b.exercises[0]}
-              onRemove={() => removeEx(b.exercises[0].localId)}
-              onTarget={(patch) => setTarget(b.exercises[0].localId, patch)}
-              onSuperset={() => openAdd(b.exercises[0].localId)}
-            />
-          ),
-        )}
+            )
+          })}
+        </div>
 
         {adding ? (
           <Card className="p-2">
@@ -473,12 +637,14 @@ export function RoutineEditPage() {
 function RoutineExRow({
   ex,
   label,
+  showGrip,
   onRemove,
   onSuperset,
   onTarget,
 }: {
   ex: DraftEx
   label?: string
+  showGrip?: boolean
   onRemove: () => void
   onSuperset?: () => void
   onTarget: (patch: Partial<DraftEx>) => void
@@ -493,6 +659,9 @@ function RoutineExRow({
   return (
     <Card className="p-3">
       <div className="flex items-center gap-2">
+        {showGrip && (
+          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+        )}
         {label && (
           <span className="flex h-5 w-5 items-center justify-center rounded bg-primary/15 text-xs font-bold text-primary">
             {label}

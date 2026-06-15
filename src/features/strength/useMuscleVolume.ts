@@ -16,11 +16,16 @@ export interface MuscleBar {
   label: string
   sets: number
 }
+export interface UnmappedExercise {
+  name: string
+  sets: number
+}
 export interface MuscleVolume {
   byRegion: Record<RegionId, number>
   bars: MuscleBar[]
   totalSets: number
   unmapped: number
+  unmappedList: UnmappedExercise[]
 }
 
 function zeroRegions(): Record<RegionId, number> {
@@ -44,6 +49,7 @@ export function useMuscleVolume(start: string, end: string) {
       const byRegion = zeroRegions()
       let totalSets = 0
       let unmapped = 0
+      const unmappedCounts = new Map<string, number>()
 
       if (ids.length) {
         const { data: setsData, error: se } = await supabase
@@ -83,6 +89,8 @@ export function useMuscleVolume(start: string, end: string) {
             EXERCISE_OVERRIDE[s.exercise_key] ?? nameContrib ?? contribForTag(tag)
           if (!contrib) {
             unmapped++
+            const name = s.exercise_name?.trim() || s.exercise_key
+            unmappedCounts.set(name, (unmappedCounts.get(name) ?? 0) + 1)
             continue
           }
           for (const [region, w] of Object.entries(contrib)) {
@@ -98,7 +106,11 @@ export function useMuscleVolume(start: string, end: string) {
         sets: byRegion[id],
       })).sort((a, b) => b.sets - a.sets)
 
-      return { byRegion, bars, totalSets, unmapped }
+      const unmappedList = [...unmappedCounts.entries()]
+        .map(([name, sets]) => ({ name, sets }))
+        .sort((a, b) => b.sets - a.sets)
+
+      return { byRegion, bars, totalSets, unmapped, unmappedList }
     },
   })
 }

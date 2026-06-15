@@ -190,10 +190,22 @@ export function MuscleVolumePage() {
         </Card>
 
         {data && data.unmapped > 0 && (
-          <p className="text-xs text-muted-foreground">
-            {data.unmapped} set{data.unmapped === 1 ? '' : 's'} from un-mapped
-            exercises aren’t shown on the map.
-          </p>
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer">
+              {data.unmapped} set{data.unmapped === 1 ? '' : 's'} from un-mapped
+              exercises aren’t shown on the map.
+            </summary>
+            <ul className="mt-2 space-y-1 pl-1">
+              {data.unmappedList.map((u) => (
+                <li key={u.name} className="flex justify-between gap-2">
+                  <span className="truncate">{u.name}</span>
+                  <span className="tabular-nums">
+                    {u.sets} set{u.sets === 1 ? '' : 's'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
       </div>
     </div>

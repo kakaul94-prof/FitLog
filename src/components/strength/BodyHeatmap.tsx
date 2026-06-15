@@ -6,6 +6,7 @@ interface Props {
   gender: 'male' | 'female'
   side: 'front' | 'back'
   values: Record<RegionId, number>
+  goals: Record<RegionId, number>
   selected: RegionId | null
   onSelect: (r: RegionId) => void
 }
@@ -30,12 +31,12 @@ const CLASSIFY = {
 } as const
 
 /** One anatomical figure (front or back) shaded by weekly sets per region. */
-export function BodyHeatmap({ gender, side, values, selected, onSelect }: Props) {
+export function BodyHeatmap({ gender, side, values, goals, selected, onSelect }: Props) {
   const figure = `${gender}${side === 'front' ? 'Front' : 'Back'}` as FigureKey
   const parts = BODY_PARTS[figure]
   const viewBox = BODY_VIEWBOX[gender][side]
 
-  const heatFill = (r: RegionId) => heatColor(values[r]) ?? 'var(--muted)'
+  const heatFill = (r: RegionId) => heatColor(values[r], goals[r]) ?? 'var(--muted)'
   const strokeFor = (r: RegionId) => (selected === r ? 'var(--foreground)' : 'var(--border)')
   const widthFor = (r: RegionId) => (selected === r ? 9 : 1.5)
 
@@ -115,7 +116,7 @@ export function BodyHeatmap({ gender, side, values, selected, onSelect }: Props)
       {parts.flatMap((part) => {
         if (isSplit(part.slug)) return [] // split below
         const region = regionForSlug(side, part.slug)
-        const heat = region ? heatColor(values[region]) : null
+        const heat = region ? heatColor(values[region], goals[region]) : null
         const isSel = region != null && region === selected
         return part.paths.map((d, i) => (
           <path

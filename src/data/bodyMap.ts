@@ -274,28 +274,76 @@ export const BUILTIN_TAG: Record<string, string> = Object.fromEntries(
   EXERCISES.map((e) => [e.key, e.muscle]),
 )
 
-// Heat scale anchored to the evidence-based ~10-20 sets/week guideline.
-// Redder = more sets; 0 returns null (renders neutral).
+// --- Weekly set goals -------------------------------------------------------
+// Default sets/week target per region — sensible evidence-based starting points
+// (bigger muscles higher); the user overrides any of them in the Set-goals
+// editor (profiles.volume_targets). 0 means "untracked": that region stays
+// neutral on the map.
+export const DEFAULT_GOALS: Record<RegionId, number> = {
+  chest: 14,
+  shoulders: 8, // front delt — gets a lot of indirect work from pressing
+  side_delts: 12,
+  rear_delts: 12,
+  biceps: 12,
+  triceps: 12,
+  forearm: 6,
+  trapezius: 10,
+  upper_back: 14,
+  lats: 14,
+  erector_spinae: 8,
+  quads: 14,
+  hams: 12,
+  glutes: 12,
+  calves: 12,
+  obliques: 8,
+  rectus_abdominis: 10,
+  lower_abs: 8,
+}
+
+/** Merge a user's stored per-muscle goals over the defaults — tolerates a sparse
+ *  map and regions added after the user last saved (they inherit the default). */
+export function resolveGoals(
+  stored: Record<string, number> | null | undefined,
+): Record<RegionId, number> {
+  const out = { ...DEFAULT_GOALS }
+  if (stored) {
+    for (const r of REGION_IDS) {
+      const v = stored[r]
+      if (typeof v === 'number' && v >= 0) out[r] = v
+    }
+  }
+  return out
+}
+
+// Heat scale is RELATIVE to each muscle's goal: redder = closer to / over the
+// goal. 5 stops from "far below" to "over goal". 0 sets, or a 0 (untracked)
+// goal, returns null and renders neutral.
 export const HEAT_STOPS: { color: string; label: string }[] = [
-  { color: '#F7C1C1', label: '1–5' },
-  { color: '#F09595', label: '6–10' },
-  { color: '#E24B4A', label: '11–15' },
-  { color: '#A32D2D', label: '16–20' },
-  { color: '#501313', label: '20+' },
+  { color: '#F7C1C1', label: 'far' },
+  { color: '#F09595', label: 'under' },
+  { color: '#E24B4A', label: 'near' },
+  { color: '#A32D2D', label: 'at goal' },
+  { color: '#501313', label: 'over' },
 ]
 
-export function heatColor(sets: number): string | null {
-  if (sets <= 0) return null
-  if (sets < 6) return HEAT_STOPS[0].color
-  if (sets < 11) return HEAT_STOPS[1].color
-  if (sets < 16) return HEAT_STOPS[2].color
-  if (sets < 21) return HEAT_STOPS[3].color
+/** Color for `sets` performed against this muscle's weekly `goal`.
+ *  null = neutral (no sets logged, or no goal set). */
+export function heatColor(sets: number, goal: number): string | null {
+  if (sets <= 0 || goal <= 0) return null
+  const p = sets / goal
+  if (p < 0.5) return HEAT_STOPS[0].color
+  if (p < 0.85) return HEAT_STOPS[1].color
+  if (p < 1.0) return HEAT_STOPS[2].color
+  if (p < 1.3) return HEAT_STOPS[3].color
   return HEAT_STOPS[4].color
 }
 
-export function volumeStatus(sets: number): string {
-  if (sets >= 21) return 'high · above target'
-  if (sets >= 10) return 'in range'
-  if (sets > 0) return 'building · below target'
-  return 'none logged'
+export function volumeStatus(sets: number, goal: number): string {
+  if (goal <= 0) return 'no goal set'
+  if (sets <= 0) return 'none logged'
+  const p = sets / goal
+  if (p < 0.85) return 'under goal'
+  if (p < 1.0) return 'near goal'
+  if (p < 1.3) return 'at goal'
+  return 'over goal'
 }

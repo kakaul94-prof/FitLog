@@ -11,13 +11,16 @@ import {
   HEAT_STOPS,
   REGION_LABEL,
   heatColor,
+  resolveGoals,
   volumeStatus,
   type RegionId,
 } from '@/data/bodyMap'
 import { addDaysISO, todayISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
 
-const MAX_SCALE = 22 // bar full-width anchor (sets/week)
+// The goal tick sits at this fraction of each bar's track; the fill grows toward
+// it and spills past it when you're over goal.
+const GOAL_MARK = 0.68
 
 export function MuscleVolumePage() {
   const nav = useNavigate()
@@ -26,14 +29,16 @@ export function MuscleVolumePage() {
   const { data, isLoading } = useMuscleVolume(start, end)
   const { data: profile } = useProfile()
   const gender = profile?.sex ?? 'male'
+  const goals = resolveGoals(profile?.volume_targets)
 
   const [view, setView] = useState<'body' | 'bars'>('body')
   const [selected, setSelected] = useState<RegionId | null>(null)
 
   const caption =
     selected && data
-      ? `${REGION_LABEL[selected]} · ${data.byRegion[selected]} sets/wk · ${volumeStatus(
+      ? `${REGION_LABEL[selected]} · ${data.byRegion[selected]} / ${goals[selected]} sets/wk · ${volumeStatus(
           data.byRegion[selected],
+          goals[selected],
         )}`
       : null
 
@@ -46,11 +51,20 @@ export function MuscleVolumePage() {
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }
+        action={
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => nav('/lift/volume/goals')}
+          >
+            Edit goals
+          </Button>
+        }
       />
       <div className="space-y-4 p-4">
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
-            Last 7 days · sets per muscle
+            Last 7 days · vs your goals
           </div>
           <div className="inline-flex rounded-md bg-muted p-0.5">
             {(['body', 'bars'] as const).map((v) => (
@@ -93,6 +107,7 @@ export function MuscleVolumePage() {
                   gender={gender}
                   side="front"
                   values={data.byRegion}
+                  goals={goals}
                   selected={selected}
                   onSelect={setSelected}
                 />
@@ -105,6 +120,7 @@ export function MuscleVolumePage() {
                   gender={gender}
                   side="back"
                   values={data.byRegion}
+                  goals={goals}
                   selected={selected}
                   onSelect={setSelected}
                 />
@@ -118,44 +134,57 @@ export function MuscleVolumePage() {
         ) : (
           <Card className="space-y-2 p-3">
             <div className="text-xs text-muted-foreground">
-              Green band = 10–20 sets (in range)
+              Tick = your weekly goal · the bar fills toward it (red = at/over)
             </div>
-            {data.bars.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => setSelected(b.id)}
-                className="grid w-full grid-cols-[5.5rem_1fr_2rem] items-center gap-2 py-1 text-left"
-              >
-                <span className="text-xs text-muted-foreground">{b.label}</span>
-                <span
-                  className={cn(
-                    'relative h-5 overflow-hidden rounded bg-muted',
-                    selected === b.id && 'ring-2 ring-foreground',
-                  )}
+            {data.bars.map((b) => {
+              const goal = goals[b.id]
+              const fillPct =
+                goal > 0
+                  ? Math.min(100, (b.sets / goal) * GOAL_MARK * 100)
+                  : Math.min(100, (b.sets / 20) * 100)
+              const color = heatColor(b.sets, goal)
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => setSelected(b.id)}
+                  className="grid w-full grid-cols-[5.5rem_1fr_2rem] items-center gap-2 py-1 text-left"
                 >
+                  <span className="text-xs text-muted-foreground">{b.label}</span>
                   <span
-                    className="absolute inset-y-0 bg-primary/15"
-                    style={{ left: '45%', width: '46%' }}
-                  />
-                  <span
-                    className="absolute inset-y-0 left-0 rounded"
-                    style={{
-                      width: `${Math.min(100, (b.sets / MAX_SCALE) * 100)}%`,
-                      background: heatColor(b.sets) ?? 'transparent',
-                    }}
-                  />
-                </span>
-                <span className="text-right text-xs tabular-nums">{b.sets}</span>
-              </button>
-            ))}
+                    className={cn(
+                      'relative h-5 overflow-hidden rounded bg-muted',
+                      selected === b.id && 'ring-2 ring-foreground',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute inset-y-0 left-0 rounded',
+                        goal <= 0 && 'bg-muted-foreground/30',
+                      )}
+                      style={{
+                        width: `${fillPct}%`,
+                        background: goal > 0 ? color ?? 'transparent' : undefined,
+                      }}
+                    />
+                    {goal > 0 && (
+                      <span
+                        className="absolute inset-y-0 w-0.5 bg-foreground/50"
+                        style={{ left: `${GOAL_MARK * 100}%` }}
+                      />
+                    )}
+                  </span>
+                  <span className="text-right text-xs tabular-nums">{b.sets}</span>
+                </button>
+              )
+            })}
           </Card>
         )}
 
         <Card className="p-3 text-sm">
           {caption ?? (
             <span className="text-muted-foreground">
-              Tap a muscle to see its weekly sets.
+              Tap a muscle to see its weekly sets vs goal.
             </span>
           )}
         </Card>
@@ -174,9 +203,10 @@ export function MuscleVolumePage() {
 function Legend() {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-      <span>Sets/wk</span>
+      <span>vs goal</span>
       <span className="flex flex-col items-center gap-0.5">
-        <span className="h-3.5 w-6 rounded-sm border border-border bg-muted" />0
+        <span className="h-3.5 w-6 rounded-sm border border-border bg-muted" />
+        none
       </span>
       {HEAT_STOPS.map((s) => (
         <span key={s.label} className="flex flex-col items-center gap-0.5">
@@ -184,7 +214,6 @@ function Legend() {
           {s.label}
         </span>
       ))}
-      <span className="ml-auto">11–20 ≈ in range</span>
     </div>
   )
 }

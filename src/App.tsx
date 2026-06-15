@@ -36,6 +36,7 @@ const ExercisePickerPage = lazyPage(() => import('@/pages/ExercisePickerPage'), 
 const ExerciseDetailPage = lazyPage(() => import('@/pages/ExerciseDetailPage'), 'ExerciseDetailPage')
 const WorkoutCalendarPage = lazyPage(() => import('@/pages/WorkoutCalendarPage'), 'WorkoutCalendarPage')
 const MuscleVolumePage = lazyPage(() => import('@/pages/MuscleVolumePage'), 'MuscleVolumePage')
+const MuscleGoalsPage = lazyPage(() => import('@/pages/MuscleGoalsPage'), 'MuscleGoalsPage')
 const CustomExercisesPage = lazyPage(() => import('@/pages/CustomExercisesPage'), 'CustomExercisesPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
 const RecipesPage = lazyPage(() => import('@/pages/RecipesPage'), 'RecipesPage')
@@ -92,6 +93,7 @@ const router = createBrowserRouter(
       <Route path="/lift/exercise/:key" element={<ExerciseDetailPage />} />
       <Route path="/lift/calendar" element={<WorkoutCalendarPage />} />
       <Route path="/lift/volume" element={<MuscleVolumePage />} />
+      <Route path="/lift/volume/goals" element={<MuscleGoalsPage />} />
       <Route path="/lift/custom-exercises" element={<CustomExercisesPage />} />
       <Route path="/routines/:id" element={<RoutineEditPage />} />
       <Route path="/recipes/:id" element={<RecipeEditPage />} />

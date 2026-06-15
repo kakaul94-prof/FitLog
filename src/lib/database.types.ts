@@ -75,6 +75,9 @@ export interface Profile {
   calorie_goal_mode: 'calculated' | 'manual'
   manual_calorie_goal: number | null
   macro_targets: MacroTargets
+  // Per-muscle weekly set goals (sets/week), keyed by RegionId from bodyMap.
+  // Sparse/nullable; missing regions fall back to DEFAULT_GOALS. 0 = untracked.
+  volume_targets: Record<string, number> | null
   eat_back_exercise: boolean
   created_at: string
   updated_at: string

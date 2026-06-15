@@ -37,6 +37,9 @@ create table if not exists public.profiles (
   macro_targets jsonb not null default
     '{"protein":{"mode":"g_per_lb","value":0.9},"fat":{"mode":"pct","value":30},"carb":{"mode":"remainder"}}'::jsonb,
   eat_back_exercise boolean not null default false,
+  -- Per-muscle weekly set goals (sets/week), keyed by RegionId (src/data/bodyMap.ts).
+  -- Sparse; missing regions use DEFAULT_GOALS in app code. 0 = untracked.
+  volume_targets jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

@@ -361,6 +361,11 @@ function SupersetBlock({
     started_at?: string | null
     ended_at?: string | null
   }) => timing.mutate({ workoutId, group, patch })
+  // First weight entered in any member auto-starts the whole block at once.
+  const maybeAutoStart = () => {
+    if (startedAt == null && endedAt == null)
+      stamp({ started_at: new Date().toISOString() })
+  }
 
   return (
     <div className="space-y-2 rounded-xl border-2 border-primary/30 p-2">
@@ -384,6 +389,7 @@ function SupersetBlock({
           workoutId={workoutId}
           label={`${i + 1}`}
           showTiming={false}
+          onAutoStart={maybeAutoStart}
           onPR={onPR}
         />
       ))}
@@ -397,6 +403,7 @@ function ExerciseCard({
   workoutId,
   label,
   showTiming = true,
+  onAutoStart,
   onPR,
 }: {
   ex: WorkoutExercise
@@ -406,6 +413,9 @@ function ExerciseCard({
   // Standalone exercises carry their own Start/Done; superset members hide it
   // because the block shows a single shared control instead.
   showTiming?: boolean
+  // Superset members defer auto-start to the block's shared timer; standalone
+  // cards fall back to stamping their own started_at (set below).
+  onAutoStart?: () => void
   onPR: (hit: Omit<PRHit, 'id'>) => void
 }) {
   const nav = useNavigate()
@@ -515,6 +525,15 @@ function ExerciseCard({
   const done = ex.ended_at != null
   const stamp = (patch: Partial<WorkoutExercise>) =>
     updateEx.mutate({ id: ex.id, workoutId, ...patch })
+  // First weight entered auto-starts the timer (no need to tap Start). A
+  // superset member hands this to the block; a standalone stamps its own start.
+  // Guarded so it only fires once, and never on an already-done exercise.
+  const autoStart =
+    onAutoStart ??
+    (() => {
+      if (ex.started_at == null && ex.ended_at == null)
+        stamp({ started_at: new Date().toISOString() })
+    })
 
   return (
     <Card className="overflow-hidden">
@@ -565,7 +584,13 @@ function ExerciseCard({
           <span />
         </div>
         {sets.map((s, i) => (
-          <SetRow key={s.id} set={s} index={i + 1} workoutId={workoutId} />
+          <SetRow
+            key={s.id}
+            set={s}
+            index={i + 1}
+            workoutId={workoutId}
+            onWeightEntered={autoStart}
+          />
         ))}
         <button
           onClick={addSetRow}
@@ -605,10 +630,13 @@ function SetRow({
   set,
   index,
   workoutId,
+  onWeightEntered,
 }: {
   set: WorkoutSet
   index: number
   workoutId: string
+  // Auto-start the parent exercise's timer the first time a weight is logged.
+  onWeightEntered: () => void
 }) {
   const [weight, setWeight] = useState(
     set.weight_lb != null ? String(set.weight_lb) : '',
@@ -629,7 +657,11 @@ function SetRow({
           inputMode="decimal"
           value={weight}
           onChange={(e) => setWeight(e.target.value)}
-          onBlur={() => save({ weight_lb: weight ? parseFloat(weight) : null })}
+          onBlur={() => {
+            const w = weight ? parseFloat(weight) : null
+            save({ weight_lb: w })
+            if (w != null && !Number.isNaN(w)) onWeightEntered()
+          }}
         />
         <Input
           className="h-9"

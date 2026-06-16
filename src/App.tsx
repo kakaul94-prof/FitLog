@@ -25,7 +25,7 @@ const StrengthPage = lazyPage(() => import('@/pages/StrengthPage'), 'StrengthPag
 const ProgressPage = lazyPage(() => import('@/pages/ProgressPage'), 'ProgressPage')
 const MorePage = lazyPage(() => import('@/pages/MorePage'), 'MorePage')
 const ProfilePage = lazyPage(() => import('@/pages/ProfilePage'), 'ProfilePage')
-const FoodsPage = lazyPage(() => import('@/pages/FoodsPage'), 'FoodsPage')
+const LibraryPage = lazyPage(() => import('@/pages/LibraryPage'), 'LibraryPage')
 const FoodFormPage = lazyPage(() => import('@/pages/FoodFormPage'), 'FoodFormPage')
 const FoodPickerPage = lazyPage(() => import('@/pages/FoodPickerPage'), 'FoodPickerPage')
 const DiaryEntryPage = lazyPage(() => import('@/pages/DiaryEntryPage'), 'DiaryEntryPage')
@@ -39,8 +39,6 @@ const MuscleVolumePage = lazyPage(() => import('@/pages/MuscleVolumePage'), 'Mus
 const MuscleGoalsPage = lazyPage(() => import('@/pages/MuscleGoalsPage'), 'MuscleGoalsPage')
 const CustomExercisesPage = lazyPage(() => import('@/pages/CustomExercisesPage'), 'CustomExercisesPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
-const RecipesPage = lazyPage(() => import('@/pages/RecipesPage'), 'RecipesPage')
-const MealsPage = lazyPage(() => import('@/pages/MealsPage'), 'MealsPage')
 const RecipeEditPage = lazyPage(() => import('@/pages/RecipeEditPage'), 'RecipeEditPage')
 
 const queryClient = new QueryClient({
@@ -77,11 +75,11 @@ const router = createBrowserRouter(
         <Route path="progress" element={<ProgressPage />} />
         <Route path="more" element={<MorePage />} />
         <Route path="profile" element={<ProfilePage />} />
-        <Route path="foods" element={<FoodsPage />} />
+        <Route path="foods" element={<LibraryPage />} />
         <Route path="foods/new" element={<FoodFormPage />} />
         <Route path="foods/:id" element={<FoodFormPage />} />
-        <Route path="recipes" element={<RecipesPage />} />
-        <Route path="meals" element={<MealsPage />} />
+        <Route path="recipes" element={<LibraryPage />} />
+        <Route path="meals" element={<LibraryPage />} />
       </Route>
       <Route path="/diary/add" element={<FoodPickerPage />} />
       <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />

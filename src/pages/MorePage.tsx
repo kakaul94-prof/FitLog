@@ -4,9 +4,7 @@ import {
   User,
   LogOut,
   ChevronRight,
-  Apple,
-  ChefHat,
-  Utensils,
+  Library,
   Download,
   Sun,
   Moon,
@@ -95,24 +93,8 @@ export function MorePage() {
             to="/foods"
             className="flex items-center gap-3 p-4 active:bg-accent"
           >
-            <Apple className="h-5 w-5 text-muted-foreground" />
-            <span className="flex-1 text-sm font-medium">My Foods</span>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </Link>
-          <Link
-            to="/recipes"
-            className="flex items-center gap-3 p-4 active:bg-accent"
-          >
-            <ChefHat className="h-5 w-5 text-muted-foreground" />
-            <span className="flex-1 text-sm font-medium">Recipes</span>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </Link>
-          <Link
-            to="/meals"
-            className="flex items-center gap-3 p-4 active:bg-accent"
-          >
-            <Utensils className="h-5 w-5 text-muted-foreground" />
-            <span className="flex-1 text-sm font-medium">Saved Meals</span>
+            <Library className="h-5 w-5 text-muted-foreground" />
+            <span className="flex-1 text-sm font-medium">Food Library</span>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </Link>
         </Card>

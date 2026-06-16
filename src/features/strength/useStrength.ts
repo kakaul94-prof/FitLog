@@ -479,8 +479,10 @@ export function useExerciseSessions(key: string | undefined) {
 export interface ExerciseBests {
   /** Heaviest single set ever logged (lb). */
   maxWeight: number
+  /** Highest single-set volume ever (reps × weight, lb). */
+  maxSetVolume: number
   /** Highest single-session total volume ever (Σ reps × weight, lb). */
-  maxVolume: number
+  maxSessionVolume: number
 }
 
 /**
@@ -512,16 +514,20 @@ export function useExerciseBests(
       ).filter((r) => r.workout_id !== excludeWorkoutId)
       if (!rows.length) return null
       let maxWeight = 0
+      let maxSetVolume = 0
       const volByWorkout = new Map<string, number>()
       for (const r of rows) {
         const w = r.weight_lb ?? 0
         if (w > maxWeight) maxWeight = w
         const v = (r.reps ?? 0) * w
+        if (v > maxSetVolume) maxSetVolume = v
         volByWorkout.set(r.workout_id, (volByWorkout.get(r.workout_id) ?? 0) + v)
       }
-      const maxVolume = volByWorkout.size ? Math.max(...volByWorkout.values()) : 0
-      if (maxWeight <= 0 && maxVolume <= 0) return null
-      return { maxWeight, maxVolume }
+      const maxSessionVolume = volByWorkout.size
+        ? Math.max(...volByWorkout.values())
+        : 0
+      if (maxWeight <= 0 && maxSetVolume <= 0 && maxSessionVolume <= 0) return null
+      return { maxWeight, maxSetVolume, maxSessionVolume }
     },
   })
 }

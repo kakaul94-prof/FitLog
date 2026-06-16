@@ -37,14 +37,16 @@ import { cn } from '@/lib/utils'
 import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
 
 // A personal-record hit, surfaced as a celebration banner. `value` is the new
-// best, `prev` the old one it beat. Weight PRs fire live as a set is logged;
-// volume PRs fire when an exercise is marked done.
+// best, `prev` the old one it beat. `weight` (heaviest set) and `volume`
+// (biggest single set's reps × weight, with `detail` = "weight × reps") fire
+// per SET as it's logged; `session` (biggest total tonnage) fires on Done.
 type PRHit = {
   id: number
-  metric: 'weight' | 'volume'
+  metric: 'weight' | 'volume' | 'session'
   name: string
   value: number
   prev: number
+  detail?: string
 }
 
 export function WorkoutPage() {
@@ -64,12 +66,14 @@ export function WorkoutPage() {
   const onPR = useCallback((hit: Omit<PRHit, 'id'>) => {
     setPrs((q) => [...q, { ...hit, id: ++prIdRef.current }])
   }, [])
+  const currentPR = prs[0]
+  // Each banner gets its own ~3.5s; queueing more behind it doesn't reset the
+  // visible one's timer (keyed on the front banner's id, not the whole queue).
   useEffect(() => {
-    if (!prs.length) return
+    if (!currentPR) return
     const t = setTimeout(() => setPrs((q) => q.slice(1)), 3500)
     return () => clearTimeout(t)
-  }, [prs])
-  const currentPR = prs[0]
+  }, [currentPR?.id])
 
   // Register this workout's rest duration with the global timer so the running
   // countdown persists across navigation (the bar is rendered at the app root).
@@ -416,36 +420,60 @@ function ExerciseCard({
     0,
   )
 
-  // ---- PR detection (against prior workouts only; null = nothing to beat) ----
+  // ---- PR detection (vs PRIOR workouts; bests is null when there's nothing to
+  // beat). Per SET, and can fire more than once a session: each set that pushes
+  // past the running high-water mark celebrates — not just the first. ----
   const { data: bests } = useExerciseBests(ex.exercise_key, workoutId)
-
-  // Heaviest-weight PR fires live: the first time this session's top set beats
-  // the all-time best. Seeds on first load (and on remount) so an already-PR'd
-  // session doesn't re-celebrate; fires at most once per exercise per session.
-  const weightSeeded = useRef(false)
-  const weightHit = useRef(false)
+  const weightMark = useRef<number | null>(null)
+  const volMark = useRef<number | null>(null)
   useEffect(() => {
     if (!bests) return
-    const sessionMax = sets.reduce((m, s) => Math.max(m, s.weight_lb ?? 0), 0)
-    if (!weightSeeded.current) {
-      weightSeeded.current = true
-      if (sessionMax > bests.maxWeight) weightHit.current = true
+    // This session's heaviest single set + its biggest single-set volume.
+    let sessionWeight = 0
+    let sessionVol = 0
+    let volW = 0
+    let volR = 0
+    for (const s of sets) {
+      const w = s.weight_lb ?? 0
+      const r = s.reps ?? 0
+      if (w > sessionWeight) sessionWeight = w
+      if (w > 0 && r > 0 && w * r > sessionVol) {
+        sessionVol = w * r
+        volW = w
+        volR = r
+      }
+    }
+    // Seed the marks once (include what's already logged) so opening/reopening
+    // an exercise doesn't re-celebrate sets that already exist.
+    if (weightMark.current === null) {
+      weightMark.current = Math.max(bests.maxWeight, sessionWeight)
+      volMark.current = Math.max(bests.maxSetVolume, sessionVol)
       return
     }
-    if (!weightHit.current && bests.maxWeight > 0 && sessionMax > bests.maxWeight) {
-      weightHit.current = true
+    // Heaviest-weight PR — needs a real prior weight so a first-ever weighted
+    // set doesn't read as "beat 0".
+    if (bests.maxWeight > 0 && sessionWeight > weightMark.current) {
+      const prev = weightMark.current
+      weightMark.current = sessionWeight
+      onPR({ metric: 'weight', name: ex.exercise_name, value: sessionWeight, prev })
+    }
+    // Biggest single-set volume PR (one set's reps × weight), once it's logged.
+    if (bests.maxSetVolume > 0 && sessionVol > (volMark.current ?? 0)) {
+      const prev = volMark.current ?? 0
+      volMark.current = sessionVol
       onPR({
-        metric: 'weight',
+        metric: 'volume',
         name: ex.exercise_name,
-        value: sessionMax,
-        prev: bests.maxWeight,
+        value: sessionVol,
+        prev,
+        detail: `${volW} × ${volR}`,
       })
     }
   }, [sets, bests, ex.exercise_name, onPR])
 
-  // Volume PR fires when the exercise is marked done (ended_at goes null →
-  // set): compare this session's total tonnage to the best-ever session. Only
-  // the done transition fires, so editing sets afterward won't re-trigger.
+  // Session-volume PR: fires once when the exercise is marked done (ended_at
+  // null → set), if this session's total tonnage beats the best-ever session.
+  // Seeded on first load so reopening a done exercise doesn't re-fire.
   const prevEnded = useRef<string | null | undefined>(undefined)
   useEffect(() => {
     if (!bests) return
@@ -454,16 +482,16 @@ function ExerciseCard({
       return
     }
     if (prevEnded.current == null && ex.ended_at != null) {
-      const vol = sets.reduce(
+      const total = sets.reduce(
         (sum, s) => sum + (s.reps ?? 0) * (s.weight_lb ?? 0),
         0,
       )
-      if (bests.maxVolume > 0 && vol > bests.maxVolume)
+      if (bests.maxSessionVolume > 0 && total > bests.maxSessionVolume)
         onPR({
-          metric: 'volume',
+          metric: 'session',
           name: ex.exercise_name,
-          value: vol,
-          prev: bests.maxVolume,
+          value: total,
+          prev: bests.maxSessionVolume,
         })
     }
     prevEnded.current = ex.ended_at
@@ -653,10 +681,20 @@ function PRBanner({ hit, onDismiss }: { hit: PRHit; onDismiss: () => void }) {
       })),
     [hit.id],
   )
-  const isWeight = hit.metric === 'weight'
-  const fmt = (n: number) =>
-    isWeight ? `${n} lb` : `${Math.round(n).toLocaleString()} lb`
-  const title = isWeight ? 'New top set!' : 'New volume PR!'
+  const lb = (n: number) => Math.round(n).toLocaleString()
+  const title =
+    hit.metric === 'weight'
+      ? 'Heaviest set!'
+      : hit.metric === 'volume'
+        ? 'Best set volume!'
+        : 'Best session volume!'
+  const value =
+    hit.metric === 'weight'
+      ? `${hit.value} lb`
+      : hit.metric === 'volume'
+        ? `${hit.detail} = ${lb(hit.value)} lb`
+        : `${lb(hit.value)} lb total`
+  const prev = hit.metric === 'weight' ? `${hit.prev} lb` : `${lb(hit.prev)} lb`
 
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] mx-auto flex max-w-md justify-center px-4 pt-3">
@@ -687,8 +725,8 @@ function PRBanner({ hit, onDismiss }: { hit: PRHit; onDismiss: () => void }) {
           <div className="min-w-0 flex-1 text-left">
             <div className="text-sm font-bold leading-tight">{title}</div>
             <div className="truncate text-xs opacity-90">
-              {hit.name} · {fmt(hit.value)}{' '}
-              <span className="opacity-75">(beat {fmt(hit.prev)})</span>
+              {hit.name} · {value}{' '}
+              <span className="opacity-75">(beat {prev})</span>
             </div>
           </div>
         </div>

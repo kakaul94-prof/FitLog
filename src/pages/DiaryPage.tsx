@@ -251,12 +251,20 @@ export function DiaryPage() {
           )
           return (
             <Card key={m.key} className="overflow-hidden">
-              <div className="flex items-center justify-between border-b border-border p-3">
+              <button
+                type="button"
+                disabled={items.length === 0}
+                onClick={() =>
+                  nav(`/diary/nutrients?date=${date}&meal=${m.key}`)
+                }
+                className="flex w-full items-center justify-between border-b border-border p-3 text-left active:bg-accent"
+              >
                 <span className="font-semibold">{m.label}</span>
-                <span className="text-xs text-muted-foreground">
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   {mealKcal} calories
+                  {items.length > 0 && <ChevronRight className="h-4 w-4" />}
                 </span>
-              </div>
+              </button>
               <div className="divide-y divide-border">
                 {items.map((e) => (
                   <FoodEntryRow

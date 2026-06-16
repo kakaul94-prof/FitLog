@@ -235,7 +235,19 @@ export function RoutineEditPage() {
     closeAdd()
   }
   const removeEx = (localId: string) =>
-    setDraft((prev) => prev.filter((e) => e.localId !== localId))
+    setDraft((prev) => {
+      const removed = prev.find((e) => e.localId === localId)
+      const next = prev.filter((e) => e.localId !== localId)
+      const g = removed?.superset_group
+      // If pulling this exercise leaves its superset with a single member, the
+      // superset is meaningless — dissolve it so the lone row becomes a normal
+      // exercise again (and regains its "Superset" button to pair anew).
+      if (g != null && next.filter((e) => e.superset_group === g).length === 1)
+        return next.map((e) =>
+          e.superset_group === g ? { ...e, superset_group: null } : e,
+        )
+      return next
+    })
   const setTarget = (localId: string, patch: Partial<DraftEx>) =>
     setDraft((prev) =>
       prev.map((e) => (e.localId === localId ? { ...e, ...patch } : e)),

@@ -5,7 +5,7 @@
 //   3. mapping (this file): tag/exercise -> our regions, and asset slug -> region
 import { EXERCISES } from '@/data/exercises'
 
-// Our logical muscle regions. Back is split traps / upper-back / lats / erector;
+// Our logical muscle regions. Back is split upper-back (traps folded in) / lats / erector;
 // core is split obliques / rectus / lower abs; delts are front / side / rear.
 export type RegionId =
   | 'chest'
@@ -15,7 +15,6 @@ export type RegionId =
   | 'biceps'
   | 'triceps'
   | 'forearm'
-  | 'trapezius'
   | 'upper_back'
   | 'lats'
   | 'erector_spinae'
@@ -35,7 +34,6 @@ export const REGION_IDS: RegionId[] = [
   'biceps',
   'triceps',
   'forearm',
-  'trapezius',
   'upper_back',
   'lats',
   'erector_spinae',
@@ -56,7 +54,6 @@ export const REGION_LABEL: Record<RegionId, string> = {
   biceps: 'Biceps',
   triceps: 'Triceps',
   forearm: 'Forearms',
-  trapezius: 'Trapezius',
   upper_back: 'Upper back',
   lats: 'Lats',
   erector_spinae: 'Erector spinae',
@@ -84,14 +81,14 @@ const FRONT_SLUG_REGION: Record<string, RegionId> = {
   forearm: 'forearm',
   obliques: 'obliques',
   quadriceps: 'quads',
-  trapezius: 'trapezius',
+  trapezius: 'upper_back',
   calves: 'calves',
 }
 const BACK_SLUG_REGION: Record<string, RegionId> = {
   deltoids: 'rear_delts',
   triceps: 'triceps',
   'lower-back': 'erector_spinae',
-  trapezius: 'trapezius',
+  trapezius: 'upper_back',
   gluteal: 'glutes',
   hamstring: 'hams',
   calves: 'calves',
@@ -119,7 +116,7 @@ export const TAG_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   Glutes: { glutes: 1, hams: 0.5 },
   Calves: { calves: 1 },
   Forearm: { forearm: 1 },
-  Trapezius: { trapezius: 1 },
+  Trapezius: { upper_back: 1 },
   Obliques: { obliques: 1 },
   Core: { rectus_abdominis: 0.5, lower_abs: 0.25, obliques: 0.25 },
 }
@@ -165,9 +162,9 @@ export const EXERCISE_OVERRIDE: Record<string, Partial<Record<RegionId, number>>
   barbell_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   db_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   seated_cable_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
-  face_pull: { rear_delts: 1, trapezius: 0.5, upper_back: 0.5 },
+  face_pull: { rear_delts: 1, upper_back: 1 },
   // posterior chain
-  deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5, trapezius: 0.5 },
+  deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5, upper_back: 0.5 },
   romanian_deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5 },
   // legs
   front_squat: { quads: 1, glutes: 0.5 },
@@ -212,7 +209,7 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'high row': { upper_back: 1, lats: 0.5 },
   't bar row': { upper_back: 1, lats: 0.5, biceps: 0.5 },
   'chest supported rows': { upper_back: 1, lats: 0.5, rear_delts: 0.5 },
-  'flexion row': { upper_back: 1, lats: 0.5 },
+  'flexion row': { erector_spinae: 1, lats: 0.5 },
   'w raise': { upper_back: 1, rear_delts: 0.5 },
   // back — rear delt
   'rear delt rows': { rear_delts: 1, upper_back: 0.5 },
@@ -220,12 +217,12 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'row deltoid': { rear_delts: 1, upper_back: 0.5 },
   'reverse rear delt cable flys': { rear_delts: 1, upper_back: 0.5 },
   'inclined dumbbell face pulls': { rear_delts: 1, upper_back: 0.5 },
-  'inclined y raises': { rear_delts: 1, trapezius: 0.5 },
-  // back — traps / erector
-  'dumbbell shoulder shrug': { trapezius: 1 },
-  'barbell shoulder shrugs': { trapezius: 1 },
-  'scapula depressions': { trapezius: 1, upper_back: 0.5 },
-  'farmers walk': { trapezius: 1, erector_spinae: 0.5, forearm: 0.5 },
+  'inclined y raises': { rear_delts: 1, upper_back: 0.5 },
+  // back — traps (folded into upper back) / erector
+  'dumbbell shoulder shrug': { upper_back: 1 },
+  'barbell shoulder shrugs': { upper_back: 1 },
+  'scapula depressions': { upper_back: 1.5 },
+  'farmers walk': { upper_back: 1, erector_spinae: 0.5, forearm: 0.5 },
   'back extension': { erector_spinae: 1, glutes: 0.5 },
   'inclined back extensions': { erector_spinae: 1, glutes: 0.5 },
   supermans: { erector_spinae: 1, glutes: 0.5 },
@@ -297,7 +294,6 @@ export const DEFAULT_GOALS: Record<RegionId, number> = {
   biceps: 12,
   triceps: 12,
   forearm: 6,
-  trapezius: 10,
   upper_back: 14,
   lats: 14,
   erector_spinae: 8,

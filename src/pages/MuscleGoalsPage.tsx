@@ -13,12 +13,12 @@ import {
   type RegionId,
 } from '@/data/bodyMap'
 
-// Editor layout — the 18 regions grouped so it reads as a workout, not a flat list.
+// Editor layout — the 17 regions grouped so it reads as a workout, not a flat list.
 const GROUPS: { title: string; regions: RegionId[] }[] = [
   { title: 'Push', regions: ['chest', 'shoulders', 'side_delts', 'triceps'] },
   {
     title: 'Pull',
-    regions: ['lats', 'upper_back', 'trapezius', 'rear_delts', 'biceps', 'forearm'],
+    regions: ['lats', 'upper_back', 'rear_delts', 'biceps', 'forearm'],
   },
   { title: 'Legs', regions: ['quads', 'hams', 'glutes', 'calves'] },
   {

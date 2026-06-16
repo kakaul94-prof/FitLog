@@ -326,6 +326,11 @@ export function FoodFormPage() {
         servings: 1,
       })
     }
+    // New food created from "Add to {meal}" → return to that list, pre-selected.
+    if (logTo && !id) {
+      nav(backTo, { state: { addFood: saved } })
+      return
+    }
     nav(backTo)
   }
 
@@ -670,7 +675,7 @@ export function FoodFormPage() {
           </CardContent>
         </Card>
 
-        {logTo && (
+        {logTo && id && (
           <Button
             className="w-full"
             size="lg"
@@ -685,7 +690,7 @@ export function FoodFormPage() {
         <Button
           className="w-full"
           size="lg"
-          variant={logTo ? 'outline' : 'default'}
+          variant={logTo && id ? 'outline' : 'default'}
           onClick={onSave}
           disabled={saveFood.isPending || addIng.isPending || !name.trim()}
         >

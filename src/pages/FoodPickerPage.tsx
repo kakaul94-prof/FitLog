@@ -46,8 +46,12 @@ export function FoodPickerPage() {
   const meal = (params.get('meal') || 'breakfast') as Meal
   const [search, setSearch] = useState('')
   const { data: foods } = useFoods(search)
-  const [multi, setMulti] = useState(false)
-  const [picks, setPicks] = useState<Pick[]>([])
+  // Returning from "New food" pre-selects the just-created food for one-tap add.
+  const justAdded = (location.state as { addFood?: Food } | null)?.addFood
+  const [multi, setMulti] = useState(!!justAdded)
+  const [picks, setPicks] = useState<Pick[]>(
+    justAdded ? [{ food: justAdded, servings: '1' }] : [],
+  )
   const logMany = useLogFoods()
   const del = useDeleteFood()
   const { data: history } = useFoodHistory()
@@ -78,6 +82,12 @@ export function FoodPickerPage() {
   const openFood = (f: Food) => {
     const back = encodeURIComponent(location.pathname + location.search)
     nav(`/foods/${f.id}?meal=${meal}&date=${date}&returnTo=${back}`)
+  }
+
+  // "New food" carries the meal context so saving returns here (pre-selected).
+  const newFood = () => {
+    const back = encodeURIComponent(location.pathname + location.search)
+    nav(`/foods/new?meal=${meal}&date=${date}&returnTo=${back}`)
   }
 
   const onRowTap = (f: Food) => {
@@ -269,7 +279,7 @@ export function FoodPickerPage() {
         ) : (
           <>
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" onClick={() => nav('/foods/new')}>
+          <Button variant="outline" onClick={newFood}>
             <Plus className="h-4 w-4" /> New food
           </Button>
           <Button variant="outline" onClick={() => setCopyOpen(true)}>

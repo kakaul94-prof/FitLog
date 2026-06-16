@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -28,12 +28,24 @@ import {
   useLastExerciseNote,
   useUpdateWorkout,
   useDeleteWorkout,
+  useExerciseBests,
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
 import { estimated1RM } from '@/lib/calc'
 import { dateLabel, timeLabel } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
+
+// A personal-record hit, surfaced as a celebration banner. `value` is the new
+// best, `prev` the old one it beat. Weight PRs fire live as a set is logged;
+// volume PRs fire when an exercise is marked done.
+type PRHit = {
+  id: number
+  metric: 'weight' | 'volume'
+  name: string
+  value: number
+  prev: number
+}
 
 export function WorkoutPage() {
   const { id } = useParams()
@@ -44,6 +56,20 @@ export function WorkoutPage() {
   const workout = data?.workout
   const exercises = data?.exercises ?? []
   const sets = data?.sets ?? []
+
+  // PR celebration queue: exercise cards report hits up here; we show one banner
+  // at a time and auto-dismiss it after a few seconds (tap dismisses early).
+  const [prs, setPrs] = useState<PRHit[]>([])
+  const prIdRef = useRef(0)
+  const onPR = useCallback((hit: Omit<PRHit, 'id'>) => {
+    setPrs((q) => [...q, { ...hit, id: ++prIdRef.current }])
+  }, [])
+  useEffect(() => {
+    if (!prs.length) return
+    const t = setTimeout(() => setPrs((q) => q.slice(1)), 3500)
+    return () => clearTimeout(t)
+  }, [prs])
+  const currentPR = prs[0]
 
   // Register this workout's rest duration with the global timer so the running
   // countdown persists across navigation (the bar is rendered at the app root).
@@ -116,13 +142,17 @@ export function WorkoutPage() {
     group: number | null
     exercises: WorkoutExercise[]
   }) =>
-    b.group != null ? (
+    // A superset needs ≥2 members. If deleting one leaves a lone exercise in the
+    // group, render it as a standalone card so its "Superset" button returns —
+    // re-adding reuses the still-set group number, reforming the superset.
+    b.group != null && b.exercises.length > 1 ? (
       <SupersetBlock
         key={`sg-${b.group}`}
         group={b.group}
         exercises={b.exercises}
         setsFor={setsFor}
         workoutId={id!}
+        onPR={onPR}
       />
     ) : (
       <ExerciseCard
@@ -130,6 +160,7 @@ export function WorkoutPage() {
         ex={b.exercises[0]}
         sets={setsFor(b.exercises[0].id)}
         workoutId={id!}
+        onPR={onPR}
       />
     )
 
@@ -228,6 +259,15 @@ export function WorkoutPage() {
           </div>,
           document.body,
         )}
+      {currentPR &&
+        createPortal(
+          <PRBanner
+            key={currentPR.id}
+            hit={currentPR}
+            onDismiss={() => setPrs((q) => q.slice(1))}
+          />,
+          document.body,
+        )}
     </div>
   )
 }
@@ -293,11 +333,13 @@ function SupersetBlock({
   exercises,
   setsFor,
   workoutId,
+  onPR,
 }: {
   group: number
   exercises: WorkoutExercise[]
   setsFor: (weId: string) => WorkoutSet[]
   workoutId: string
+  onPR: (hit: Omit<PRHit, 'id'>) => void
 }) {
   const timing = useUpdateSupersetTiming()
   // The block's window is derived from its exercises (stamped together): start
@@ -338,6 +380,7 @@ function SupersetBlock({
           workoutId={workoutId}
           label={`${i + 1}`}
           showTiming={false}
+          onPR={onPR}
         />
       ))}
     </div>
@@ -350,6 +393,7 @@ function ExerciseCard({
   workoutId,
   label,
   showTiming = true,
+  onPR,
 }: {
   ex: WorkoutExercise
   sets: WorkoutSet[]
@@ -358,6 +402,7 @@ function ExerciseCard({
   // Standalone exercises carry their own Start/Done; superset members hide it
   // because the block shows a single shared control instead.
   showTiming?: boolean
+  onPR: (hit: Omit<PRHit, 'id'>) => void
 }) {
   const nav = useNavigate()
   const addSet = useAddSet()
@@ -370,6 +415,59 @@ function ExerciseCard({
     (m, s) => Math.max(m, estimated1RM(s.weight_lb ?? 0, s.reps ?? 0)),
     0,
   )
+
+  // ---- PR detection (against prior workouts only; null = nothing to beat) ----
+  const { data: bests } = useExerciseBests(ex.exercise_key, workoutId)
+
+  // Heaviest-weight PR fires live: the first time this session's top set beats
+  // the all-time best. Seeds on first load (and on remount) so an already-PR'd
+  // session doesn't re-celebrate; fires at most once per exercise per session.
+  const weightSeeded = useRef(false)
+  const weightHit = useRef(false)
+  useEffect(() => {
+    if (!bests) return
+    const sessionMax = sets.reduce((m, s) => Math.max(m, s.weight_lb ?? 0), 0)
+    if (!weightSeeded.current) {
+      weightSeeded.current = true
+      if (sessionMax > bests.maxWeight) weightHit.current = true
+      return
+    }
+    if (!weightHit.current && bests.maxWeight > 0 && sessionMax > bests.maxWeight) {
+      weightHit.current = true
+      onPR({
+        metric: 'weight',
+        name: ex.exercise_name,
+        value: sessionMax,
+        prev: bests.maxWeight,
+      })
+    }
+  }, [sets, bests, ex.exercise_name, onPR])
+
+  // Volume PR fires when the exercise is marked done (ended_at goes null →
+  // set): compare this session's total tonnage to the best-ever session. Only
+  // the done transition fires, so editing sets afterward won't re-trigger.
+  const prevEnded = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (!bests) return
+    if (prevEnded.current === undefined) {
+      prevEnded.current = ex.ended_at
+      return
+    }
+    if (prevEnded.current == null && ex.ended_at != null) {
+      const vol = sets.reduce(
+        (sum, s) => sum + (s.reps ?? 0) * (s.weight_lb ?? 0),
+        0,
+      )
+      if (bests.maxVolume > 0 && vol > bests.maxVolume)
+        onPR({
+          metric: 'volume',
+          name: ex.exercise_name,
+          value: vol,
+          prev: bests.maxVolume,
+        })
+    }
+    prevEnded.current = ex.ended_at
+  }, [ex.ended_at, sets, bests, ex.exercise_name, onPR])
 
   const addSetRow = () => {
     addSet.mutate({
@@ -535,6 +633,66 @@ function SetRow({
           <X className="h-4 w-4" />
         </button>
       </div>
+    </div>
+  )
+}
+
+const CONFETTI = ['#22c55e', '#eab308', '#38bdf8', '#f472b6', '#fb923c', '#a78bfa']
+
+// Celebration banner: slides down from the top with a one-shot CSS confetti
+// burst, auto-dismisses (parent timer) or on tap. Pure CSS — no dependency.
+function PRBanner({ hit, onDismiss }: { hit: PRHit; onDismiss: () => void }) {
+  // Randomized confetti, fixed for this banner instance (keyed on hit.id).
+  const pieces = useMemo(
+    () =>
+      Array.from({ length: 18 }, (_, i) => ({
+        left: Math.round((i / 18) * 100 + Math.random() * 5),
+        bg: CONFETTI[i % CONFETTI.length],
+        delay: Math.round(Math.random() * 250),
+        dur: 900 + Math.round(Math.random() * 700),
+      })),
+    [hit.id],
+  )
+  const isWeight = hit.metric === 'weight'
+  const fmt = (n: number) =>
+    isWeight ? `${n} lb` : `${Math.round(n).toLocaleString()} lb`
+  const title = isWeight ? 'New top set!' : 'New volume PR!'
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60] mx-auto flex max-w-md justify-center px-4 pt-3">
+      <style>{`
+@keyframes pr-banner-in { from { transform: translateY(-130%); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
+@keyframes pr-confetti { 0% { transform: translateY(-8px) rotate(0deg); opacity: 1 } 100% { transform: translateY(72px) rotate(560deg); opacity: 0 } }
+`}</style>
+      <button
+        onClick={onDismiss}
+        style={{ animation: 'pr-banner-in 300ms ease-out' }}
+        className="pointer-events-auto relative w-full overflow-hidden rounded-2xl bg-primary text-primary-foreground shadow-lg"
+      >
+        <div className="pointer-events-none absolute inset-0">
+          {pieces.map((p, i) => (
+            <span
+              key={i}
+              className="absolute top-0 h-2 w-1.5 rounded-sm"
+              style={{
+                left: `${p.left}%`,
+                background: p.bg,
+                animation: `pr-confetti ${p.dur}ms ease-in ${p.delay}ms both`,
+              }}
+            />
+          ))}
+        </div>
+        <div className="relative flex items-center gap-3 px-4 py-3">
+          <span className="text-2xl leading-none">🏆</span>
+          <div className="min-w-0 flex-1 text-left">
+            <div className="text-sm font-bold leading-tight">{title}</div>
+            <div className="truncate text-xs opacity-90">
+              {hit.name} · {fmt(hit.value)}{' '}
+              <span className="opacity-75">(beat {fmt(hit.prev)})</span>
+            </div>
+          </div>
+        </div>
+      </button>
     </div>
   )
 }

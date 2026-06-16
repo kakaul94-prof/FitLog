@@ -475,3 +475,53 @@ export function useExerciseSessions(key: string | undefined) {
     },
   })
 }
+
+export interface ExerciseBests {
+  /** Heaviest single set ever logged (lb). */
+  maxWeight: number
+  /** Highest single-session total volume ever (Σ reps × weight, lb). */
+  maxVolume: number
+}
+
+/**
+ * All-time bests for one exercise from PRIOR workouts only (excludes the given
+ * workout), so an in-progress session is compared against history — not itself.
+ * Returns null when there's nothing to beat yet (no prior sets / all blank), so
+ * a first-ever session never counts as a PR. Doesn't refetch on the current
+ * workout's edits (it filters that workout out), so the baseline stays stable.
+ */
+export function useExerciseBests(
+  key: string | undefined,
+  excludeWorkoutId: string | undefined,
+) {
+  return useQuery({
+    queryKey: ['exerciseBests', key, excludeWorkoutId],
+    enabled: !!key,
+    queryFn: async (): Promise<ExerciseBests | null> => {
+      const { data, error } = await supabase
+        .from('workout_sets')
+        .select('workout_id,reps,weight_lb')
+        .eq('exercise_key', key)
+      if (error) throw error
+      const rows = (
+        (data ?? []) as {
+          workout_id: string
+          reps: number | null
+          weight_lb: number | null
+        }[]
+      ).filter((r) => r.workout_id !== excludeWorkoutId)
+      if (!rows.length) return null
+      let maxWeight = 0
+      const volByWorkout = new Map<string, number>()
+      for (const r of rows) {
+        const w = r.weight_lb ?? 0
+        if (w > maxWeight) maxWeight = w
+        const v = (r.reps ?? 0) * w
+        volByWorkout.set(r.workout_id, (volByWorkout.get(r.workout_id) ?? 0) + v)
+      }
+      const maxVolume = volByWorkout.size ? Math.max(...volByWorkout.values()) : 0
+      if (maxWeight <= 0 && maxVolume <= 0) return null
+      return { maxWeight, maxVolume }
+    },
+  })
+}

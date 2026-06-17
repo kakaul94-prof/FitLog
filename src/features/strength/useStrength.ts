@@ -427,6 +427,7 @@ export interface ExerciseSession {
   workoutId: string
   date: string
   name: string | null
+  notes: string | null
   sets: ExerciseSessionSet[]
 }
 
@@ -444,15 +445,32 @@ export function useExerciseSessions(key: string | undefined) {
       const s = (sets ?? []) as (ExerciseSessionSet & { workout_id: string })[]
       if (!s.length) return []
       const ids = [...new Set(s.map((x) => x.workout_id))]
-      const { data: ws } = await supabase
-        .from('workouts')
-        .select('id,workout_date,name')
-        .in('id', ids)
+      const [{ data: ws }, { data: wex }] = await Promise.all([
+        supabase.from('workouts').select('id,workout_date,name').in('id', ids),
+        supabase
+          .from('workout_exercises')
+          .select('workout_id,notes')
+          .eq('exercise_key', key)
+          .in('workout_id', ids)
+          .not('notes', 'is', null),
+      ])
       const meta = new Map(
         ((ws ?? []) as { id: string; workout_date: string; name: string | null }[]).map(
           (w) => [w.id, { date: w.workout_date, name: w.name }],
         ),
       )
+      // Per-session note lives on workout_exercises; if an exercise was logged
+      // twice in one workout, join both notes for that session.
+      const notesByW = new Map<string, string>()
+      for (const r of (wex ?? []) as {
+        workout_id: string
+        notes: string | null
+      }[]) {
+        const n = r.notes?.trim()
+        if (!n) continue
+        const prev = notesByW.get(r.workout_id)
+        notesByW.set(r.workout_id, prev ? `${prev}\n${n}` : n)
+      }
       const byW = new Map<string, ExerciseSessionSet[]>()
       for (const x of s) {
         const arr = byW.get(x.workout_id) ?? []
@@ -469,7 +487,13 @@ export function useExerciseSessions(key: string | undefined) {
         const m = meta.get(wid)
         if (!m) continue
         arr.sort((a, b) => a.set_number - b.set_number)
-        rows.push({ workoutId: wid, date: m.date, name: m.name, sets: arr })
+        rows.push({
+          workoutId: wid,
+          date: m.date,
+          name: m.name,
+          notes: notesByW.get(wid) ?? null,
+          sets: arr,
+        })
       }
       return rows.sort((a, b) => b.date.localeCompare(a.date))
     },

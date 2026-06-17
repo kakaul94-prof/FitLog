@@ -172,6 +172,11 @@ function HistoryTab({ exerciseKey }: { exerciseKey: string | undefined }) {
                 </div>
               ))}
             </div>
+            {s.notes && (
+              <div className="whitespace-pre-line border-t border-border px-3 py-2 text-xs text-muted-foreground">
+                {s.notes}
+              </div>
+            )}
           </Card>
         )
       })}

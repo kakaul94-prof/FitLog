@@ -344,7 +344,7 @@ export function FoodFormPage() {
       food: saved,
       servings: 1,
     })
-    nav('/')
+    nav(backTo)
   }
 
   return (

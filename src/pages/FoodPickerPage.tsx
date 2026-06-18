@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -74,6 +74,18 @@ export function FoodPickerPage() {
   const [importing, setImporting] = useState<number | null>(null)
   const [menuFood, setMenuFood] = useState<Food | null>(null)
   const [servingFood, setServingFood] = useState<Food | null>(null)
+  // Item (2): stay in the picker after adding; show a running tally + a toast.
+  const [tally, setTally] = useState({ count: 0, kcal: 0 })
+  const [toast, setToast] = useState<string | null>(null)
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 1800)
+    return () => clearTimeout(t)
+  }, [toast])
+  const noteAdded = (count: number, kcal: number, label: string) => {
+    setTally((p) => ({ count: p.count + count, kcal: p.kcal + kcal }))
+    setToast(label)
+  }
 
   const isPicked = (id: string) => picks.some((p) => p.food.id === id)
 
@@ -122,7 +134,12 @@ export function FoodPickerPage() {
         servings: parseFloat(p.servings) || 1,
       })),
     })
-    nav('/')
+    noteAdded(
+      picks.length,
+      multiKcal,
+      `Added ${picks.length} ${picks.length === 1 ? 'item' : 'items'}`,
+    )
+    setPicks([])
   }
 
   const runUsda = async () => {
@@ -397,6 +414,25 @@ export function FoodPickerPage() {
         </div>
       )}
 
+      {tally.count > 0 && !(multi && picks.length > 0) && (
+        <div className="fixed bottom-0 left-1/2 flex w-full max-w-md -translate-x-1/2 items-center justify-between gap-3 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          <span className="text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">{tally.count}</span>{' '}
+            added · {Math.round(tally.kcal)} cal
+          </span>
+          <Button size="sm" onClick={() => nav('/')}>
+            Done
+          </Button>
+        </div>
+      )}
+
+      {toast && (
+        <div className="pointer-events-none fixed bottom-24 left-1/2 z-50 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background shadow-lg">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {toast}
+        </div>
+      )}
+
       {copyOpen &&
         createPortal(
           <div
@@ -509,7 +545,17 @@ export function FoodPickerPage() {
                         entry_date: date,
                         meal,
                       })
-                      if (n > 0) nav('/')
+                      if (n > 0)
+                        noteAdded(
+                          n,
+                          mealToLog.items.reduce(
+                            (s, it) =>
+                              s + (it.nutrients.kcal ?? 0) * it.servings,
+                            0,
+                          ),
+                          `Added ${mealToLog.name}`,
+                        )
+                      setMealToLog(null)
                     }}
                   >
                     {logMeal.isPending
@@ -578,7 +624,12 @@ export function FoodPickerPage() {
               food: servingFood,
               servings: s,
             })
-            nav('/')
+            noteAdded(
+              1,
+              (servingFood.nutrients.kcal ?? 0) * s,
+              `Added ${servingFood.name}`,
+            )
+            setServingFood(null)
           }}
           onEditDetails={() => openFood(servingFood)}
         />

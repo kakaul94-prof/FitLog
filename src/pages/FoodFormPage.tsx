@@ -358,7 +358,7 @@ export function FoodFormPage() {
         }
       />
 
-      <div className="space-y-4 p-4">
+      <div className="space-y-4 px-4 pt-4 pb-16">
         {/* Scan a label or barcode */}
         <Card>
           <CardHeader>
@@ -675,31 +675,51 @@ export function FoodFormPage() {
           </CardContent>
         </Card>
 
-        {logTo && id && (
+      </div>
+
+      {/* Sticky commit bar — replaces the bottom nav on this focused entry page */}
+      <div className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 space-y-2 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        {nutrients.kcal != null && (
+          <p className="text-center text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">
+              {Math.round(nutrients.kcal)}
+            </span>{' '}
+            cal per serving
+          </p>
+        )}
+        {logTo && id ? (
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={addToMeal}
+              disabled={saveFood.isPending || log.isPending || !name.trim()}
+            >
+              {saveFood.isPending || log.isPending
+                ? 'Adding…'
+                : `Add to ${logTo.meal}`}
+            </Button>
+            <Button
+              className="flex-1"
+              variant="outline"
+              onClick={onSave}
+              disabled={saveFood.isPending || addIng.isPending || !name.trim()}
+            >
+              {saveFood.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        ) : (
           <Button
             className="w-full"
-            size="lg"
-            onClick={addToMeal}
-            disabled={saveFood.isPending || log.isPending || !name.trim()}
+            onClick={onSave}
+            disabled={saveFood.isPending || addIng.isPending || !name.trim()}
           >
-            {saveFood.isPending || log.isPending
-              ? 'Adding…'
-              : `Add to ${logTo.meal}`}
+            {saveFood.isPending || addIng.isPending
+              ? 'Saving…'
+              : addToRecipe
+                ? 'Save & add to recipe'
+                : 'Save to my foods'}
           </Button>
         )}
-        <Button
-          className="w-full"
-          size="lg"
-          variant={logTo && id ? 'outline' : 'default'}
-          onClick={onSave}
-          disabled={saveFood.isPending || addIng.isPending || !name.trim()}
-        >
-          {saveFood.isPending || addIng.isPending
-            ? 'Saving…'
-            : addToRecipe
-              ? 'Save & add to recipe'
-              : 'Save to my foods'}
-        </Button>
       </div>
     </div>
   )

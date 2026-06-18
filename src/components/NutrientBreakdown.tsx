@@ -78,6 +78,9 @@ function MacroPie({ nutrients }: { nutrients: Nutrients }) {
   const cal = { protein: p * 4, carb: c * 4, fat: f * 9 }
   const totalCal = cal.protein + cal.carb + cal.fat
   const totalG = p + c + f
+  // Center shows the stored/label calories so it matches the diary + kcal row;
+  // slices/percentages stay on calories computed from each macro (Atwater 4/4/9).
+  const displayCal = nutrients.kcal ?? totalCal
 
   const data = (['protein', 'carb', 'fat'] as const).map((k) => ({
     name: k,
@@ -134,7 +137,7 @@ function MacroPie({ nutrients }: { nutrients: Nutrients }) {
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-sm font-bold">
               {basis === 'cal'
-                ? Math.round(totalCal)
+                ? Math.round(displayCal)
                 : formatNutrient(totalG)}
             </span>
             <span className="text-[10px] text-muted-foreground">

@@ -186,6 +186,22 @@ export function useDeleteDiaryEntries() {
   })
 }
 
+/** Move diary entries to a different meal slot (single id or multi-select). */
+export function useMoveDiaryEntries() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (e: { ids: string[]; meal: Meal }) => {
+      if (e.ids.length === 0) return
+      const { error } = await supabase
+        .from('diary_entries')
+        .update({ meal: e.meal })
+        .in('id', e.ids)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['diary'] }),
+  })
+}
+
 /** Copy given entries to another day, preserving each entry's meal slot. */
 export function useCopyEntriesToDay() {
   const qc = useQueryClient()

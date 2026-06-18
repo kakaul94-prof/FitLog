@@ -12,6 +12,7 @@ import {
   X,
   BookmarkPlus,
   Copy,
+  ArrowRightLeft,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ActionSheet } from '@/components/ActionSheet'
@@ -23,6 +24,7 @@ import {
   useStreak,
   useDeleteDiaryEntry,
   useDeleteDiaryEntries,
+  useMoveDiaryEntries,
   useCopyEntriesToDay,
 } from '@/features/diary/useDiary'
 import { useCreateMealFromEntries } from '@/features/meals/useMeals'
@@ -57,10 +59,16 @@ export function DiaryPage() {
   const delEx = useDeleteExercise()
   const delEntry = useDeleteDiaryEntry()
   const delEntries = useDeleteDiaryEntries()
+  const moveEntries = useMoveDiaryEntries()
   const copyEntries = useCopyEntriesToDay()
   const createMeal = useCreateMealFromEntries()
   const [menuEntry, setMenuEntry] = useState<DiaryEntry | null>(null)
   const [menuEx, setMenuEx] = useState<ExerciseEntry | null>(null)
+  // Entries pending a meal move (single id or multi-select); `from` = current
+  // meal, disabled in the picker (null when picks span meals).
+  const [move, setMove] = useState<{ ids: string[]; from: Meal | null } | null>(
+    null,
+  )
 
   // Multi-select mode (food entries only).
   const [selectMode, setSelectMode] = useState(false)
@@ -133,6 +141,13 @@ export function DiaryPage() {
     )
       return
     delEntries.mutate([...selectedIds], { onSuccess: exitSelect })
+  }
+
+  const doMove = async (meal: Meal) => {
+    if (!move || move.ids.length === 0) return
+    await moveEntries.mutateAsync({ ids: move.ids, meal })
+    setMove(null)
+    exitSelect()
   }
 
   return (
@@ -318,7 +333,13 @@ export function DiaryPage() {
 
       {selectMode && (
         <div className="fixed bottom-0 left-1/2 z-50 w-full max-w-md -translate-x-1/2 border-t border-border bg-card p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-4 gap-1">
+            <SelectAction
+              icon={ArrowRightLeft}
+              label="Move"
+              onClick={() => setMove({ ids: [...selectedIds], from: null })}
+              disabled={count === 0}
+            />
             <SelectAction
               icon={BookmarkPlus}
               label="Save as meal"
@@ -347,6 +368,10 @@ export function DiaryPage() {
           title={menuEntry.food_name}
           onSelect={() => {
             enterSelect(menuEntry)
+            setMenuEntry(null)
+          }}
+          onMove={() => {
+            setMove({ ids: [menuEntry.id], from: menuEntry.meal })
             setMenuEntry(null)
           }}
           onEdit={() => {
@@ -453,6 +478,48 @@ export function DiaryPage() {
               </Card>
               <button
                 onClick={() => setAction(null)}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {move &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => setMove(null)}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="border-b border-border p-3 text-center text-sm font-medium">
+                  Move {move.ids.length}{' '}
+                  {move.ids.length === 1 ? 'item' : 'items'} to…
+                </div>
+                {MEALS.map((m) => (
+                  <button
+                    key={m.key}
+                    disabled={m.key === move.from || moveEntries.isPending}
+                    onClick={() => doMove(m.key)}
+                    className="flex w-full items-center justify-between border-b border-border p-4 text-left text-sm font-medium last:border-b-0 active:bg-accent disabled:opacity-40"
+                  >
+                    {m.label}
+                    {m.key === move.from && (
+                      <span className="text-xs text-muted-foreground">
+                        current
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </Card>
+              <button
+                onClick={() => setMove(null)}
                 className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
               >
                 Cancel

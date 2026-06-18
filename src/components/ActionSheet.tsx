@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { ListChecks, Pencil, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, ListChecks, Pencil, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
@@ -10,6 +10,8 @@ export function ActionSheet({
   title,
   onSelect,
   selectLabel = 'Select multiple',
+  onMove,
+  moveLabel = 'Move to meal',
   onEdit,
   editLabel = 'Edit entry',
   onDelete,
@@ -19,6 +21,8 @@ export function ActionSheet({
   title: string
   onSelect?: () => void
   selectLabel?: string
+  onMove?: () => void
+  moveLabel?: string
   onEdit: () => void
   editLabel?: string
   onDelete: () => void
@@ -47,11 +51,23 @@ export function ActionSheet({
               <span className="text-sm font-medium">{selectLabel}</span>
             </button>
           )}
+          {onMove && (
+            <button
+              onClick={onMove}
+              className={cn(
+                'flex w-full items-center gap-3 p-4 text-left active:bg-accent',
+                onSelect && 'border-t border-border',
+              )}
+            >
+              <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">{moveLabel}</span>
+            </button>
+          )}
           <button
             onClick={onEdit}
             className={cn(
               'flex w-full items-center gap-3 p-4 text-left active:bg-accent',
-              onSelect && 'border-t border-border',
+              (onSelect || onMove) && 'border-t border-border',
             )}
           >
             <Pencil className="h-4 w-4 text-muted-foreground" />

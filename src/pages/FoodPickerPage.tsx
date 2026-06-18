@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   Search,
   Plus,
+  Minus,
   Copy,
   ListChecks,
   CheckCircle2,
@@ -23,7 +24,7 @@ import {
   useFoodHistory,
   useSaveFood,
 } from '@/features/foods/useFoods'
-import { useDiary, useLogFoods, useCopyMeal } from '@/features/diary/useDiary'
+import { useDiary, useLogFood, useLogFoods, useCopyMeal } from '@/features/diary/useDiary'
 import { useMeals, useLogMeal, type MealWithItems } from '@/features/meals/useMeals'
 import {
   searchUsdaFoods,
@@ -32,6 +33,7 @@ import {
   type UsdaSearchItem,
 } from '@/lib/usda'
 import { todayISO, addDaysISO } from '@/lib/date'
+import { scaleNutrients } from '@/lib/nutrients'
 import { cn } from '@/lib/utils'
 import { useLongPress } from '@/lib/useLongPress'
 import type { Food, Meal } from '@/lib/database.types'
@@ -53,6 +55,7 @@ export function FoodPickerPage() {
     justAdded ? [{ food: justAdded, servings: '1' }] : [],
   )
   const logMany = useLogFoods()
+  const logOne = useLogFood()
   const del = useDeleteFood()
   const { data: history } = useFoodHistory()
   const copyMeal = useCopyMeal()
@@ -70,6 +73,7 @@ export function FoodPickerPage() {
   const [usdaErr, setUsdaErr] = useState('')
   const [importing, setImporting] = useState<number | null>(null)
   const [menuFood, setMenuFood] = useState<Food | null>(null)
+  const [servingFood, setServingFood] = useState<Food | null>(null)
 
   const isPicked = (id: string) => picks.some((p) => p.food.id === id)
 
@@ -92,7 +96,7 @@ export function FoodPickerPage() {
 
   const onRowTap = (f: Food) => {
     if (!multi) {
-      openFood(f)
+      setServingFood(f)
       return
     }
     setPicks((prev) =>
@@ -164,7 +168,7 @@ export function FoodPickerPage() {
             : [...prev, { food: saved, servings: '1' }],
         )
       } else {
-        openFood(saved)
+        setServingFood(saved)
       }
     } catch (e) {
       setUsdaErr(e instanceof Error ? e.message : 'Import failed')
@@ -560,6 +564,25 @@ export function FoodPickerPage() {
           </div>,
           document.body,
         )}
+
+      {servingFood && (
+        <ServingSheet
+          food={servingFood}
+          meal={meal}
+          pending={logOne.isPending}
+          onClose={() => setServingFood(null)}
+          onAdd={async (s) => {
+            await logOne.mutateAsync({
+              entry_date: date,
+              meal,
+              food: servingFood,
+              servings: s,
+            })
+            nav('/')
+          }}
+          onEditDetails={() => openFood(servingFood)}
+        />
+      )}
     </div>
   )
 }
@@ -608,5 +631,125 @@ function FoodRow({
     <button {...press} className={ROW_CLASS}>
       {body}
     </button>
+  )
+}
+
+// Quick-log sheet: set how many servings, preview the scaled nutrition, log it.
+// Keeps the common "just log it" path off the full FoodFormPage editor.
+function ServingSheet({
+  food,
+  meal,
+  pending,
+  onClose,
+  onAdd,
+  onEditDetails,
+}: {
+  food: Food
+  meal: Meal
+  pending: boolean
+  onClose: () => void
+  onAdd: (servings: number) => void
+  onEditDetails: () => void
+}) {
+  const [servings, setServings] = useState('1')
+  const s = parseFloat(servings) || 0
+  const scaled = scaleNutrients(food.nutrients, s)
+  const step = (delta: number) =>
+    setServings((prev) => {
+      const next = Math.max(
+        0,
+        Math.round(((parseFloat(prev) || 0) + delta) * 100) / 100,
+      )
+      return String(next)
+    })
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="mx-auto w-full max-w-md p-3"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <Card className="overflow-hidden">
+          <div className="border-b border-border p-3 text-center">
+            <div className="truncate text-sm font-medium">{food.name}</div>
+            {food.brand && (
+              <div className="truncate text-xs text-muted-foreground">
+                {food.brand}
+              </div>
+            )}
+          </div>
+          <div className="space-y-4 p-4">
+            <div className="flex items-center justify-center gap-3">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => step(-1)}
+                disabled={s <= 0}
+                aria-label="Decrease servings"
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+              <Input
+                type="number"
+                inputMode="decimal"
+                value={servings}
+                onChange={(e) => setServings(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                className="w-24 text-center text-lg font-semibold"
+                autoFocus
+                aria-label="Servings"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => step(1)}
+                aria-label="Increase servings"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-center text-xs text-muted-foreground">
+              × {food.serving_qty} {food.serving_unit}
+            </p>
+            <div className="rounded-lg bg-secondary p-3">
+              <div className="text-center">
+                <span className="text-2xl font-bold">
+                  {Math.round(scaled.kcal ?? 0)}
+                </span>
+                <span className="text-xs text-muted-foreground"> calories</span>
+              </div>
+              <div className="mt-2 flex justify-around text-center text-xs text-muted-foreground">
+                <span>Protein {Math.round(scaled.protein ?? 0)}g</span>
+                <span>Carbs {Math.round(scaled.carb ?? 0)}g</span>
+                <span>Fat {Math.round(scaled.fat ?? 0)}g</span>
+              </div>
+            </div>
+            <Button
+              className="w-full"
+              disabled={s <= 0 || pending}
+              onClick={() => onAdd(s)}
+            >
+              {pending ? 'Adding…' : `Add to ${meal}`}
+            </Button>
+            <button
+              onClick={onEditDetails}
+              className="w-full text-center text-xs font-medium text-primary"
+            >
+              Edit food details →
+            </button>
+          </div>
+        </Card>
+        <button
+          onClick={onClose}
+          className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>,
+    document.body,
   )
 }

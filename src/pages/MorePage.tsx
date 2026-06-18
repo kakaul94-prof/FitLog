@@ -64,7 +64,10 @@ export function MorePage() {
     setNotifyOn(true)
     setNotify(true)
     // Immediate confirmation banner — proves permission + delivery work.
-    notifyPhone('Notifications on', 'You’ll get a banner when rest ends.')
+    notifyPhone(
+      'Notifications on',
+      'You’ll see a live countdown while you rest.',
+    )
   }
 
   const doExport = async () => {

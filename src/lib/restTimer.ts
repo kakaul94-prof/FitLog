@@ -98,6 +98,58 @@ export function notifyPhone(
     })
 }
 
+const fmtClock = (s: number) =>
+  `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+
+/**
+ * Live countdown in the notification shade while resting: silently re-renders
+ * the same tagged notification each tick, so notifyPhone() (same tag,
+ * renotify) replaces it with the alerting banner at zero. Service-worker only
+ * — without one we just skip the live countdown. Updates can stall while the
+ * page is backgrounded/throttled (web-platform limit); they catch up on
+ * return.
+ */
+export function updateRestNotification(remaining: number, paused = false) {
+  if (
+    !getNotify() ||
+    !notifySupported() ||
+    Notification.permission !== 'granted'
+  )
+    return
+  const opts = {
+    body: paused ? 'Paused — resume in the app' : 'Resting…',
+    tag: 'fitlog-rest',
+    silent: true,
+    icon: '/pwa-192.png',
+    badge: '/pwa-192.png',
+  } as NotificationOptions
+  navigator.serviceWorker.ready
+    .then((reg) =>
+      reg.showNotification(
+        paused
+          ? `Rest paused — ${fmtClock(remaining)}`
+          : `Rest: ${fmtClock(remaining)}`,
+        opts,
+      ),
+    )
+    .catch(() => {
+      /* no service worker — skip the live countdown */
+    })
+}
+
+/** Dismiss the countdown notification (timer stopped/skipped). */
+export function closeRestNotification() {
+  if (!notifySupported()) return
+  navigator.serviceWorker.ready
+    .then(async (reg) => {
+      for (const n of await reg.getNotifications({ tag: 'fitlog-rest' }))
+        n.close()
+    })
+    .catch(() => {
+      /* notifications unavailable */
+    })
+}
+
 /** Request notification permission (from a user gesture) and report whether it
  *  ended up granted. */
 export async function requestNotifyPermission(): Promise<boolean> {

@@ -8,7 +8,14 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { getChime, getNotify, notifyPhone, playChime } from '@/lib/restTimer'
+import {
+  closeRestNotification,
+  getChime,
+  getNotify,
+  notifyPhone,
+  playChime,
+  updateRestNotification,
+} from '@/lib/restTimer'
 
 const MIN = 15
 const MAX = 600
@@ -84,7 +91,11 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     const tick = () => {
       const rem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000))
       setRemaining(rem)
-      if (rem > 0 || fired) return
+      if (rem > 0) {
+        updateRestNotification(rem)
+        return
+      }
+      if (fired) return
       fired = true
       navigator.vibrate?.([200, 100, 200])
       if (getChime() && ctxRef.current) playChime(ctxRef.current)
@@ -146,6 +157,7 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     setPaused(rem)
     setRemaining(rem)
     setEndsAt(null)
+    updateRestNotification(rem, true)
   }, [])
   const resume = useCallback(() => {
     const p = pausedRef.current
@@ -157,6 +169,7 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => {
     setEndsAt(null)
     setPaused(null)
+    closeRestNotification()
   }, [])
 
   const setDur = useCallback((sec: number) => {

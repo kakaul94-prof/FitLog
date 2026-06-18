@@ -17,6 +17,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# Local artifacts (screenshots, personal data exports)
+Screenshot_*.png
+workoutlog.csv
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ActionSheet } from '@/components/ActionSheet'
+import { CalorieRing, RING_GREEN } from '@/components/CalorieRing'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -85,7 +86,6 @@ export function DiaryPage() {
   const goal = goalRes?.goal ?? null
   const consumedKcal = Math.round(consumed.kcal ?? 0)
   const burned = (exEntries ?? []).reduce((s, e) => s + e.calories, 0)
-  const remaining = goal != null ? goal - consumedKcal + burned : null
   const macros =
     goal != null && profile
       ? resolveMacroTargets(goal, weight ?? null, profile.macro_targets)
@@ -206,14 +206,13 @@ export function DiaryPage() {
         <Card className="p-4">
           {goal != null ? (
             <>
-              <div className="flex items-end justify-between">
-                <div>
-                  <div className="text-3xl font-bold">{remaining}</div>
-                  <div className="text-xs text-muted-foreground">
-                    calories remaining
-                  </div>
-                </div>
-                <div className="text-right text-xs text-muted-foreground">
+              <div className="flex items-center gap-4">
+                <CalorieRing
+                  consumed={consumedKcal}
+                  goal={goal}
+                  burned={burned}
+                />
+                <div className="flex-1 text-right text-xs text-muted-foreground">
                   <div>{goal} goal</div>
                   <div>− {consumedKcal} food</div>
                   {burned > 0 && <div>+ {burned} exercise</div>}
@@ -647,7 +646,10 @@ function MacroBar({
     <div className="text-center">
       <div className="text-xs font-medium">{label}</div>
       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
+        <div
+          className="h-full"
+          style={{ width: `${pct}%`, background: RING_GREEN }}
+        />
       </div>
       <div className="mt-1 text-xs text-muted-foreground">
         {have}/{target}g

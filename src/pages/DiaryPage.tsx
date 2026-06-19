@@ -78,6 +78,19 @@ export function DiaryPage() {
   const [mealName, setMealName] = useState('')
   const [copyDate, setCopyDate] = useState(date)
 
+  // Change the day with a directional slide animation. `dir` = 1 → the new
+  // day slides in from the right (forward), -1 → from the left (back).
+  const [dir, setDir] = useState(0)
+  const step = (delta: number) => {
+    setDir(delta)
+    setDate((d) => addDaysISO(d, delta))
+  }
+  const jumpTo = (iso: string) => {
+    if (!iso || iso === date) return
+    setDir(iso > date ? 1 : -1)
+    setDate(iso)
+  }
+
   // Tappable date label → native date picker (jump to any day).
   const dateInput = useRef<HTMLInputElement>(null)
   const openDatePicker = () => {
@@ -105,7 +118,7 @@ export function DiaryPage() {
     const dx = t.clientX - s.x
     const dy = t.clientY - s.y
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5)
-      setDate((d) => addDaysISO(d, dx < 0 ? 1 : -1))
+      step(dx < 0 ? 1 : -1)
   }
 
   const list = entries ?? []
@@ -161,7 +174,7 @@ export function DiaryPage() {
       entries: selectedEntries,
     })
     exitSelect()
-    if (n > 0) setDate(copyDate) // jump to the copied day so the result is visible
+    if (n > 0) jumpTo(copyDate) // jump to the copied day so the result is visible
   }
 
   const doDelete = () => {
@@ -199,7 +212,7 @@ export function DiaryPage() {
                 ref={dateInput}
                 type="date"
                 value={date}
-                onChange={(e) => e.target.value && setDate(e.target.value)}
+                onChange={(e) => jumpTo(e.target.value)}
                 className="sr-only"
                 tabIndex={-1}
                 aria-hidden="true"
@@ -227,7 +240,7 @@ export function DiaryPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setDate(addDaysISO(date, -1))}
+              onClick={() => step(-1)}
               aria-label="Previous day"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -239,7 +252,7 @@ export function DiaryPage() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setDate(addDaysISO(date, 1))}
+              onClick={() => step(1)}
               aria-label="Next day"
             >
               <ChevronRight className="h-5 w-5" />
@@ -248,7 +261,15 @@ export function DiaryPage() {
         }
       />
 
-      <div className={cn('space-y-4 p-4', selectMode && 'pb-28')}>
+      <div
+        key={date}
+        className={cn(
+          'space-y-4 overflow-x-clip p-4',
+          selectMode && 'pb-28',
+          dir > 0 && 'diary-slide-right',
+          dir < 0 && 'diary-slide-left',
+        )}
+      >
         <Card className="p-4">
           {goal != null ? (
             <>

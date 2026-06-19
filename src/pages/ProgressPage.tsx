@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
 import { RING_GREEN, RING_OVER } from '@/components/CalorieRing'
@@ -10,9 +10,11 @@ import { Select } from '@/components/ui/select'
 import {
   useMeasurements,
   useLogMeasurement,
+  useUpdateMeasurement,
   useDeleteMeasurement,
   useLatestWeight,
 } from '@/features/measurements/useMeasurements'
+import type { Measurement } from '@/lib/database.types'
 import { useProfile } from '@/features/profile/useProfile'
 import { useNutritionTrends } from '@/features/insights/useNutritionTrends'
 import {
@@ -59,8 +61,10 @@ function BodyView() {
   const { data: rows } = useMeasurements(type)
   const { data: profile } = useProfile()
   const logM = useLogMeasurement()
+  const updM = useUpdateMeasurement()
   const delM = useDeleteMeasurement()
   const [val, setVal] = useState('')
+  const [on, setOn] = useState(todayISO())
 
   // Guard against rows with a missing/blank date or non-numeric value — either
   // would throw later (e.g. `t.date.slice(5)`) and blank the whole page.
@@ -90,9 +94,10 @@ function BodyView() {
       type,
       value: v,
       unit: meta.unit,
-      measured_on: todayISO(),
+      measured_on: on,
     })
     setVal('')
+    setOn(todayISO())
   }
 
   return (
@@ -106,22 +111,34 @@ function BodyView() {
       </Select>
 
       <Card>
-        <CardContent className="flex items-end gap-2 p-4">
-          <div className="flex-1 space-y-1.5">
-            <label className="text-sm font-medium">
-              Log {meta.label.toLowerCase()} ({meta.unit})
-            </label>
-            <Input
-              type="number"
-              inputMode="decimal"
-              value={val}
-              onChange={(e) => setVal(e.target.value)}
-              placeholder={latest != null ? String(latest) : '—'}
+        <CardContent className="space-y-3 p-4">
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1.5">
+              <label className="text-sm font-medium">
+                Log {meta.label.toLowerCase()} ({meta.unit})
+              </label>
+              <Input
+                type="number"
+                inputMode="decimal"
+                value={val}
+                onChange={(e) => setVal(e.target.value)}
+                placeholder={latest != null ? String(latest) : '—'}
+              />
+            </div>
+            <Button onClick={add} disabled={logM.isPending || !val}>
+              Add
+            </Button>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Date</label>
+            <input
+              type="date"
+              value={on}
+              max={todayISO()}
+              onChange={(e) => e.target.value && setOn(e.target.value)}
+              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
             />
           </div>
-          <Button onClick={add} disabled={logM.isPending || !val}>
-            Add
-          </Button>
         </CardContent>
       </Card>
 
@@ -180,26 +197,75 @@ function BodyView() {
             .reverse()
             .slice(0, 10)
             .map((r) => (
-              <div
+              <MeasurementRow
                 key={r.id}
-                className="flex items-center justify-between gap-2 p-3 text-sm"
-              >
-                <span className="text-muted-foreground">{r.measured_on}</span>
-                <span className="flex-1 text-right font-medium">
-                  {r.value} {r.unit}
-                </span>
-                <button
-                  onClick={() => delM.mutate(r.id)}
-                  className="px-2 text-muted-foreground active:text-destructive"
-                  aria-label="Delete"
-                >
-                  ✕
-                </button>
-              </div>
+                row={r}
+                onChangeDate={(measured_on) =>
+                  updM.mutate({ id: r.id, measured_on })
+                }
+                onDelete={() => delM.mutate(r.id)}
+              />
             ))}
         </Card>
       )}
     </>
+  )
+}
+
+function MeasurementRow({
+  row,
+  onChangeDate,
+  onDelete,
+}: {
+  row: Measurement
+  onChangeDate: (date: string) => void
+  onDelete: () => void
+}) {
+  const dateInput = useRef<HTMLInputElement>(null)
+  const openPicker = () => {
+    const el = dateInput.current
+    if (!el) return
+    try {
+      el.showPicker()
+    } catch {
+      el.click()
+    }
+  }
+  return (
+    <div className="flex items-center justify-between gap-2 p-3 text-sm">
+      <span className="relative">
+        <button
+          onClick={openPicker}
+          className="text-muted-foreground underline decoration-dotted underline-offset-2 active:text-foreground"
+          aria-label="Change date"
+        >
+          {row.measured_on}
+        </button>
+        <input
+          ref={dateInput}
+          type="date"
+          value={row.measured_on}
+          max={todayISO()}
+          onChange={(e) => {
+            if (e.target.value && e.target.value !== row.measured_on)
+              onChangeDate(e.target.value)
+          }}
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+      </span>
+      <span className="flex-1 text-right font-medium">
+        {row.value} {row.unit}
+      </span>
+      <button
+        onClick={onDelete}
+        className="px-2 text-muted-foreground active:text-destructive"
+        aria-label="Delete"
+      >
+        ✕
+      </button>
+    </div>
   )
 }
 

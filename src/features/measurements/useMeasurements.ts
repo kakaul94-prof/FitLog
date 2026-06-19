@@ -62,6 +62,30 @@ export function useLogMeasurement() {
   })
 }
 
+interface MeasurementPatch {
+  id: string
+  measured_on?: string
+  value?: number
+  unit?: string
+}
+
+export function useUpdateMeasurement() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...patch }: MeasurementPatch) => {
+      const { error } = await supabase
+        .from('measurements')
+        .update(patch)
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['measurements'] })
+      qc.invalidateQueries({ queryKey: ['latestWeight'] })
+    },
+  })
+}
+
 export function useDeleteMeasurement() {
   const qc = useQueryClient()
   return useMutation({

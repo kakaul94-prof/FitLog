@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState, type TouchEvent as ReactTouchEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -78,6 +78,36 @@ export function DiaryPage() {
   const [mealName, setMealName] = useState('')
   const [copyDate, setCopyDate] = useState(date)
 
+  // Tappable date label → native date picker (jump to any day).
+  const dateInput = useRef<HTMLInputElement>(null)
+  const openDatePicker = () => {
+    const el = dateInput.current
+    if (!el) return
+    try {
+      el.showPicker()
+    } catch {
+      el.click()
+    }
+  }
+
+  // Horizontal swipe changes the day (disabled while multi-selecting).
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
+  const onTouchStart = (e: ReactTouchEvent) => {
+    if (selectMode) return
+    const t = e.touches[0]
+    swipeStart.current = { x: t.clientX, y: t.clientY }
+  }
+  const onTouchEnd = (e: ReactTouchEvent) => {
+    const s = swipeStart.current
+    swipeStart.current = null
+    if (!s || selectMode) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - s.x
+    const dy = t.clientY - s.y
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5)
+      setDate((d) => addDaysISO(d, dx < 0 ? 1 : -1))
+  }
+
   const list = entries ?? []
   const consumed = sumNutrients(
     list.map((e) => scaleNutrients(e.nutrients, e.servings)),
@@ -151,13 +181,29 @@ export function DiaryPage() {
   }
 
   return (
-    <div>
+    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
       <PageHeader
         title={selectMode ? `${count} selected` : 'Diary'}
         subtitle={
           selectMode ? undefined : (
             <span className="flex items-center gap-2">
-              {dateLabel(date)}
+              <button
+                type="button"
+                onClick={openDatePicker}
+                aria-label="Change date"
+                className="font-medium text-foreground underline decoration-dotted underline-offset-4"
+              >
+                {dateLabel(date)}
+              </button>
+              <input
+                ref={dateInput}
+                type="date"
+                value={date}
+                onChange={(e) => e.target.value && setDate(e.target.value)}
+                className="sr-only"
+                tabIndex={-1}
+                aria-hidden="true"
+              />
               {streak > 0 && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
                   <Flame className="h-3.5 w-3.5" />

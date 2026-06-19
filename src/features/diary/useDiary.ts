@@ -93,6 +93,40 @@ export function useLogFoods() {
   })
 }
 
+/**
+ * Quick Add: log a bare calorie count (+ optional P/C/F) to a meal without
+ * creating a food in the library — for restaurant / unknown meals. Snapshots
+ * nutrients onto a food_id-less diary row (servings 1), like any other entry.
+ */
+export function useQuickAddFood() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (e: {
+      entry_date: string
+      meal: Meal
+      name?: string
+      nutrients: Nutrients
+    }) => {
+      const { error } = await supabase.from('diary_entries').insert({
+        entry_date: e.entry_date,
+        meal: e.meal,
+        food_id: null,
+        food_name: e.name?.trim() || 'Quick add',
+        brand: null,
+        servings: 1,
+        serving_qty: null,
+        serving_unit: null,
+        nutrients: e.nutrients,
+      })
+      if (error) throw error
+    },
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['diary', v.entry_date] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+    },
+  })
+}
+
 /** Copy all entries of one meal from another day into a target day/meal. */
 export function useCopyMeal() {
   const qc = useQueryClient()

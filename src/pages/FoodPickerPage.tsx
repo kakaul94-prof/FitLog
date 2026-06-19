@@ -13,18 +13,26 @@ import {
   Trash2,
   Loader2,
   Database,
+  Zap,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   useFoods,
   useDeleteFood,
   useFoodHistory,
   useSaveFood,
 } from '@/features/foods/useFoods'
-import { useDiary, useLogFood, useLogFoods, useCopyMeal } from '@/features/diary/useDiary'
+import {
+  useDiary,
+  useLogFood,
+  useLogFoods,
+  useCopyMeal,
+  useQuickAddFood,
+} from '@/features/diary/useDiary'
 import { useMeals, useLogMeal, type MealWithItems } from '@/features/meals/useMeals'
 import {
   searchUsdaFoods,
@@ -36,7 +44,7 @@ import { todayISO, addDaysISO } from '@/lib/date'
 import { scaleNutrients } from '@/lib/nutrients'
 import { cn } from '@/lib/utils'
 import { useLongPress } from '@/lib/useLongPress'
-import type { Food, Meal } from '@/lib/database.types'
+import type { Food, Meal, Nutrients } from '@/lib/database.types'
 
 type Pick = { food: Food; servings: string }
 
@@ -74,6 +82,8 @@ export function FoodPickerPage() {
   const [importing, setImporting] = useState<number | null>(null)
   const [menuFood, setMenuFood] = useState<Food | null>(null)
   const [servingFood, setServingFood] = useState<Food | null>(null)
+  const [quickOpen, setQuickOpen] = useState(false)
+  const quickAdd = useQuickAddFood()
   // Item (2): stay in the picker after adding; show a running tally + a toast.
   const [tally, setTally] = useState({ count: 0, kcal: 0 })
   const [toast, setToast] = useState<string | null>(null)
@@ -299,9 +309,12 @@ export function FoodPickerPage() {
           </Card>
         ) : (
           <>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <Button variant="outline" onClick={newFood}>
             <Plus className="h-4 w-4" /> New food
+          </Button>
+          <Button variant="outline" onClick={() => setQuickOpen(true)}>
+            <Zap className="h-4 w-4" /> Quick add
           </Button>
           <Button variant="outline" onClick={() => setCopyOpen(true)}>
             <Copy className="h-4 w-4" /> Copy day
@@ -634,6 +647,19 @@ export function FoodPickerPage() {
           onEditDetails={() => openFood(servingFood)}
         />
       )}
+
+      {quickOpen && (
+        <QuickAddSheet
+          meal={meal}
+          pending={quickAdd.isPending}
+          onClose={() => setQuickOpen(false)}
+          onAdd={async ({ name, nutrients }) => {
+            await quickAdd.mutateAsync({ entry_date: date, meal, name, nutrients })
+            noteAdded(1, nutrients.kcal ?? 0, `Added ${name.trim() || 'Quick add'}`)
+            setQuickOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -791,6 +817,136 @@ function ServingSheet({
             >
               Edit food details →
             </button>
+          </div>
+        </Card>
+        <button
+          onClick={onClose}
+          className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// Quick Add: log a bare calorie count (+ optional macros) to a meal without
+// creating a food in the library — for restaurant / unknown meals.
+function QuickAddSheet({
+  meal,
+  pending,
+  onClose,
+  onAdd,
+}: {
+  meal: Meal
+  pending: boolean
+  onClose: () => void
+  onAdd: (v: { name: string; nutrients: Nutrients }) => void
+}) {
+  const [name, setName] = useState('')
+  const [kcal, setKcal] = useState('')
+  const [protein, setProtein] = useState('')
+  const [carb, setCarb] = useState('')
+  const [fat, setFat] = useState('')
+  const kc = Math.max(0, parseFloat(kcal) || 0)
+
+  const submit = () => {
+    if (kc <= 0) return
+    const nutrients: Nutrients = { kcal: kc }
+    const pos = (v: string) => {
+      const n = parseFloat(v)
+      return Number.isFinite(n) && n > 0 ? n : undefined
+    }
+    const p = pos(protein)
+    if (p !== undefined) nutrients.protein = p
+    const c = pos(carb)
+    if (c !== undefined) nutrients.carb = c
+    const f = pos(fat)
+    if (f !== undefined) nutrients.fat = f
+    onAdd({ name, nutrients })
+  }
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+      onClick={onClose}
+    >
+      <div
+        className="mx-auto w-full max-w-md p-3"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <Card className="overflow-hidden">
+          <div className="border-b border-border p-3 text-center text-sm font-medium">
+            Quick add to {meal}
+          </div>
+          <div className="space-y-4 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="qa-name">Name (optional)</Label>
+              <Input
+                id="qa-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Quick add"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="qa-kcal">Calories</Label>
+              <Input
+                id="qa-kcal"
+                type="number"
+                inputMode="numeric"
+                value={kcal}
+                onChange={(e) => setKcal(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                autoFocus
+                placeholder="0"
+                className="text-lg font-semibold"
+                aria-label="Calories"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="qa-p">Protein (g)</Label>
+                <Input
+                  id="qa-p"
+                  type="number"
+                  inputMode="decimal"
+                  value={protein}
+                  onChange={(e) => setProtein(e.target.value)}
+                  placeholder="—"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="qa-c">Carbs (g)</Label>
+                <Input
+                  id="qa-c"
+                  type="number"
+                  inputMode="decimal"
+                  value={carb}
+                  onChange={(e) => setCarb(e.target.value)}
+                  placeholder="—"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="qa-f">Fat (g)</Label>
+                <Input
+                  id="qa-f"
+                  type="number"
+                  inputMode="decimal"
+                  value={fat}
+                  onChange={(e) => setFat(e.target.value)}
+                  placeholder="—"
+                />
+              </div>
+            </div>
+            <Button
+              className="w-full"
+              disabled={kc <= 0 || pending}
+              onClick={submit}
+            >
+              {pending ? 'Adding…' : `Add to ${meal}`}
+            </Button>
           </div>
         </Card>
         <button

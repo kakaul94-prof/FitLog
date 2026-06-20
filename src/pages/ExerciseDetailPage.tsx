@@ -30,6 +30,8 @@ import {
   currentE1RM,
   suggestNext,
   weightForReps,
+  requiredPace,
+  formatPace,
   PROGRESSION_LABEL,
   PROGRESSION_SOURCE,
 } from '@/lib/progression'
@@ -41,7 +43,7 @@ import {
 } from '@/features/strength/useStrengthGoals'
 import { Input } from '@/components/ui/input'
 import type { ProgressionMethod, StrengthGoal } from '@/lib/database.types'
-import { dateLabel } from '@/lib/date'
+import { dateLabel, daysBetweenISO, todayISO } from '@/lib/date'
 import {
   useExerciseNotes,
   useUpsertExerciseNote,
@@ -847,6 +849,13 @@ function GoalCard({
     Math.max(0, Math.round((current / goal.target_1rm_lb) * 100)) || 0,
   )
   const reached = current > 0 && current >= goal.target_1rm_lb
+  const pace = goal.target_date
+    ? requiredPace(
+        current,
+        goal.target_1rm_lb,
+        daysBetweenISO(todayISO(), goal.target_date),
+      )
+    : null
   const hintReps = goal.method === 'double' ? goal.rep_high : goal.rep_low
   const hintWeight =
     Math.round(weightForReps(goal.target_1rm_lb, hintReps) / 5) * 5
@@ -927,6 +936,13 @@ function GoalCard({
             ? '🎉 Goal reached!'
             : `${pct}% · ≈ ${hintWeight} × ${hintReps} to reach ${goal.target_1rm_lb}`}
         </div>
+        {pace && !reached && (
+          <div className="mt-1 text-xs text-muted-foreground">
+            {pace.overdue
+              ? `Past target · ${dateLabel(goal.target_date!)}`
+              : `By ${dateLabel(goal.target_date!)} · need +${formatPace(pace.neededPerWeek)} lb/wk`}
+          </div>
+        )}
 
         <div className="mt-3 flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Method</span>
@@ -1021,6 +1037,7 @@ function GoalForm({
   const [lo, setLo] = useState(String(goal?.rep_low ?? 5))
   const [hi, setHi] = useState(String(goal?.rep_high ?? 8))
   const [inc, setInc] = useState(String(goal?.increment_lb ?? 5))
+  const [targetDate, setTargetDate] = useState(goal?.target_date ?? '')
   const pending = save.isPending || update.isPending
 
   const onSave = () => {
@@ -1036,6 +1053,7 @@ function GoalForm({
       rep_low: repLow,
       rep_high: Math.max(parseInt(hi, 10) || repLow, repLow),
       sets: parseInt(sets, 10) || 3,
+      target_date: targetDate || null,
     }
     if (goal) update.mutate({ id: goal.id, ...base }, { onSuccess: onClose })
     else save.mutate(base, { onSuccess: onClose })
@@ -1055,6 +1073,16 @@ function GoalForm({
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           placeholder="e.g. 200"
+          className="mt-1"
+        />
+      </label>
+
+      <label className="block text-xs text-muted-foreground">
+        Target date (optional)
+        <Input
+          type="date"
+          value={targetDate}
+          onChange={(e) => setTargetDate(e.target.value)}
           className="mt-1"
         />
       </label>

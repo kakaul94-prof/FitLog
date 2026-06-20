@@ -320,6 +320,7 @@ export interface StrengthGoal {
   cycle: number
   week: number
   achieved_at: string | null
+  target_date: string | null
   created_at: string
   updated_at: string
 }

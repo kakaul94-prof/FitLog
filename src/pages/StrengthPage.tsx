@@ -10,6 +10,7 @@ import {
   ClipboardList,
   List,
   Pencil,
+  Target,
   Trash2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -107,7 +108,13 @@ export function StrengthPage() {
             <h2 className="text-sm font-semibold text-muted-foreground">
               Recent workouts
             </h2>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+              <Link
+                to="/lift/goals"
+                className="flex items-center gap-1 text-sm font-medium text-primary"
+              >
+                <Target className="h-4 w-4" /> Goals
+              </Link>
               <Link
                 to="/lift/volume"
                 className="flex items-center gap-1 text-sm font-medium text-primary"

@@ -192,3 +192,39 @@ export function suggestNext(
     source,
   }
 }
+
+export interface GoalPace {
+  /** lb of e1RM still needed to hit the target (0 once reached). */
+  remaining: number
+  /** lb/week of e1RM gain required to reach the target by the date. */
+  neededPerWeek: number
+  /** Target date has passed but the goal isn't reached yet. */
+  overdue: boolean
+}
+
+/**
+ * Required pace toward a dated strength goal: the weekly e1RM gain needed to go
+ * from `current` to `target` in `daysLeft` days. This is the REQUIRED rate, not
+ * a projection from your trend (that lives on the Progress-tab chart). An
+ * already-overdue date collapses the remaining gain into a single week so the
+ * number stays finite + actionable.
+ */
+export function requiredPace(
+  current: number,
+  target: number,
+  daysLeft: number,
+): GoalPace {
+  const remaining = Math.max(0, Math.round(target - current))
+  const weeks = Math.max(daysLeft, 7) / 7
+  return {
+    remaining,
+    neededPerWeek: remaining > 0 ? remaining / weeks : 0,
+    overdue: daysLeft < 0 && remaining > 0,
+  }
+}
+
+/** Format a required weekly pace (lb/week) for display, e.g. "2.5" or "<0.5". */
+export function formatPace(perWeek: number): string {
+  const r = Math.round(perWeek * 2) / 2
+  return r < 0.5 ? '<0.5' : String(r)
+}

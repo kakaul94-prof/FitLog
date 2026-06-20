@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import type { ProgressionMethod, StrengthGoal } from '@/lib/database.types'
+import { currentE1RM, suggestNext, type Suggestion } from '@/lib/progression'
 
 /** The strength goal for one exercise (built-in slug or 'custom:<uuid>'), if any. */
 export function useStrengthGoal(key: string | undefined) {
@@ -28,6 +29,7 @@ export interface NewStrengthGoal {
   rep_low: number
   rep_high: number
   sets: number
+  target_date?: string | null
 }
 
 export function useSaveStrengthGoal() {
@@ -42,8 +44,10 @@ export function useSaveStrengthGoal() {
       if (error) throw error
       return data as StrengthGoal
     },
-    onSuccess: (g) =>
-      qc.invalidateQueries({ queryKey: ['strengthGoal', g.exercise_key] }),
+    onSuccess: (g) => {
+      qc.invalidateQueries({ queryKey: ['strengthGoal', g.exercise_key] })
+      qc.invalidateQueries({ queryKey: ['strengthGoalsOverview'] })
+    },
   })
 }
 
@@ -63,8 +67,10 @@ export function useUpdateStrengthGoal() {
       if (error) throw error
       return { exercise_key }
     },
-    onSuccess: ({ exercise_key }) =>
-      qc.invalidateQueries({ queryKey: ['strengthGoal', exercise_key] }),
+    onSuccess: ({ exercise_key }) => {
+      qc.invalidateQueries({ queryKey: ['strengthGoal', exercise_key] })
+      qc.invalidateQueries({ queryKey: ['strengthGoalsOverview'] })
+    },
   })
 }
 
@@ -82,7 +88,104 @@ export function useDeleteStrengthGoal() {
       if (error) throw error
       return { exercise_key }
     },
-    onSuccess: ({ exercise_key }) =>
-      qc.invalidateQueries({ queryKey: ['strengthGoal', exercise_key] }),
+    onSuccess: ({ exercise_key }) => {
+      qc.invalidateQueries({ queryKey: ['strengthGoal', exercise_key] })
+      qc.invalidateQueries({ queryKey: ['strengthGoalsOverview'] })
+    },
+  })
+}
+
+export interface GoalOverview {
+  goal: StrengthGoal
+  /** Current best e1RM derived live from logged sets (0 = no history). */
+  current: number
+  /** Progress toward target, 0–100. */
+  pct: number
+  reached: boolean
+  /** Suggested next session (same engine as the detail page). */
+  sug: Suggestion
+}
+
+/**
+ * Every strength goal with its live progress + next-session suggestion, for the
+ * Goals overview page. Batches all goals' sessions in 3 queries regardless of
+ * goal count: goals, then their sets by exercise_key, then the workout dates to
+ * order sessions newest-first (currentE1RM / suggestNext both want recent-first).
+ */
+export function useStrengthGoalsOverview() {
+  return useQuery({
+    queryKey: ['strengthGoalsOverview'],
+    queryFn: async (): Promise<GoalOverview[]> => {
+      const { data: goalRows, error } = await supabase
+        .from('strength_goals')
+        .select('*')
+        .order('exercise_name')
+      if (error) throw error
+      const goals = (goalRows ?? []) as StrengthGoal[]
+      if (!goals.length) return []
+
+      const keys = [...new Set(goals.map((g) => g.exercise_key))]
+      const { data: setRows, error: se } = await supabase
+        .from('workout_sets')
+        .select('exercise_key,workout_id,reps,weight_lb')
+        .in('exercise_key', keys)
+      if (se) throw se
+      const sets = (setRows ?? []) as {
+        exercise_key: string
+        workout_id: string
+        reps: number | null
+        weight_lb: number | null
+      }[]
+
+      const wids = [...new Set(sets.map((s) => s.workout_id))]
+      const dateById = new Map<string, string>()
+      if (wids.length) {
+        const { data: ws } = await supabase
+          .from('workouts')
+          .select('id,workout_date')
+          .in('id', wids)
+        for (const w of (ws ?? []) as { id: string; workout_date: string }[])
+          dateById.set(w.id, w.workout_date)
+      }
+
+      // exercise_key → (workout_id → sets); each workout is one session.
+      const byKey = new Map<
+        string,
+        Map<string, { weight_lb: number | null; reps: number | null }[]>
+      >()
+      for (const s of sets) {
+        let m = byKey.get(s.exercise_key)
+        if (!m) {
+          m = new Map()
+          byKey.set(s.exercise_key, m)
+        }
+        const arr = m.get(s.workout_id) ?? []
+        arr.push({ weight_lb: s.weight_lb, reps: s.reps })
+        m.set(s.workout_id, arr)
+      }
+
+      return goals.map((goal) => {
+        const m = byKey.get(goal.exercise_key)
+        const sessions = m
+          ? [...m.entries()]
+              .sort((a, b) =>
+                (dateById.get(b[0]) ?? '').localeCompare(dateById.get(a[0]) ?? ''),
+              )
+              .map(([, v]) => v)
+          : []
+        const current = currentE1RM(sessions)
+        const pct = Math.min(
+          100,
+          Math.max(0, Math.round((current / goal.target_1rm_lb) * 100)) || 0,
+        )
+        return {
+          goal,
+          current,
+          pct,
+          reached: current > 0 && current >= goal.target_1rm_lb,
+          sug: suggestNext(goal, sessions),
+        }
+      })
+    },
   })
 }

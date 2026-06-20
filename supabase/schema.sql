@@ -471,6 +471,7 @@ create table if not exists public.strength_goals (
   cycle integer not null default 1,
   week integer not null default 1,
   achieved_at timestamptz,
+  target_date date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, exercise_key)

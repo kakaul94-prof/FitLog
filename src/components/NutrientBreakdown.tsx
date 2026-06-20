@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
+import { useState, type ReactNode } from 'react'
 import { NUTRIENT_BY_KEY, formatNutrient } from '@/lib/nutrients'
 import type { NutrientKey, Nutrients } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
@@ -64,6 +63,68 @@ const MACRO_COLORS: Record<'protein' | 'carb' | 'fat', string> = {
   fat: '#f59e0b',
 }
 
+const DONUT_SIZE = 112
+const DONUT_RI = 34
+const DONUT_RO = 52
+
+function pointOnCircle(center: number, r: number, deg: number) {
+  const a = (deg * Math.PI) / 180
+  return `${(center + r * Math.cos(a)).toFixed(2)} ${(center + r * Math.sin(a)).toFixed(2)}`
+}
+
+/**
+ * Macro donut — replaces recharts <PieChart>, whose prod bundle crashes (the
+ * same reason the line charts moved to LineChartSvg). Slices start at the top
+ * and sweep clockwise, with a small gap between them (the old paddingAngle).
+ */
+function MacroDonut({
+  slices,
+}: {
+  slices: { name: 'protein' | 'carb' | 'fat'; value: number }[]
+}) {
+  const c = DONUT_SIZE / 2
+  const active = slices.filter((s) => s.value > 0)
+  const total = active.reduce((sum, s) => sum + s.value, 0)
+
+  let body: ReactNode
+  if (active.length === 1) {
+    // A single macro is a full ring — a 360° arc can't be a single path.
+    body = (
+      <path
+        fill={MACRO_COLORS[active[0].name]}
+        fillRule="evenodd"
+        d={
+          `M ${pointOnCircle(c, DONUT_RO, -90)} A ${DONUT_RO} ${DONUT_RO} 0 1 1 ${pointOnCircle(c, DONUT_RO, 90)} A ${DONUT_RO} ${DONUT_RO} 0 1 1 ${pointOnCircle(c, DONUT_RO, -90)} Z ` +
+          `M ${pointOnCircle(c, DONUT_RI, -90)} A ${DONUT_RI} ${DONUT_RI} 0 1 0 ${pointOnCircle(c, DONUT_RI, 90)} A ${DONUT_RI} ${DONUT_RI} 0 1 0 ${pointOnCircle(c, DONUT_RI, -90)} Z`
+        }
+      />
+    )
+  } else {
+    const gap = 2 // degrees between slices, mirrors the old paddingAngle
+    let angle = -90 // start at top, sweep clockwise
+    body = active.map((s) => {
+      const sweep = (s.value / total) * 360
+      const a0 = angle + gap / 2
+      const a1 = angle + sweep - gap / 2
+      angle += sweep
+      const large = a1 - a0 > 180 ? 1 : 0
+      return (
+        <path
+          key={s.name}
+          fill={MACRO_COLORS[s.name]}
+          d={`M ${pointOnCircle(c, DONUT_RO, a0)} A ${DONUT_RO} ${DONUT_RO} 0 ${large} 1 ${pointOnCircle(c, DONUT_RO, a1)} L ${pointOnCircle(c, DONUT_RI, a1)} A ${DONUT_RI} ${DONUT_RI} 0 ${large} 0 ${pointOnCircle(c, DONUT_RI, a0)} Z`}
+        />
+      )
+    })
+  }
+
+  return (
+    <svg viewBox={`0 0 ${DONUT_SIZE} ${DONUT_SIZE}`} className="h-full w-full">
+      {body}
+    </svg>
+  )
+}
+
 function MacroPie({ nutrients }: { nutrients: Nutrients }) {
   const [basis, setBasis] = useState<'cal' | 'g'>('cal')
   const hasAny =
@@ -117,23 +178,7 @@ function MacroPie({ nutrients }: { nutrients: Nutrients }) {
       </div>
       <div className="flex items-center gap-4">
         <div className="relative h-28 w-28 shrink-0">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={34}
-                outerRadius={52}
-                paddingAngle={2}
-                stroke="none"
-              >
-                {data.map((d) => (
-                  <Cell key={d.name} fill={MACRO_COLORS[d.name]} />
-                ))}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
+          <MacroDonut slices={data} />
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-sm font-bold">
               {basis === 'cal'

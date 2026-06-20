@@ -16,7 +16,7 @@ the old MyFitnessPal.
 
 - React 19 + Vite + TypeScript, Tailwind v4, React Router (lazy routes), TanStack Query
 - Supabase (Postgres + Auth: email+password sign-in, magic-link fallback; password set/changed in Profile) — RLS owner-only on every table
-- recharts, lucide-react, vite-plugin-pwa (installable)
+- lucide-react, vite-plugin-pwa (installable); charts are hand-rolled SVG (`LineChartSvg`, macro donut in `NutrientBreakdown`) — no chart lib
 - Host: Cloudflare Pages — `https://fitlog-9wl.pages.dev` (see `DEPLOY.md`). Repo: github.com/kakaul94-prof/FitLog
 
 ## Run / build / verify

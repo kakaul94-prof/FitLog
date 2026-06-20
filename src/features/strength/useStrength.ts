@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { Workout, WorkoutExercise, WorkoutSet } from '@/lib/database.types'
+import type {
+  Workout,
+  WorkoutExercise,
+  WorkoutSet,
+  StrengthGoal,
+} from '@/lib/database.types'
+import { suggestNext } from '@/lib/progression'
 
 export function useWorkouts() {
   return useQuery({
@@ -190,8 +196,52 @@ export function useAddExercise() {
       const prior = ((prev ?? []) as WorkoutSet[]).filter(
         (s) => s.workout_id !== workoutId,
       )
+
+      // If this lift has a strength goal, prefill the suggested weight/reps for
+      // the upcoming session (instead of the usual blank "match last time").
+      const { data: goalRow } = await supabase
+        .from('strength_goals')
+        .select('*')
+        .eq('exercise_key', key)
+        .maybeSingle()
+      const goal = goalRow as StrengthGoal | null
+      let suggested:
+        | { weightLb: number | null; reps: number | null }[]
+        | null = null
+      if (goal) {
+        const order: string[] = []
+        const byWorkout = new Map<
+          string,
+          { weight_lb: number | null; reps: number | null }[]
+        >()
+        for (const s of prior) {
+          if (!byWorkout.has(s.workout_id)) {
+            byWorkout.set(s.workout_id, [])
+            order.push(s.workout_id)
+          }
+          byWorkout
+            .get(s.workout_id)!
+            .push({ weight_lb: s.weight_lb, reps: s.reps })
+        }
+        const sug = suggestNext(
+          goal,
+          order.map((wid) => byWorkout.get(wid)!),
+        )
+        if (sug.sets.length) suggested = sug.sets
+      }
+
       let rows
-      if (prior.length) {
+      if (suggested) {
+        rows = suggested.map((s, i) => ({
+          workout_id: workoutId,
+          workout_exercise_id: (we as WorkoutExercise).id,
+          exercise_key: key,
+          exercise_name: name,
+          set_number: i + 1,
+          reps: s.reps,
+          weight_lb: s.weightLb,
+        }))
+      } else if (prior.length) {
         const wid = prior[0].workout_id
         const tmpl = prior
           .filter((s) => s.workout_id === wid)

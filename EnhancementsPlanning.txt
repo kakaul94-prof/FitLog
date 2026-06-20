@@ -103,3 +103,27 @@ Strength sections), so they're not duplicated here.)
 - [DONE 2026-06-18] Tappable date + swipe to change days on the Diary. The diary date label (DiaryPage subtitle) is now a button (dotted underline) that opens a native date picker to jump to any day: a visually-hidden `<input type="date">` driven via `showPicker()` with a `.click()` fallback (try/catch), onChange → setDate. Added horizontal swipe on the page's outer div (onTouchStart/onTouchEnd): a >60px move that's horizontally dominant (|dx| > 1.5·|dy|) advances ±1 day (left = next, right = prev); disabled in multi-select mode and ignores vertical scrolls. No conflict with row taps (rows use pointer events; a swipe doesn't fire click) or the long-press menu. The prev/next chevrons stay. DiaryPage.tsx only; no schema/hook/deps. build-green. Not yet committed.
 
 - Loading skeletons (perceived performance). DiaryPage + ProgressPage read TanStack Query data with no loading branch, so a cold / cellular load flashes zeros + the "Set your goal" fallback (diary) or "Log a few entries to see your trend" (progress) before data arrives — the first thing seen each morning on a phone-first PWA. Add lightweight skeleton placeholders for the calorie card, meal list, and the trend chart. Effort: low.
+
+=== Strength goal planning ===
+
+Per-exercise strength goals + a progression engine that suggests the weight/reps
+for upcoming workouts toward a target. Goal = a target 1RM per lift; current
+strength is derived LIVE from logged workout_sets (Epley e1RM), never stored, so
+switching method never resets progress. Three switchable methods, each shown
+in-app with its reasoning + source (PROGRESSION_SOURCE in src/lib/progression.ts):
+  - linear — +step each session you hit the reps; deload 10% after 2 stalls (Starting Strength / StrongLifts)
+  - double — add reps across a range, then weight; deload on stall (NSCA 2-for-2 rule / ACSM)
+  - 5/3/1 — % of a training max in weekly waves (W1 5s / W2 3s / W3 5-3-1 / W4 deload), AMRAP last set, TM +step per cycle (Wendler)
+
+- [DONE 2026-06-19] Original build (all 3 methods, switchable). New strength_goals table — one row per user+exercise: target_1rm_lb, method, increment_lb, rep_low/high, sets, + 5/3/1 state tm_lb/cycle/week; RLS owner-only; migration supabase/migration_strength_goals.sql (+ schema.sql). Pure engine src/lib/progression.ts (currentE1RM, suggestNext per method, weightForReps, PROGRESSION_LABEL/SOURCE). Hook src/features/strength/useStrengthGoals.ts (get/save/update/delete). UI: a goal card PINNED at the top of the exercise detail page (/lift/exercise/:key, above the History/Form/Videos/Progress tabs) — set/edit goal, method dropdown (switch anytime), a progress bar current e1RM→target with "≈ W × reps to reach", and a "Next session" card (linear/double: "S × R @ W lb"; 5/3/1: per-set list + "Week N of 4" + Advance-week / Start-next-cycle button), each with its rationale + source. Workout prefill: useAddExercise now fills the suggested weight/reps for a goal'd lift (falls back to the old blank "match last time" when there's no goal/history). Goal type = target 1RM only (chosen over weight×reps so one number drives all 3 methods). build-green. CAVEATS: needs >=1 logged session before it can suggest (no manual starting-weight entry yet); 5/3/1 week advances via an explicit button (not auto-derived from logs); prefilled sets are committed values you edit down to actuals (no "suggested" tag inside the workout card yet); no chart goal-line / numeric ETA yet (see below).
+
+-- Later (NOT built yet — recommendations to layer on; build when ready) --
+
+- Goal line + ETA on the Progress-tab chart: draw a horizontal target line + a projected trend so you see on-track/behind + a rough goal date. Reuses LineChartSvg. (Highest motivation-per-effort.)
+- PR <-> goal tie-in: PR detection/celebration ALREADY exists (PRBanner + useExerciseBests in WorkoutPage.tsx). What's left = tick goal progress / badge when a logged set advances the goal's e1RM.
+- RPE-aware autoregulation: use the effort (1-5) already logged per set to size the jump (max-effort -> hold/smaller; easy -> bigger). Sources: RPE/RIR autoregulation (Helms et al.; Tuchscherer / RTS).
+- Stall nudge -> deload or switch method: when a lift stalls (the engine already detects the 2-stall deload), surface "stalled — deload, or try 5/3/1?" so switching methods is actionable, not manual.
+- Plate math on the suggested weight (e.g. "140 = 45 + 25 / side" off a configurable bar weight). Low effort, real at-the-rack utility.
+- Warmup ramp: auto-suggest warmup sets up to the working weight (bar -> 50% -> 70% -> 90%). Standard practice; low effort.
+- Bigger / deferred: a Goals overview page (all lifts + progress at a glance); target date + required pace; seed a goal from strength standards (bodyweight + sex via ExRx / Strength Level norms).
+- Considered + skipped for now: rep/endurance goal TYPES (chose 1RM target — adding "do 10 pull-ups" doubles the engine); push reminders (iOS PWA push unreliable); full deload-week periodization (overkill at this stage); manual starting-weight entry for a brand-new lift.

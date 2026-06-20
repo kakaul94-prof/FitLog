@@ -1,7 +1,15 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, EyeOff, Star } from 'lucide-react'
+import {
+  ChevronLeft,
+  EyeOff,
+  Star,
+  Target,
+  Pencil,
+  Trash2,
+  RotateCw,
+} from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { ActionSheet } from '@/components/ActionSheet'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -18,6 +26,21 @@ import {
   useDeleteFormVideo,
 } from '@/features/strength/useFormVideos'
 import { estimated1RM } from '@/lib/calc'
+import {
+  currentE1RM,
+  suggestNext,
+  weightForReps,
+  PROGRESSION_LABEL,
+  PROGRESSION_SOURCE,
+} from '@/lib/progression'
+import {
+  useStrengthGoal,
+  useSaveStrengthGoal,
+  useUpdateStrengthGoal,
+  useDeleteStrengthGoal,
+} from '@/features/strength/useStrengthGoals'
+import { Input } from '@/components/ui/input'
+import type { ProgressionMethod, StrengthGoal } from '@/lib/database.types'
 import { dateLabel } from '@/lib/date'
 import {
   useExerciseNotes,
@@ -74,6 +97,7 @@ export function ExerciseDetailPage() {
         }
       />
       <div className="space-y-4 p-4">
+        <GoalCard exerciseKey={key} name={name} />
         <div className="flex rounded-lg bg-muted p-1">
           {TABS.map((t) => (
             <button
@@ -768,4 +792,353 @@ function fmtDuration(sec: number): string {
 function fmtSize(bytes: number): string {
   const mb = bytes / (1024 * 1024)
   return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`
+}
+
+const METHODS: ProgressionMethod[] = ['linear', 'double', '531']
+
+// Pinned at the top of the exercise page: set a target 1RM, switch progression
+// method, see progress to the goal, and the suggested next session (with its
+// reasoning + source). Current strength is read live from logged sessions.
+function GoalCard({
+  exerciseKey,
+  name,
+}: {
+  exerciseKey: string | undefined
+  name: string
+}) {
+  const { data: goal } = useStrengthGoal(exerciseKey)
+  const { data: sessions } = useExerciseSessions(exerciseKey)
+  const update = useUpdateStrengthGoal()
+  const del = useDeleteStrengthGoal()
+  const [editing, setEditing] = useState(false)
+
+  const priorSessions = (sessions ?? []).map((s) =>
+    s.sets.map((x) => ({ weight_lb: x.weight_lb, reps: x.reps })),
+  )
+  const current = currentE1RM(priorSessions)
+
+  if (!exerciseKey) return null
+
+  if (editing)
+    return (
+      <GoalForm
+        exerciseKey={exerciseKey}
+        name={name}
+        goal={goal ?? null}
+        onClose={() => setEditing(false)}
+      />
+    )
+
+  if (!goal)
+    return (
+      <Card>
+        <button
+          onClick={() => setEditing(true)}
+          className="flex w-full items-center justify-center gap-2 p-4 text-sm font-medium text-primary active:bg-accent"
+        >
+          <Target className="h-4 w-4" /> Set a strength goal
+        </button>
+      </Card>
+    )
+
+  const sug = suggestNext(goal, priorSessions)
+  const pct = Math.min(
+    100,
+    Math.max(0, Math.round((current / goal.target_1rm_lb) * 100)) || 0,
+  )
+  const reached = current > 0 && current >= goal.target_1rm_lb
+  const hintReps = goal.method === 'double' ? goal.rep_high : goal.rep_low
+  const hintWeight =
+    Math.round(weightForReps(goal.target_1rm_lb, hintReps) / 5) * 5
+  const inc = goal.increment_lb ?? 5
+
+  const changeMethod = (m: ProgressionMethod) => {
+    const patch: { id: string; exercise_key: string } & Partial<StrengthGoal> = {
+      id: goal.id,
+      exercise_key: goal.exercise_key,
+      method: m,
+    }
+    // Seed the 5/3/1 training max from current strength the first time.
+    if (m === '531' && goal.tm_lb == null) {
+      patch.tm_lb = Math.round(current * 0.9) || null
+      patch.week = 1
+      patch.cycle = 1
+    }
+    update.mutate(patch)
+  }
+
+  const advance531 = () => {
+    const nextWeek = goal.week >= 4 ? 1 : goal.week + 1
+    const patch: { id: string; exercise_key: string } & Partial<StrengthGoal> = {
+      id: goal.id,
+      exercise_key: goal.exercise_key,
+      week: nextWeek,
+    }
+    // Wrapping past the deload week starts a new cycle and bumps the TM.
+    if (nextWeek === 1) {
+      patch.cycle = goal.cycle + 1
+      patch.tm_lb = (goal.tm_lb ?? Math.round(current * 0.9)) + inc
+    }
+    update.mutate(patch)
+  }
+
+  return (
+    <div className="space-y-3">
+      <Card className="p-3">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-1.5 font-semibold">
+            <Target className="h-4 w-4 text-primary" /> Strength goal
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setEditing(true)}
+              aria-label="Edit goal"
+              className="text-muted-foreground active:text-foreground"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm('Delete this strength goal?'))
+                  del.mutate({ id: goal.id, exercise_key: goal.exercise_key })
+              }}
+              aria-label="Delete goal"
+              className="text-muted-foreground active:text-destructive"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            {current ? `Now ~${current} lb` : 'No history yet'}
+          </span>
+          <span className="font-medium">Goal {goal.target_1rm_lb} lb 1RM</span>
+        </div>
+        <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width]"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="mt-1.5 text-xs text-muted-foreground">
+          {reached
+            ? '🎉 Goal reached!'
+            : `${pct}% · ≈ ${hintWeight} × ${hintReps} to reach ${goal.target_1rm_lb}`}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Method</span>
+          <Select
+            className="h-8 flex-1"
+            value={goal.method}
+            onChange={(e) => changeMethod(e.target.value as ProgressionMethod)}
+          >
+            {METHODS.map((m) => (
+              <option key={m} value={m}>
+                {PROGRESSION_LABEL[m]}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </Card>
+
+      <Card className="border-primary/40 p-3">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold">Next session</span>
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+            {goal.method === '531' ? `Week ${goal.week} of 4` : 'suggested'}
+          </span>
+        </div>
+
+        {sug.action === 'start' ? (
+          <p className="mt-2 text-sm text-muted-foreground">{sug.rationale}</p>
+        ) : (
+          <>
+            {goal.method === '531' ? (
+              <div className="mt-2 space-y-1">
+                {sug.sets.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span className="text-muted-foreground">Set {i + 1}</span>
+                    <span className="font-medium tabular-nums">
+                      {s.weightLb} lb × {s.reps}
+                      {s.amrap ? '+' : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 text-xl font-bold tabular-nums">
+                {sug.headline}
+              </div>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">{sug.rationale}</p>
+          </>
+        )}
+
+        <p className="mt-2 text-[11px] text-muted-foreground">{sug.source}</p>
+
+        {goal.method === '531' && current > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3 w-full"
+            onClick={advance531}
+          >
+            <RotateCw className="h-3.5 w-3.5" />
+            {goal.week >= 4
+              ? `Start next cycle · +${inc} lb`
+              : `Advance to week ${goal.week + 1}`}
+          </Button>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+function GoalForm({
+  exerciseKey,
+  name,
+  goal,
+  onClose,
+}: {
+  exerciseKey: string
+  name: string
+  goal: StrengthGoal | null
+  onClose: () => void
+}) {
+  const save = useSaveStrengthGoal()
+  const update = useUpdateStrengthGoal()
+  const [target, setTarget] = useState(goal ? String(goal.target_1rm_lb) : '')
+  const [method, setMethod] = useState<ProgressionMethod>(
+    goal?.method ?? 'double',
+  )
+  const [sets, setSets] = useState(String(goal?.sets ?? 3))
+  const [lo, setLo] = useState(String(goal?.rep_low ?? 5))
+  const [hi, setHi] = useState(String(goal?.rep_high ?? 8))
+  const [inc, setInc] = useState(String(goal?.increment_lb ?? 5))
+  const pending = save.isPending || update.isPending
+
+  const onSave = () => {
+    const t = parseFloat(target)
+    if (!t) return
+    const repLow = parseInt(lo, 10) || 5
+    const base = {
+      exercise_key: exerciseKey,
+      exercise_name: name,
+      target_1rm_lb: t,
+      method,
+      increment_lb: parseFloat(inc) || 5,
+      rep_low: repLow,
+      rep_high: Math.max(parseInt(hi, 10) || repLow, repLow),
+      sets: parseInt(sets, 10) || 3,
+    }
+    if (goal) update.mutate({ id: goal.id, ...base }, { onSuccess: onClose })
+    else save.mutate(base, { onSuccess: onClose })
+  }
+
+  return (
+    <Card className="space-y-3 p-3">
+      <div className="text-sm font-semibold">
+        {goal ? 'Edit goal' : 'New strength goal'}
+      </div>
+
+      <label className="block text-xs text-muted-foreground">
+        Target 1RM (lb)
+        <Input
+          type="number"
+          inputMode="decimal"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          placeholder="e.g. 200"
+          className="mt-1"
+        />
+      </label>
+
+      <label className="block text-xs text-muted-foreground">
+        Method
+        <Select
+          value={method}
+          onChange={(e) => setMethod(e.target.value as ProgressionMethod)}
+          className="mt-1"
+        >
+          {METHODS.map((m) => (
+            <option key={m} value={m}>
+              {PROGRESSION_LABEL[m]}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <p className="text-[11px] text-muted-foreground">
+        {PROGRESSION_SOURCE[method]}
+      </p>
+
+      {method !== '531' && (
+        <div className="grid grid-cols-3 gap-2">
+          <label className="block text-xs text-muted-foreground">
+            Sets
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={sets}
+              onChange={(e) => setSets(e.target.value)}
+              className="mt-1"
+            />
+          </label>
+          <label className="block text-xs text-muted-foreground">
+            {method === 'double' ? 'Rep low' : 'Reps'}
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={lo}
+              onChange={(e) => setLo(e.target.value)}
+              className="mt-1"
+            />
+          </label>
+          {method === 'double' && (
+            <label className="block text-xs text-muted-foreground">
+              Rep high
+              <Input
+                type="number"
+                inputMode="numeric"
+                value={hi}
+                onChange={(e) => setHi(e.target.value)}
+                className="mt-1"
+              />
+            </label>
+          )}
+        </div>
+      )}
+
+      <label className="block text-xs text-muted-foreground">
+        Weight step (lb)
+        <Select
+          value={inc}
+          onChange={(e) => setInc(e.target.value)}
+          className="mt-1"
+        >
+          <option value="2.5">2.5 (microload)</option>
+          <option value="5">5 (upper body)</option>
+          <option value="10">10 (lower body)</option>
+        </Select>
+      </label>
+
+      <div className="flex gap-2 pt-1">
+        <Button
+          className="flex-1"
+          onClick={onSave}
+          disabled={!parseFloat(target) || pending}
+        >
+          {pending ? 'Saving…' : 'Save goal'}
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </Card>
+  )
 }

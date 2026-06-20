@@ -49,6 +49,8 @@ export type GoalType = 'lose' | 'maintain' | 'gain'
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks'
 export type FoodSource = 'usda' | 'manual' | 'recipe'
 export type ExerciseType = 'weighted' | 'bodyweight' | 'timed' | 'cardio'
+// Progression style for a strength goal (see src/lib/progression.ts).
+export type ProgressionMethod = 'linear' | 'double' | '531'
 
 export type MacroMode = 'g' | 'g_per_lb' | 'pct' | 'remainder'
 export interface MacroTarget {
@@ -299,6 +301,29 @@ export interface Measurement {
   created_at: string
 }
 
+// Per-exercise strength goal (target 1RM) + progression state. The app suggests
+// the next session toward target_1rm_lb via `method`. Current strength is
+// derived live from workout_sets (not stored), so switching method never resets.
+// tm_lb/cycle/week hold 5/3/1 state only (ignored by the other methods).
+export interface StrengthGoal {
+  id: string
+  user_id: string
+  exercise_key: string
+  exercise_name: string
+  target_1rm_lb: number
+  method: ProgressionMethod
+  increment_lb: number | null
+  rep_low: number
+  rep_high: number
+  sets: number
+  tm_lb: number | null
+  cycle: number
+  week: number
+  achieved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 // Shape Supabase's typed client expects per table.
 type Tbl<Row> = {
   Row: Row
@@ -327,6 +352,7 @@ export interface Database {
       workout_exercises: Tbl<WorkoutExercise>
       workout_sets: Tbl<WorkoutSet>
       measurements: Tbl<Measurement>
+      strength_goals: Tbl<StrengthGoal>
     }
     Views: { [_ in never]: never }
     Functions: { [_ in never]: never }

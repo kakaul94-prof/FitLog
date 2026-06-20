@@ -35,6 +35,7 @@ import {
   computePortionNutrients,
 } from '@/lib/nutrients'
 import type { Food, Meal, NutrientKey, Nutrients, Portion } from '@/lib/database.types'
+import { cn } from '@/lib/utils'
 
 export function FoodFormPage() {
   const nav = useNavigate()
@@ -75,6 +76,9 @@ export function FoodFormPage() {
   const [manualBarcode, setManualBarcode] = useState('')
   const [scanErr, setScanErr] = useState('')
   const [scanWarnings, setScanWarnings] = useState<string[]>([])
+  const [autoTab, setAutoTab] = useState<'search' | 'label' | 'barcode'>(
+    isUsdaConfigured ? 'search' : 'label',
+  )
 
   useEffect(() => {
     if (!existing) return
@@ -359,12 +363,12 @@ export function FoodFormPage() {
       />
 
       <div className="space-y-4 px-4 pt-4 pb-16">
-        {/* Scan a label or barcode */}
+        {/* Auto-fill: search USDA, scan a label, or scan/enter a barcode */}
         <Card>
           <CardHeader>
-            <CardTitle>Scan a label or barcode</CardTitle>
+            <CardTitle>Start from a source</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          <CardContent className="space-y-3">
             <input
               ref={fileRef}
               type="file"
@@ -381,54 +385,147 @@ export function FoodFormPage() {
               className="hidden"
               onChange={onBarcodeFile}
             />
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => fileRef.current?.click()}
-              disabled={scanLoading || bcLoading}
-            >
-              {scanLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Reading label…
-                </>
-              ) : (
-                <>
-                  <Camera className="h-4 w-4" /> Scan nutrition label
-                </>
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => barcodeRef.current?.click()}
-              disabled={scanLoading || bcLoading}
-            >
-              {bcLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Looking up…
-                </>
-              ) : (
-                <>
-                  <ScanBarcode className="h-4 w-4" /> Scan barcode
-                </>
-              )}
-            </Button>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Or enter barcode digits"
-                inputMode="numeric"
-                value={manualBarcode}
-                onChange={(e) => setManualBarcode(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && onManualBarcode()}
-              />
-              <Button
-                onClick={onManualBarcode}
-                disabled={scanLoading || bcLoading || !manualBarcode.trim()}
-                size="icon"
-              >
-                <Search className="h-4 w-4" />
-              </Button>
+
+            <div className="flex rounded-lg bg-secondary p-0.5 text-sm">
+              {(
+                [
+                  ['search', 'Search', Search],
+                  ['label', 'Label', Camera],
+                  ['barcode', 'Barcode', ScanBarcode],
+                ] as const
+              ).map(([key, lbl, Icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setAutoTab(key)}
+                  className={cn(
+                    'flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 font-medium transition-colors',
+                    autoTab === key
+                      ? 'bg-card text-foreground shadow-sm'
+                      : 'text-muted-foreground active:bg-accent',
+                  )}
+                >
+                  <Icon className="h-4 w-4" /> {lbl}
+                </button>
+              ))}
             </div>
+
+            {autoTab === 'search' &&
+              (!isUsdaConfigured ? (
+                <p className="text-sm text-muted-foreground">
+                  Add your USDA API key to <code>.env</code> to search foods. You
+                  can still enter foods manually below.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="e.g. chicken breast"
+                      value={uq}
+                      onChange={(e) => setUq(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && runUsda()}
+                    />
+                    <Button onClick={runUsda} disabled={uLoading} size="icon">
+                      {uLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Search className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  {uErr && <p className="text-sm text-destructive">{uErr}</p>}
+                  {uResults.length > 0 && (
+                    <div className="divide-y divide-border rounded-md border border-border">
+                      {uResults.map((r) => (
+                        <button
+                          key={r.fdcId}
+                          type="button"
+                          onClick={() => pickUsda(r)}
+                          className="block w-full p-2 text-left text-sm active:bg-accent"
+                        >
+                          <span className="font-medium">{r.description}</span>
+                          {r.brand && (
+                            <span className="text-muted-foreground"> · {r.brand}</span>
+                          )}
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            ({r.dataType})
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Pick a result to fill the form below (per 100 g). Set your
+                    serving size — the nutrition rescales to match.
+                  </p>
+                </div>
+              ))}
+
+            {autoTab === 'label' && (
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={scanLoading || bcLoading}
+                >
+                  {scanLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Reading label…
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="h-4 w-4" /> Scan nutrition label
+                    </>
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Photograph the Nutrition Facts panel — the values fill the form
+                  below to review.
+                </p>
+              </div>
+            )}
+
+            {autoTab === 'barcode' && (
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => barcodeRef.current?.click()}
+                  disabled={scanLoading || bcLoading}
+                >
+                  {bcLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Looking up…
+                    </>
+                  ) : (
+                    <>
+                      <ScanBarcode className="h-4 w-4" /> Scan barcode
+                    </>
+                  )}
+                </Button>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Or enter barcode digits"
+                    inputMode="numeric"
+                    value={manualBarcode}
+                    onChange={(e) => setManualBarcode(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && onManualBarcode()}
+                  />
+                  <Button
+                    onClick={onManualBarcode}
+                    disabled={scanLoading || bcLoading || !manualBarcode.trim()}
+                    size="icon"
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Scan or type a product barcode (via Open Food Facts).
+                </p>
+              </div>
+            )}
+
             {scanErr && <p className="text-sm text-destructive">{scanErr}</p>}
             {scanWarnings.length > 0 && (
               <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
@@ -436,70 +533,6 @@ export function FoodFormPage() {
                   <p key={i}>⚠ {w}</p>
                 ))}
               </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Photograph the Nutrition Facts panel, or scan/enter a product
-              barcode (via Open Food Facts). The values fill the form below —
-              review them, then save.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* USDA search */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Search USDA</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {!isUsdaConfigured ? (
-              <p className="text-sm text-muted-foreground">
-                Add your USDA API key to <code>.env</code> to search foods. You
-                can still enter foods manually below.
-              </p>
-            ) : (
-              <>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="e.g. chicken breast"
-                    value={uq}
-                    onChange={(e) => setUq(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && runUsda()}
-                  />
-                  <Button onClick={runUsda} disabled={uLoading} size="icon">
-                    {uLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-                {uErr && <p className="text-sm text-destructive">{uErr}</p>}
-                {uResults.length > 0 && (
-                  <div className="divide-y divide-border rounded-md border border-border">
-                    {uResults.map((r) => (
-                      <button
-                        key={r.fdcId}
-                        type="button"
-                        onClick={() => pickUsda(r)}
-                        className="block w-full p-2 text-left text-sm active:bg-accent"
-                      >
-                        <span className="font-medium">{r.description}</span>
-                        {r.brand && (
-                          <span className="text-muted-foreground"> · {r.brand}</span>
-                        )}
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          ({r.dataType})
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Picking a result fills the form below (per 100 g). Set your
-                  serving size — the nutrition rescales to match. Tweak anything,
-                  then save your copy.
-                </p>
-              </>
             )}
           </CardContent>
         </Card>

@@ -6,7 +6,7 @@ import type {
   WorkoutSet,
   StrengthGoal,
 } from '@/lib/database.types'
-import { suggestNext } from '@/lib/progression'
+import { suggestNext, currentE1RM } from '@/lib/progression'
 
 export function useWorkouts() {
   return useQuery({
@@ -411,6 +411,8 @@ export interface ExerciseSessionStat {
   max: number
   total: number
   avg: number
+  /** Best estimated 1RM (Epley) of the session — the goal-line/ETA series. */
+  e1rm: number
 }
 
 /** Per-session stats for one exercise: max weight, total volume, average weight. */
@@ -460,7 +462,8 @@ export function useExerciseHistory(key: string | undefined) {
         const avg = weights.length
           ? Math.round(weights.reduce((x, y) => x + y, 0) / weights.length)
           : 0
-        rows.push({ date, max, total, avg })
+        const e1rm = currentE1RM([arr])
+        rows.push({ date, max, total, avg, e1rm })
       }
       return rows.sort((a, b) => a.date.localeCompare(b.date))
     },

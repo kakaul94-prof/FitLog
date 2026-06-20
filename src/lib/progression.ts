@@ -1,4 +1,5 @@
 import { estimated1RM } from './calc'
+import { addDaysISO, daysBetweenISO } from './date'
 import type { ProgressionMethod, StrengthGoal } from './database.types'
 
 // A past set for one exercise. Sessions are arrays of these, newest session
@@ -227,4 +228,61 @@ export function requiredPace(
 export function formatPace(perWeek: number): string {
   const r = Math.round(perWeek * 2) / 2
   return r < 0.5 ? '<0.5' : String(r)
+}
+
+export interface GoalProjection {
+  /** Least-squares e1RM trend (lb/week); ≤0 means flat/declining. */
+  slopePerWeek: number
+  /** Projected date the trend reaches the target, or null if not trending up. */
+  etaISO: string | null
+  trendingUp: boolean
+  /** Latest e1RM already meets/exceeds the target. */
+  reached: boolean
+}
+
+/**
+ * Project a goal ETA from logged e1RM over time: fit a least-squares line to the
+ * dated e1RM points (the actual trend, NOT the required pace — that's
+ * `requiredPace`) and extend from the latest session to the target. Returns no
+ * date when there's <2 points, the trend is flat/down, or the goal is reached.
+ * Points may be in any order; zero-e1RM sessions (e.g. bodyweight) are dropped.
+ */
+export function projectGoalEta(
+  points: { date: string; e1rm: number }[],
+  target: number,
+): GoalProjection {
+  const pts = points
+    .filter((p) => p.e1rm > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+  const last = pts[pts.length - 1]
+  const reached = !!last && last.e1rm >= target
+  if (pts.length < 2 || reached)
+    return { slopePerWeek: 0, etaISO: null, trendingUp: false, reached }
+
+  const base = pts[0].date
+  const xs = pts.map((p) => daysBetweenISO(base, p.date))
+  const ys = pts.map((p) => p.e1rm)
+  const n = pts.length
+  const mx = xs.reduce((a, b) => a + b, 0) / n
+  const my = ys.reduce((a, b) => a + b, 0) / n
+  let num = 0
+  let den = 0
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - mx) * (ys[i] - my)
+    den += (xs[i] - mx) ** 2
+  }
+  const slopePerDay = den ? num / den : 0
+  const slopePerWeek = slopePerDay * 7
+  if (slopePerDay <= 0)
+    return { slopePerWeek, etaISO: null, trendingUp: false, reached }
+
+  // Anchor the projection at the latest actual e1RM (intuitive "from where you
+  // are now"); the trend slope sets the pace. target > last.e1rm here, so days > 0.
+  const days = Math.round((target - last.e1rm) / slopePerDay)
+  return {
+    slopePerWeek,
+    etaISO: addDaysISO(last.date, days),
+    trendingUp: true,
+    reached,
+  }
 }

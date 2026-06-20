@@ -9,6 +9,7 @@ import {
   Pencil,
   Trash2,
   RotateCw,
+  TrendingUp,
 } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { ActionSheet } from '@/components/ActionSheet'
@@ -32,9 +33,11 @@ import {
   weightForReps,
   requiredPace,
   formatPace,
+  projectGoalEta,
   PROGRESSION_LABEL,
   PROGRESSION_SOURCE,
 } from '@/lib/progression'
+import type { GoalProjection } from '@/lib/progression'
 import {
   useStrengthGoal,
   useSaveStrengthGoal,
@@ -53,6 +56,7 @@ import { getExerciseForm } from '@/data/exerciseForm'
 import { builtinKeyForName } from '@/data/exerciseAliases'
 
 const METRICS = [
+  { key: 'e1rm', label: 'Est. 1RM' },
   { key: 'max', label: 'Max weight' },
   { key: 'total', label: 'Total volume' },
   { key: 'avg', label: 'Average weight' },
@@ -60,6 +64,7 @@ const METRICS = [
 type MetricKey = (typeof METRICS)[number]['key']
 
 const GREEN = '#16a34a'
+const GOAL = '#d97706' // amber-600 — the goal line, distinct from the green trend
 const TABS = ['history', 'form', 'videos', 'progress'] as const
 type Tab = (typeof TABS)[number]
 
@@ -605,13 +610,26 @@ function FormSection({
 
 function ProgressTab({ exerciseKey }: { exerciseKey: string | undefined }) {
   const { data: history } = useExerciseHistory(exerciseKey)
-  const [metric, setMetric] = useState<MetricKey>('max')
+  const { data: goal } = useStrengthGoal(exerciseKey)
+  // null = no explicit pick yet → default to Est. 1RM when a goal exists (so the
+  // goal line shows), else Max weight. A user pick sticks regardless.
+  const [picked, setPicked] = useState<MetricKey | null>(null)
+  const metric: MetricKey = picked ?? (goal ? 'e1rm' : 'max')
 
   const rows = history ?? []
   const chartData = rows.map((r) => ({ date: r.date.slice(5), value: r[metric] }))
   const bestMax = rows.reduce((m, r) => Math.max(m, r.max), 0)
   const bestVol = rows.reduce((m, r) => Math.max(m, r.total), 0)
   const meta = METRICS.find((m) => m.key === metric) ?? METRICS[0]
+
+  // The goal is a target 1RM, so the goal line + ETA only apply to that series.
+  const showGoal = metric === 'e1rm' && !!goal
+  const proj = showGoal
+    ? projectGoalEta(
+        rows.map((r) => ({ date: r.date, e1rm: r.e1rm })),
+        goal.target_1rm_lb,
+      )
+    : null
 
   return (
     <div className="space-y-4">
@@ -626,7 +644,10 @@ function ProgressTab({ exerciseKey }: { exerciseKey: string | undefined }) {
         </Card>
       </div>
 
-      <Select value={metric} onChange={(e) => setMetric(e.target.value as MetricKey)}>
+      <Select
+        value={metric}
+        onChange={(e) => setPicked(e.target.value as MetricKey)}
+      >
         {METRICS.map((m) => (
           <option key={m.key} value={m.key}>
             {m.label}
@@ -644,22 +665,81 @@ function ProgressTab({ exerciseKey }: { exerciseKey: string | undefined }) {
               Log this exercise in 2+ sessions to see a trend.
             </p>
           ) : (
-            <LineChartSvg
-              data={chartData}
-              xKey="date"
-              series={[
-                {
-                  key: 'value',
-                  color: GREEN,
-                  strokeWidth: 2.5,
-                  dotRadius: 3,
-                  name: meta.label,
-                },
-              ]}
-            />
+            <>
+              <LineChartSvg
+                data={chartData}
+                xKey="date"
+                refLine={
+                  showGoal
+                    ? {
+                        value: goal.target_1rm_lb,
+                        color: GOAL,
+                        label: `Goal ${goal.target_1rm_lb}`,
+                      }
+                    : undefined
+                }
+                series={[
+                  {
+                    key: 'value',
+                    color: GREEN,
+                    strokeWidth: 2.5,
+                    dotRadius: 3,
+                    name: meta.label,
+                  },
+                ]}
+              />
+              {showGoal && proj && (
+                <GoalEtaCaption proj={proj} goal={goal} />
+              )}
+            </>
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// The actual-trend projection under the e1RM chart: where your logged trend is
+// headed (vs. the goal card's REQUIRED pace). Reached / flat / on-track states.
+function GoalEtaCaption({
+  proj,
+  goal,
+}: {
+  proj: GoalProjection
+  goal: StrengthGoal
+}) {
+  if (proj.reached)
+    return <p className="mt-3 text-xs font-medium text-primary">🎉 Goal reached</p>
+  if (!proj.etaISO)
+    return (
+      <p className="mt-3 text-xs text-muted-foreground">
+        Not trending up yet — no estimate.
+      </p>
+    )
+  const eta = new Date(proj.etaISO + 'T00:00:00').toLocaleDateString(undefined, {
+    month: 'short',
+    year: 'numeric',
+  })
+  const behind = goal.target_date ? proj.etaISO > goal.target_date : false
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <TrendingUp className="h-4 w-4 shrink-0 text-primary" />
+      <span className="text-xs text-muted-foreground">
+        Trend +{formatPace(proj.slopePerWeek)} lb/wk · reach {goal.target_1rm_lb}{' '}
+        by ≈ {eta}
+      </span>
+      {goal.target_date && (
+        <span
+          className={cn(
+            'ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
+            behind
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-primary/10 text-primary',
+          )}
+        >
+          {behind ? 'behind' : 'on track'}
+        </span>
+      )}
     </div>
   )
 }

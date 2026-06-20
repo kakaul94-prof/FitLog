@@ -12,11 +12,23 @@ export interface ChartSeries {
   name?: string
 }
 
+/** A horizontal reference line (e.g. a goal target) drawn across the chart. */
+export interface RefLine {
+  value: number
+  color: string
+  /** Short label drawn at the line's right end. */
+  label?: string
+  /** Dashed by default; pass false for a solid line. */
+  dashed?: boolean
+}
+
 interface LineChartSvgProps {
   data: Array<Record<string, string | number>>
   /** Key into each data row holding the x-axis label. */
   xKey: string
   series: ChartSeries[]
+  /** Optional horizontal line folded into the y-domain so it's always visible. */
+  refLine?: RefLine
   height?: number
   className?: string
 }
@@ -81,6 +93,7 @@ export function LineChartSvg({
   data,
   xKey,
   series,
+  refLine,
   height = 224,
   className,
 }: LineChartSvgProps) {
@@ -99,6 +112,10 @@ export function LineChartSvg({
         if (v > mx) mx = v
       }
     }
+  }
+  if (refLine && Number.isFinite(refLine.value)) {
+    if (refLine.value < mn) mn = refLine.value
+    if (refLine.value > mx) mx = refLine.value
   }
   const { lo, hi, ticks } = niceScale(mn, mx)
 
@@ -195,6 +212,36 @@ export function LineChartSvg({
                   />
                 ))
               : null,
+          )}
+
+          {refLine && Number.isFinite(refLine.value) && (
+            <g>
+              <line
+                x1={PAD.left}
+                y1={yAt(refLine.value)}
+                x2={w - PAD.right}
+                y2={yAt(refLine.value)}
+                stroke={refLine.color}
+                strokeWidth={1.5}
+                strokeDasharray={refLine.dashed === false ? undefined : '5 3'}
+              />
+              {refLine.label && (
+                <text
+                  x={w - PAD.right}
+                  y={
+                    yAt(refLine.value) < PAD.top + 14
+                      ? yAt(refLine.value) + 14
+                      : yAt(refLine.value) - 4
+                  }
+                  textAnchor="end"
+                  fontSize={11}
+                  fontWeight={500}
+                  fill={refLine.color}
+                >
+                  {refLine.label}
+                </text>
+              )}
+            </g>
           )}
 
           {active != null && data[active] && (

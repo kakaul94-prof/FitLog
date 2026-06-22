@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { ChevronLeft, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -6,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { FoodsList } from '@/components/library/FoodsList'
 import { RecipesList } from '@/components/library/RecipesList'
 import { MealsList } from '@/components/library/MealsList'
+import { StartFromSourceSheet } from '@/components/StartFromSourceSheet'
 import { useCreateRecipe } from '@/features/recipes/useRecipes'
 
 type Tab = 'foods' | 'recipes' | 'meals'
@@ -23,6 +25,7 @@ export function LibraryPage() {
   const nav = useNavigate()
   const { pathname } = useLocation()
   const create = useCreateRecipe()
+  const [sourceOpen, setSourceOpen] = useState(false)
 
   const tab: Tab = pathname.startsWith('/recipes')
     ? 'recipes'
@@ -37,7 +40,7 @@ export function LibraryPage() {
 
   const action =
     tab === 'foods' ? (
-      <Button size="icon" onClick={() => nav('/foods/new')}>
+      <Button size="icon" onClick={() => setSourceOpen(true)}>
         <Plus className="h-5 w-5" />
       </Button>
     ) : tab === 'recipes' ? (
@@ -85,6 +88,17 @@ export function LibraryPage() {
       {tab === 'foods' && <FoodsList />}
       {tab === 'recipes' && <RecipesList />}
       {tab === 'meals' && <MealsList />}
+
+      {sourceOpen && (
+        <StartFromSourceSheet
+          onClose={() => setSourceOpen(false)}
+          onManual={() => {
+            setSourceOpen(false)
+            nav('/foods/new')
+          }}
+          onPick={(draft) => nav('/foods/new', { state: { draft } })}
+        />
+      )}
     </div>
   )
 }

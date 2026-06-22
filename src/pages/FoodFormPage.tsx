@@ -1,33 +1,21 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
 import {
-  ChevronLeft,
-  Search,
-  Loader2,
-  Plus,
-  Trash2,
-  RotateCcw,
-  Pencil,
-  Camera,
-  ScanBarcode,
-} from 'lucide-react'
+  useNavigate,
+  useParams,
+  useSearchParams,
+  useLocation,
+} from 'react-router-dom'
+import { ChevronLeft, Plus, Trash2, RotateCcw, Pencil } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NutrientFields } from '@/components/NutrientFields'
+import type { FoodDraft } from '@/components/StartFromSourceSheet'
 import { useFood, useSaveFood } from '@/features/foods/useFoods'
 import { useAddIngredient } from '@/features/recipes/useRecipes'
 import { useLogFood } from '@/features/diary/useDiary'
-import { scanLabel, type ScannedFood } from '@/lib/scanLabel'
-import { detectBarcodeFromImage, lookupBarcode } from '@/lib/barcode'
-import {
-  searchUsdaFoods,
-  getUsdaFood,
-  isUsdaConfigured,
-  type UsdaSearchItem,
-} from '@/lib/usda'
 import {
   scaleNutrients,
   roundNutrients,
@@ -35,12 +23,12 @@ import {
   computePortionNutrients,
 } from '@/lib/nutrients'
 import type { Food, Meal, NutrientKey, Nutrients, Portion } from '@/lib/database.types'
-import { cn } from '@/lib/utils'
 
 export function FoodFormPage() {
   const nav = useNavigate()
   const { id } = useParams()
   const [params] = useSearchParams()
+  const location = useLocation()
   const addToRecipe = params.get('addToRecipe')
   const returnTo = params.get('returnTo')
   const backTo = returnTo || (addToRecipe ? `/recipes/${addToRecipe}` : '/foods')
@@ -64,21 +52,7 @@ export function FoodFormPage() {
   const [nutrients, setNutrients] = useState<Nutrients>({})
   const [portions, setPortions] = useState<Portion[]>([])
 
-  const [uq, setUq] = useState('')
-  const [uResults, setUResults] = useState<UsdaSearchItem[]>([])
-  const [uLoading, setULoading] = useState(false)
-  const [uErr, setUErr] = useState('')
-
-  const fileRef = useRef<HTMLInputElement>(null)
-  const barcodeRef = useRef<HTMLInputElement>(null)
-  const [scanLoading, setScanLoading] = useState(false)
-  const [bcLoading, setBcLoading] = useState(false)
-  const [manualBarcode, setManualBarcode] = useState('')
-  const [scanErr, setScanErr] = useState('')
   const [scanWarnings, setScanWarnings] = useState<string[]>([])
-  const [autoTab, setAutoTab] = useState<'search' | 'label' | 'barcode'>(
-    isUsdaConfigured ? 'search' : 'label',
-  )
 
   useEffect(() => {
     if (!existing) return
@@ -93,6 +67,26 @@ export function FoodFormPage() {
     setPortions(existing.portions ?? [])
     servingBaseRef.current = existing.serving_qty
   }, [existing])
+
+  // Pre-fill a new food from a source chosen in the "Start from a source" popup.
+  useEffect(() => {
+    if (id) return
+    const draft = (location.state as { draft?: FoodDraft } | null)?.draft
+    if (!draft) return
+    setName(draft.name)
+    setBrand(draft.brand)
+    setServingQty(String(draft.serving_qty))
+    setServingUnit(draft.serving_unit)
+    setServingGrams(
+      draft.serving_grams != null ? String(draft.serving_grams) : '',
+    )
+    setSource(draft.source)
+    setSourceId(draft.source_id)
+    setNutrients(draft.nutrients)
+    setPortions(draft.portions)
+    servingBaseRef.current = draft.serving_qty
+    setScanWarnings(draft.warnings ?? [])
+  }, [id, location.state])
 
   const setNutrient = (k: NutrientKey, v: string) => {
     setNutrients((prev) => {
@@ -180,113 +174,6 @@ export function FoodFormPage() {
       }),
     )
 
-  const runUsda = async () => {
-    if (!uq.trim()) return
-    setULoading(true)
-    setUErr('')
-    try {
-      setUResults(await searchUsdaFoods(uq.trim()))
-    } catch (e) {
-      setUErr(e instanceof Error ? e.message : 'Search failed')
-    } finally {
-      setULoading(false)
-    }
-  }
-
-  const pickUsda = async (item: UsdaSearchItem) => {
-    setULoading(true)
-    setUErr('')
-    try {
-      const d = await getUsdaFood(item.fdcId)
-      setName(d.name)
-      setBrand(d.brand ?? '')
-      setServingQty(String(d.serving_qty))
-      setServingUnit(d.serving_unit)
-      setServingGrams(d.serving_grams != null ? String(d.serving_grams) : '')
-      setSource('usda')
-      setSourceId(d.source_id)
-      setNutrients(roundNutrients(d.nutrients))
-      setPortions([])
-      servingBaseRef.current = d.serving_qty
-      setUResults([])
-      setUq('')
-    } catch (e) {
-      setUErr(e instanceof Error ? e.message : 'Import failed')
-    } finally {
-      setULoading(false)
-    }
-  }
-
-  // Fill the form from a scanned label or barcode lookup, for the user to review.
-  const applyScanned = (d: ScannedFood, sourceId: string | null) => {
-    setName(d.name)
-    setBrand(d.brand ?? '')
-    setServingQty(String(d.serving_qty))
-    setServingUnit(d.serving_unit)
-    setServingGrams(d.serving_grams != null ? String(d.serving_grams) : '')
-    setSource('manual')
-    setSourceId(sourceId)
-    setNutrients(roundNutrients(d.nutrients))
-    setPortions([])
-    servingBaseRef.current = d.serving_qty
-    setScanWarnings(d.warnings)
-  }
-
-  const onScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = '' // allow re-picking the same file
-    if (!file) return
-    setScanLoading(true)
-    setScanErr('')
-    setScanWarnings([])
-    try {
-      applyScanned(await scanLabel(file), null)
-    } catch (err) {
-      setScanErr(err instanceof Error ? err.message : 'Scan failed')
-    } finally {
-      setScanLoading(false)
-    }
-  }
-
-  const onBarcodeFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = '' // allow re-picking the same file
-    if (!file) return
-    setBcLoading(true)
-    setScanErr('')
-    setScanWarnings([])
-    try {
-      const code = await detectBarcodeFromImage(file)
-      if (!code) {
-        setScanErr(
-          'No barcode detected. Get it straight-on and in focus, or type the digits below.',
-        )
-        return
-      }
-      applyScanned(await lookupBarcode(code), code.replace(/\D/g, ''))
-    } catch (err) {
-      setScanErr(err instanceof Error ? err.message : 'Barcode scan failed')
-    } finally {
-      setBcLoading(false)
-    }
-  }
-
-  const onManualBarcode = async () => {
-    const code = manualBarcode.trim()
-    if (!code) return
-    setBcLoading(true)
-    setScanErr('')
-    setScanWarnings([])
-    try {
-      applyScanned(await lookupBarcode(code), code.replace(/\D/g, ''))
-      setManualBarcode('')
-    } catch (err) {
-      setScanErr(err instanceof Error ? err.message : 'Barcode lookup failed')
-    } finally {
-      setBcLoading(false)
-    }
-  }
-
   // Persist the current form to the food library, returning the saved food.
   const persist = async (): Promise<Food> => {
     const r = scaleToServing()
@@ -363,179 +250,13 @@ export function FoodFormPage() {
       />
 
       <div className="space-y-4 px-4 pt-4 pb-16">
-        {/* Auto-fill: search USDA, scan a label, or scan/enter a barcode */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Start from a source</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={onScanFile}
-            />
-            <input
-              ref={barcodeRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={onBarcodeFile}
-            />
-
-            <div className="flex rounded-lg bg-secondary p-0.5 text-sm">
-              {(
-                [
-                  ['search', 'Search', Search],
-                  ['label', 'Label', Camera],
-                  ['barcode', 'Barcode', ScanBarcode],
-                ] as const
-              ).map(([key, lbl, Icon]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setAutoTab(key)}
-                  className={cn(
-                    'flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 font-medium transition-colors',
-                    autoTab === key
-                      ? 'bg-card text-foreground shadow-sm'
-                      : 'text-muted-foreground active:bg-accent',
-                  )}
-                >
-                  <Icon className="h-4 w-4" /> {lbl}
-                </button>
-              ))}
-            </div>
-
-            {autoTab === 'search' &&
-              (!isUsdaConfigured ? (
-                <p className="text-sm text-muted-foreground">
-                  Add your USDA API key to <code>.env</code> to search foods. You
-                  can still enter foods manually below.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="e.g. chicken breast"
-                      value={uq}
-                      onChange={(e) => setUq(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && runUsda()}
-                    />
-                    <Button onClick={runUsda} disabled={uLoading} size="icon">
-                      {uLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Search className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  {uErr && <p className="text-sm text-destructive">{uErr}</p>}
-                  {uResults.length > 0 && (
-                    <div className="divide-y divide-border rounded-md border border-border">
-                      {uResults.map((r) => (
-                        <button
-                          key={r.fdcId}
-                          type="button"
-                          onClick={() => pickUsda(r)}
-                          className="block w-full p-2 text-left text-sm active:bg-accent"
-                        >
-                          <span className="font-medium">{r.description}</span>
-                          {r.brand && (
-                            <span className="text-muted-foreground"> · {r.brand}</span>
-                          )}
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            ({r.dataType})
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Pick a result to fill the form below (per 100 g). Set your
-                    serving size — the nutrition rescales to match.
-                  </p>
-                </div>
-              ))}
-
-            {autoTab === 'label' && (
-              <div className="space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={scanLoading || bcLoading}
-                >
-                  {scanLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Reading label…
-                    </>
-                  ) : (
-                    <>
-                      <Camera className="h-4 w-4" /> Scan nutrition label
-                    </>
-                  )}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  Photograph the Nutrition Facts panel — the values fill the form
-                  below to review.
-                </p>
-              </div>
-            )}
-
-            {autoTab === 'barcode' && (
-              <div className="space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => barcodeRef.current?.click()}
-                  disabled={scanLoading || bcLoading}
-                >
-                  {bcLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Looking up…
-                    </>
-                  ) : (
-                    <>
-                      <ScanBarcode className="h-4 w-4" /> Scan barcode
-                    </>
-                  )}
-                </Button>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="Or enter barcode digits"
-                    inputMode="numeric"
-                    value={manualBarcode}
-                    onChange={(e) => setManualBarcode(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && onManualBarcode()}
-                  />
-                  <Button
-                    onClick={onManualBarcode}
-                    disabled={scanLoading || bcLoading || !manualBarcode.trim()}
-                    size="icon"
-                  >
-                    <Search className="h-4 w-4" />
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Scan or type a product barcode (via Open Food Facts).
-                </p>
-              </div>
-            )}
-
-            {scanErr && <p className="text-sm text-destructive">{scanErr}</p>}
-            {scanWarnings.length > 0 && (
-              <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
-                {scanWarnings.map((w, i) => (
-                  <p key={i}>⚠ {w}</p>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {scanWarnings.length > 0 && (
+          <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400">
+            {scanWarnings.map((w, i) => (
+              <p key={i}>⚠ {w}</p>
+            ))}
+          </div>
+        )}
 
         {/* Basic info */}
         <Card>

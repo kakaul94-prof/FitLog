@@ -20,6 +20,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { StartFromSourceSheet } from '@/components/StartFromSourceSheet'
 import {
   useFoods,
   useDeleteFood,
@@ -83,6 +84,7 @@ export function FoodPickerPage() {
   const [menuFood, setMenuFood] = useState<Food | null>(null)
   const [servingFood, setServingFood] = useState<Food | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
+  const [sourceOpen, setSourceOpen] = useState(false)
   const quickAdd = useQuickAddFood()
   // Item (2): stay in the picker after adding; show a running tally + a toast.
   const [tally, setTally] = useState({ count: 0, kcal: 0 })
@@ -310,7 +312,7 @@ export function FoodPickerPage() {
         ) : (
           <>
         <div className="grid grid-cols-3 gap-2">
-          <Button variant="outline" onClick={newFood}>
+          <Button variant="outline" onClick={() => setSourceOpen(true)}>
             <Plus className="h-4 w-4" /> New food
           </Button>
           <Button variant="outline" onClick={() => setQuickOpen(true)}>
@@ -657,6 +659,22 @@ export function FoodPickerPage() {
             await quickAdd.mutateAsync({ entry_date: date, meal, name, nutrients })
             noteAdded(1, nutrients.kcal ?? 0, `Added ${name.trim() || 'Quick add'}`)
             setQuickOpen(false)
+          }}
+        />
+      )}
+
+      {sourceOpen && (
+        <StartFromSourceSheet
+          onClose={() => setSourceOpen(false)}
+          onManual={() => {
+            setSourceOpen(false)
+            newFood()
+          }}
+          onPick={(draft) => {
+            const back = encodeURIComponent(location.pathname + location.search)
+            nav(`/foods/new?meal=${meal}&date=${date}&returnTo=${back}`, {
+              state: { draft },
+            })
           }}
         />
       )}

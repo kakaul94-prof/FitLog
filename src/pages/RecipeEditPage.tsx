@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { NutrientBreakdown } from '@/components/NutrientBreakdown'
+import { StartFromSourceSheet } from '@/components/StartFromSourceSheet'
 import { useFoods } from '@/features/foods/useFoods'
 import {
   useRecipe,
@@ -32,6 +33,7 @@ export function RecipeEditPage() {
   const [name, setName] = useState('')
   const [yieldServings, setYieldServings] = useState('1')
   const [adding, setAdding] = useState(false)
+  const [sourceOpen, setSourceOpen] = useState(false)
   const [search, setSearch] = useState('')
   const { data: foods } = useFoods(search)
 
@@ -191,7 +193,7 @@ export function RecipeEditPage() {
             <Button
               variant="outline"
               className="mt-1 w-full"
-              onClick={() => nav(`/foods/new?addToRecipe=${id}`)}
+              onClick={() => setSourceOpen(true)}
             >
               <Plus className="h-4 w-4" /> Create a new food
             </Button>
@@ -220,6 +222,19 @@ export function RecipeEditPage() {
           {recipe && <NutrientBreakdown nutrients={recipe.nutrients} />}
         </div>
       </div>
+
+      {sourceOpen && (
+        <StartFromSourceSheet
+          onClose={() => setSourceOpen(false)}
+          onManual={() => {
+            setSourceOpen(false)
+            nav(`/foods/new?addToRecipe=${id}`)
+          }}
+          onPick={(draft) =>
+            nav(`/foods/new?addToRecipe=${id}`, { state: { draft } })
+          }
+        />
+      )}
     </div>
   )
 }

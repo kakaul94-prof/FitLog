@@ -112,12 +112,6 @@ export function FoodPickerPage() {
     nav(`/foods/${f.id}?meal=${meal}&date=${date}&returnTo=${back}`)
   }
 
-  // "New food" carries the meal context so saving returns here (pre-selected).
-  const newFood = () => {
-    const back = encodeURIComponent(location.pathname + location.search)
-    nav(`/foods/new?meal=${meal}&date=${date}&returnTo=${back}`)
-  }
-
   const onRowTap = (f: Food) => {
     if (!multi) {
       setServingFood(f)
@@ -666,16 +660,9 @@ export function FoodPickerPage() {
       {sourceOpen && (
         <StartFromSourceSheet
           onClose={() => setSourceOpen(false)}
-          onManual={() => {
-            setSourceOpen(false)
-            newFood()
-          }}
-          onPick={(draft) => {
-            const back = encodeURIComponent(location.pathname + location.search)
-            nav(`/foods/new?meal=${meal}&date=${date}&returnTo=${back}`, {
-              state: { draft },
-            })
-          }}
+          newFoodPath={`/foods/new?meal=${meal}&date=${date}&returnTo=${encodeURIComponent(
+            location.pathname + location.search,
+          )}`}
         />
       )}
     </div>

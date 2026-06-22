@@ -226,13 +226,7 @@ export function RecipeEditPage() {
       {sourceOpen && (
         <StartFromSourceSheet
           onClose={() => setSourceOpen(false)}
-          onManual={() => {
-            setSourceOpen(false)
-            nav(`/foods/new?addToRecipe=${id}`)
-          }}
-          onPick={(draft) =>
-            nav(`/foods/new?addToRecipe=${id}`, { state: { draft } })
-          }
+          newFoodPath={`/foods/new?addToRecipe=${id}`}
         />
       )}
     </div>

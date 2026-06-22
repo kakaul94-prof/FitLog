@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Search, Camera, ScanBarcode, Loader2, Pencil, X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Search, Camera, ScanBarcode, Loader2, Pencil, X, ArrowRight } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,40 +9,27 @@ import { scanLabel, type ScannedFood } from '@/lib/scanLabel'
 import { detectBarcodeFromImage, lookupBarcode } from '@/lib/barcode'
 import {
   searchUsdaFoods,
-  getUsdaFood,
   isUsdaConfigured,
+  USDA_PREVIEW_COUNT,
+  USDA_MAX_RESULTS,
   type UsdaSearchItem,
 } from '@/lib/usda'
 import { roundNutrients } from '@/lib/nutrients'
-import type { Food, Nutrients, Portion } from '@/lib/database.types'
+import { buildUsdaDraft, type FoodDraft } from '@/lib/foodDraft'
 import { cn } from '@/lib/utils'
 
-// A food pre-filled from a source, handed to the food form via router state.
-export type FoodDraft = {
-  name: string
-  brand: string
-  serving_qty: number
-  serving_unit: string
-  serving_grams: number | null
-  source: Food['source']
-  source_id: string | null
-  nutrients: Nutrients
-  portions: Portion[]
-  warnings?: string[]
-}
-
-// Bottom-sheet that starts a new food from a source (USDA search, a scanned
-// label, or a barcode), or lets you skip straight to manual entry. Picking a
-// source emits a draft via onPick; the caller opens the food form pre-filled.
+// Top-anchored sheet that starts a new food from a source (USDA search, a
+// scanned label, or a barcode), or skips straight to manual entry. Every path
+// navigates to `newFoodPath` (the caller's /foods/new URL); USDA and scan
+// results ride along pre-filled in router state as a draft.
 export function StartFromSourceSheet({
   onClose,
-  onPick,
-  onManual,
+  newFoodPath,
 }: {
   onClose: () => void
-  onPick: (draft: FoodDraft) => void
-  onManual: () => void
+  newFoodPath: string
 }) {
+  const nav = useNavigate()
   const [tab, setTab] = useState<'search' | 'label' | 'barcode'>(
     isUsdaConfigured ? 'search' : 'label',
   )
@@ -63,7 +51,7 @@ export function StartFromSourceSheet({
     setULoading(true)
     setUErr('')
     try {
-      setUResults(await searchUsdaFoods(uq.trim()))
+      setUResults(await searchUsdaFoods(uq.trim(), { limit: USDA_MAX_RESULTS }))
     } catch (e) {
       setUErr(e instanceof Error ? e.message : 'Search failed')
     } finally {
@@ -71,32 +59,30 @@ export function StartFromSourceSheet({
     }
   }
 
+  // Open the full results page (top 50), carrying the destination so a pick
+  // there lands on the same /foods/new the inline picks use.
+  const seeAllUsda = () =>
+    nav(
+      `/foods/usda?q=${encodeURIComponent(uq.trim())}&next=${encodeURIComponent(
+        newFoodPath,
+      )}`,
+    )
+
   const pickUsda = async (item: UsdaSearchItem) => {
     setULoading(true)
     setUErr('')
     try {
-      const d = await getUsdaFood(item.fdcId)
-      onPick({
-        name: d.name,
-        brand: d.brand ?? '',
-        serving_qty: d.serving_qty,
-        serving_unit: d.serving_unit,
-        serving_grams: d.serving_grams ?? null,
-        source: 'usda',
-        source_id: d.source_id,
-        nutrients: roundNutrients(d.nutrients),
-        portions: [],
-      })
+      const draft = await buildUsdaDraft(item.fdcId)
+      nav(newFoodPath, { state: { draft } })
     } catch (e) {
       setUErr(e instanceof Error ? e.message : 'Import failed')
-    } finally {
       setULoading(false)
     }
   }
 
-  // Build a draft from a scanned label or barcode lookup, for the user to review.
+  // Build a draft from a scanned label or barcode lookup, then open the form.
   const emitScanned = (d: ScannedFood, sourceId: string | null) => {
-    onPick({
+    const draft: FoodDraft = {
       name: d.name,
       brand: d.brand ?? '',
       serving_qty: d.serving_qty,
@@ -107,7 +93,8 @@ export function StartFromSourceSheet({
       nutrients: roundNutrients(d.nutrients),
       portions: [],
       warnings: d.warnings,
-    })
+    }
+    nav(newFoodPath, { state: { draft } })
   }
 
   const onScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -254,7 +241,7 @@ export function StartFromSourceSheet({
                   {uErr && <p className="text-sm text-destructive">{uErr}</p>}
                   {uResults.length > 0 && (
                     <div className="divide-y divide-border rounded-md border border-border">
-                      {uResults.map((r) => (
+                      {uResults.slice(0, USDA_PREVIEW_COUNT).map((r) => (
                         <button
                           key={r.fdcId}
                           type="button"
@@ -271,6 +258,16 @@ export function StartFromSourceSheet({
                         </button>
                       ))}
                     </div>
+                  )}
+                  {uResults.length > USDA_PREVIEW_COUNT && (
+                    <button
+                      type="button"
+                      onClick={seeAllUsda}
+                      className="flex w-full items-center justify-center gap-1 py-1 text-sm font-medium text-primary active:opacity-70"
+                    >
+                      See all {uResults.length} results
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
                   )}
                   <p className="text-xs text-muted-foreground">
                     Pick a result to open the food form, pre-filled (per 100 g).
@@ -347,7 +344,7 @@ export function StartFromSourceSheet({
             {scanErr && <p className="text-sm text-destructive">{scanErr}</p>}
 
             <div className="border-t border-border pt-3">
-              <Button variant="outline" className="w-full" onClick={onManual}>
+              <Button variant="outline" className="w-full" onClick={() => nav(newFoodPath)}>
                 <Pencil className="h-4 w-4" /> Enter manually
               </Button>
               <p className="mt-2 text-center text-xs text-muted-foreground">

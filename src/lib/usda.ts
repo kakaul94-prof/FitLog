@@ -52,18 +52,20 @@ function mapNutrients(list: RawNutrient[] | undefined): Nutrients {
 
 // Whole-food data types (Foundation, SR Legacy) carry full micronutrients;
 // Branded entries are sparse and flood results, so they sort last.
-const RESULT_LIMIT = 5
+export const USDA_PREVIEW_COUNT = 5 // inline lists (popup, picker) show this many
+export const USDA_MAX_RESULTS = 50 // the "see all" results page shows up to this
 function dataTypeRank(dataType: string | null): number {
   return dataType === 'Branded' ? 1 : 0
 }
 
 export async function searchUsdaFoods(
   query: string,
-  signal?: AbortSignal,
+  opts: { signal?: AbortSignal; limit?: number } = {},
 ): Promise<UsdaSearchItem[]> {
+  const { signal, limit = USDA_PREVIEW_COUNT } = opts
   if (!KEY) throw new Error('USDA API key not set')
   // Require all query words (tighter matches) and fetch a wide page so the
-  // re-rank below has whole foods to surface; capped to RESULT_LIMIT after.
+  // re-rank below has whole foods to surface; capped to `limit` after.
   const url =
     `${API}/foods/search?api_key=${KEY}` +
     `&query=${encodeURIComponent(query)}` +
@@ -81,7 +83,7 @@ export async function searchUsdaFoods(
   // Stable sort keeps USDA's relevance order within each group; whole foods
   // rank above Branded. Then cap the list.
   items.sort((a, b) => dataTypeRank(a.dataType) - dataTypeRank(b.dataType))
-  return items.slice(0, RESULT_LIMIT)
+  return items.slice(0, limit)
 }
 
 export interface UsdaFoodDetail {

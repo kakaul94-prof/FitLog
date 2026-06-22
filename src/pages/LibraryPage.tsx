@@ -92,11 +92,7 @@ export function LibraryPage() {
       {sourceOpen && (
         <StartFromSourceSheet
           onClose={() => setSourceOpen(false)}
-          onManual={() => {
-            setSourceOpen(false)
-            nav('/foods/new')
-          }}
-          onPick={(draft) => nav('/foods/new', { state: { draft } })}
+          newFoodPath="/foods/new"
         />
       )}
     </div>

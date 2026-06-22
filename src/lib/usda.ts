@@ -50,24 +50,38 @@ function mapNutrients(list: RawNutrient[] | undefined): Nutrients {
   return out
 }
 
+// Whole-food data types (Foundation, SR Legacy) carry full micronutrients;
+// Branded entries are sparse and flood results, so they sort last.
+const RESULT_LIMIT = 5
+function dataTypeRank(dataType: string | null): number {
+  return dataType === 'Branded' ? 1 : 0
+}
+
 export async function searchUsdaFoods(
   query: string,
   signal?: AbortSignal,
 ): Promise<UsdaSearchItem[]> {
   if (!KEY) throw new Error('USDA API key not set')
+  // Require all query words (tighter matches) and fetch a wide page so the
+  // re-rank below has whole foods to surface; capped to RESULT_LIMIT after.
   const url =
     `${API}/foods/search?api_key=${KEY}` +
     `&query=${encodeURIComponent(query)}` +
-    `&pageSize=25&dataType=${encodeURIComponent('Foundation,SR Legacy,Branded')}`
+    `&requireAllWords=true` +
+    `&pageSize=50&dataType=${encodeURIComponent('Foundation,SR Legacy,Branded')}`
   const res = await fetch(url, { signal })
   if (!res.ok) throw new Error(`USDA search failed (${res.status})`)
   const data = (await res.json()) as { foods?: Record<string, unknown>[] }
-  return (data.foods ?? []).map((f) => ({
+  const items: UsdaSearchItem[] = (data.foods ?? []).map((f) => ({
     fdcId: f.fdcId as number,
     description: (f.description as string) ?? 'Food',
     brand: ((f.brandName ?? f.brandOwner) as string) ?? null,
     dataType: (f.dataType as string) ?? null,
   }))
+  // Stable sort keeps USDA's relevance order within each group; whole foods
+  // rank above Branded. Then cap the list.
+  items.sort((a, b) => dataTypeRank(a.dataType) - dataTypeRank(b.dataType))
+  return items.slice(0, RESULT_LIMIT)
 }
 
 export interface UsdaFoodDetail {

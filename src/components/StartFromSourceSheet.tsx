@@ -163,11 +163,11 @@ export function StartFromSourceSheet({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+      className="fixed inset-0 z-50 flex flex-col justify-start bg-black/40"
       onClick={onClose}
     >
       <div
-        className="mx-auto w-full max-w-md p-3"
+        className="mx-auto w-full max-w-md p-3 pt-[calc(0.75rem+env(safe-area-inset-top))]"
         onClick={(ev) => ev.stopPropagation()}
       >
         <Card className="overflow-hidden">

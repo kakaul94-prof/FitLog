@@ -14,6 +14,7 @@ import {
   getNotify,
   notifyPhone,
   playChime,
+  scheduleRestNotification,
 } from '@/lib/restTimer'
 
 const MIN = 15
@@ -75,6 +76,10 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
   endsAtRef.current = endsAt
   const pausedRef = useRef(paused)
   pausedRef.current = paused
+  // True while the OS holds a scheduled completion banner (Notification
+  // Triggers); the tick's notifyPhone() fallback then stands down so we don't
+  // double-alert when the page wakes.
+  const triggerScheduledRef = useRef(false)
 
   const running = endsAt != null
   const isPaused = paused != null
@@ -95,7 +100,7 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
       fired = true
       navigator.vibrate?.([200, 100, 200])
       if (getChime() && ctxRef.current) playChime(ctxRef.current)
-      if (getNotify()) notifyPhone()
+      if (getNotify() && !triggerScheduledRef.current) notifyPhone()
       setEndsAt(null)
       setDone(true)
       clearTimeout(flashRef.current)
@@ -110,6 +115,22 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     return () => {
       clearInterval(id)
       document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [endsAt])
+
+  // Hand the completion banner to the OS so it fires on time even while the page
+  // is frozen (screen locked / backgrounded), where the countdown above is
+  // throttled. Chrome/Android only; elsewhere this is a no-op and the tick's
+  // notifyPhone() fallback runs. Re-runs on bump/resume (endsAt dep); the
+  // pending banner is cancelled in pause/stop via closeRestNotification.
+  useEffect(() => {
+    if (endsAt == null) return
+    let cancelled = false
+    void scheduleRestNotification(endsAt).then((ok) => {
+      if (!cancelled) triggerScheduledRef.current = ok
+    })
+    return () => {
+      cancelled = true
     }
   }, [endsAt])
 
@@ -153,6 +174,8 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     setPaused(rem)
     setRemaining(rem)
     setEndsAt(null)
+    triggerScheduledRef.current = false
+    closeRestNotification() // cancel the scheduled completion banner
   }, [])
   const resume = useCallback(() => {
     const p = pausedRef.current
@@ -164,6 +187,7 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => {
     setEndsAt(null)
     setPaused(null)
+    triggerScheduledRef.current = false
     closeRestNotification()
   }, [])
 

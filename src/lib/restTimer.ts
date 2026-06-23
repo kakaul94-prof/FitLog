@@ -98,12 +98,54 @@ export function notifyPhone(
     })
 }
 
-/** Dismiss the rest notification (timer stopped/skipped). */
+/** Notification Triggers (TimestampTrigger) — Chrome/Android only; lets the OS
+ *  fire a future-dated notification even while the page is frozen. */
+declare const TimestampTrigger: { new (timestamp: number): unknown }
+const triggersSupported = () =>
+  typeof window !== 'undefined' && 'TimestampTrigger' in window
+
+/**
+ * Schedule the "Rest complete" banner to fire at `endsAt` via the OS, so it
+ * lands on time even while the page is frozen (screen locked / backgrounded),
+ * where the JS countdown is throttled and would otherwise fire late. Chrome on
+ * Android only; returns false when unsupported so the caller keeps the JS-timer
+ * fallback. Shares the 'fitlog-rest' tag, so closeRestNotification() cancels it.
+ */
+export async function scheduleRestNotification(
+  endsAt: number,
+): Promise<boolean> {
+  if (
+    !getNotify() ||
+    !notifySupported() ||
+    !triggersSupported() ||
+    Notification.permission !== 'granted'
+  )
+    return false
+  try {
+    const reg = await navigator.serviceWorker.ready
+    await reg.showNotification('Rest complete', {
+      body: 'Time for your next set 💪',
+      tag: 'fitlog-rest',
+      icon: '/pwa-192.png',
+      badge: '/pwa-192.png',
+      vibrate: [200, 100, 200],
+      showTrigger: new TimestampTrigger(endsAt),
+    } as NotificationOptions)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Dismiss the rest notification — shown or scheduled (timer stopped/skipped). */
 export function closeRestNotification() {
   if (!notifySupported()) return
   navigator.serviceWorker.ready
     .then(async (reg) => {
-      for (const n of await reg.getNotifications({ tag: 'fitlog-rest' }))
+      for (const n of await reg.getNotifications({
+        tag: 'fitlog-rest',
+        includeTriggered: true,
+      } as GetNotificationOptions))
         n.close()
     })
     .catch(() => {

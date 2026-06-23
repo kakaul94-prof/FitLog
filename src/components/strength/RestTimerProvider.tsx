@@ -14,7 +14,6 @@ import {
   getNotify,
   notifyPhone,
   playChime,
-  updateRestNotification,
 } from '@/lib/restTimer'
 
 const MIN = 15
@@ -91,10 +90,7 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     const tick = () => {
       const rem = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000))
       setRemaining(rem)
-      if (rem > 0) {
-        updateRestNotification(rem)
-        return
-      }
+      if (rem > 0) return
       if (fired) return
       fired = true
       navigator.vibrate?.([200, 100, 200])
@@ -157,7 +153,6 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     setPaused(rem)
     setRemaining(rem)
     setEndsAt(null)
-    updateRestNotification(rem, true)
   }, [])
   const resume = useCallback(() => {
     const p = pausedRef.current

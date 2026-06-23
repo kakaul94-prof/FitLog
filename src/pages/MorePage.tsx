@@ -66,7 +66,7 @@ export function MorePage() {
     // Immediate confirmation banner — proves permission + delivery work.
     notifyPhone(
       'Notifications on',
-      'You’ll see a live countdown while you rest.',
+      'You’ll get a banner when each rest finishes.',
     )
   }
 

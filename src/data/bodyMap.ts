@@ -195,7 +195,7 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'seated front hammer raises': { shoulders: 1 },
   // back — lats
   'wide grip pull up': { lats: 1, biceps: 0.5, upper_back: 0.5 },
-  'neutral grip pull ups': { lats: 1, biceps: 0.5, upper_back: 0.5, forearm: 0.5 },
+  'neutral grip pull ups': { lats: 1, biceps: 0.5, upper_back: 0.5, forearm: 0.5, rear_delts: 0.5 },
   'band assisted pull up': { lats: 1, biceps: 0.5, upper_back: 0.5 },
   'assisted pull ups': { lats: 1, biceps: 0.5, upper_back: 0.5 },
   'band assisted chin up': { lats: 1, biceps: 1 },
@@ -218,9 +218,15 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'reverse rear delt cable flys': { rear_delts: 1, upper_back: 0.5 },
   'inclined dumbbell face pulls': { rear_delts: 1, upper_back: 0.5 },
   'inclined y raises': { rear_delts: 1, upper_back: 0.5 },
+  // back — custom Back-tagged rows/pulldowns: generic back spread + 0.5 rear-delt accessory
+  'face pulls': { upper_back: 0.5, lats: 0.5, biceps: 0.5, rear_delts: 0.5 },
+  'lat pull down': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },
+  'pull ups': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },
+  'seated row': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },
   // back — traps (folded into upper back) / erector
   'dumbbell shoulder shrug': { upper_back: 1 },
   'barbell shoulder shrugs': { upper_back: 1 },
+  shrugs: { upper_back: 1 },
   'scapula depressions': { upper_back: 1.5 },
   'farmers walk': { upper_back: 1, erector_spinae: 0.5, forearm: 0.5 },
   'back extension': { erector_spinae: 1, glutes: 0.5 },
@@ -248,6 +254,8 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'close grip dumbbell bench press': { triceps: 1, chest: 0.5 },
   'reverse grip cable pull down': { triceps: 1, chest: 0.5 },
   'cross chest dumbbell extension': { triceps: 1, chest: 0.5 },
+  // triceps — isolation
+  'overhead tricep cable extensions': { triceps: 1 },
   // chest — the bare "Cable (Chest L/R)" tag is unmappable; pin by name
   cable: { chest: 1 },
   // core — rectus (upper)

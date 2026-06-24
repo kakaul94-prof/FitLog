@@ -20,6 +20,7 @@ import { CalorieRing, RING_GREEN } from '@/components/CalorieRing'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   useDiary,
   useStreak,
@@ -49,11 +50,51 @@ const MEALS: { key: Meal; label: string }[] = [
   { key: 'snacks', label: 'Snacks' },
 ]
 
+// Cold-load placeholder that mirrors the hero (ring + macro bars) and the meal
+// cards, so the real layout fades in rather than flashing the empty/no-goal state.
+function DiarySkeleton() {
+  return (
+    <>
+      <Card className="p-4">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-[132px] w-[132px] rounded-full" />
+          <div className="flex flex-1 flex-col items-end gap-2">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-2">
+              <Skeleton className="h-2.5 w-12" />
+              <Skeleton className="h-1.5 w-full" />
+              <Skeleton className="h-2.5 w-10" />
+            </div>
+          ))}
+        </div>
+      </Card>
+      {MEALS.map((m) => (
+        <Card key={m.key} className="overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border p-3">
+            <Skeleton className="h-3.5 w-24" />
+            <Skeleton className="h-3 w-12" />
+          </div>
+          <div className="space-y-3 p-3">
+            <Skeleton className="h-3 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </Card>
+      ))}
+    </>
+  )
+}
+
 export function DiaryPage() {
   const nav = useNavigate()
   const [date, setDate] = useState(todayISO())
-  const { data: entries } = useDiary(date)
-  const { data: profile } = useProfile()
+  const { data: entries, isLoading: diaryLoading } = useDiary(date)
+  const { data: profile, isLoading: profileLoading } = useProfile()
   const { data: weight } = useLatestWeight()
   const { data: exEntries } = useExerciseEntries(date)
   const { data: streak = 0 } = useStreak()
@@ -121,6 +162,9 @@ export function DiaryPage() {
       step(dx < 0 ? 1 : -1)
   }
 
+  // Cold-load skeleton: profile drives the "Set your goal" flash, entries the
+  // meal lists. Both are isLoading only on the first fetch (no cached data).
+  const loading = profileLoading || diaryLoading
   const list = entries ?? []
   const consumed = sumNutrients(
     list.map((e) => scaleNutrients(e.nutrients, e.servings)),
@@ -270,6 +314,10 @@ export function DiaryPage() {
           dir < 0 && 'diary-slide-left',
         )}
       >
+        {loading ? (
+          <DiarySkeleton />
+        ) : (
+          <>
         <Card className="p-4">
           {goal != null ? (
             <>
@@ -395,6 +443,8 @@ export function DiaryPage() {
             </button>
           )}
         </Card>
+          </>
+        )}
       </div>
 
       {selectMode && (

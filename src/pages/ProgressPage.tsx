@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   useMeasurements,
   useLogMeasurement,
@@ -58,7 +59,7 @@ export function ProgressPage() {
 function BodyView() {
   const [type, setType] = useState('weight')
   const meta = TYPES.find((t) => t.type === type) ?? TYPES[0]
-  const { data: rows } = useMeasurements(type)
+  const { data: rows, isLoading: mLoading } = useMeasurements(type)
   const { data: profile } = useProfile()
   const logM = useLogMeasurement()
   const updM = useUpdateMeasurement()
@@ -171,23 +172,29 @@ function BodyView() {
           <CardTitle>Trend</CardTitle>
         </CardHeader>
         <CardContent>
-          {chartData.length < 2 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Log a few entries to see your trend.
-            </p>
+          {mLoading ? (
+            <Skeleton className="h-48 w-full" />
           ) : (
-            <LineChartSvg
-              data={chartData}
-              xKey="date"
-              series={[
-                { key: 'value', color: GRAY, strokeWidth: 1, dotRadius: 2, name: 'Logged' },
-                { key: 'trend', color: GREEN, strokeWidth: 2.5, name: '7-day trend' },
-              ]}
-            />
+            <>
+              {chartData.length < 2 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Log a few entries to see your trend.
+                </p>
+              ) : (
+                <LineChartSvg
+                  data={chartData}
+                  xKey="date"
+                  series={[
+                    { key: 'value', color: GRAY, strokeWidth: 1, dotRadius: 2, name: 'Logged' },
+                    { key: 'trend', color: GREEN, strokeWidth: 2.5, name: '7-day trend' },
+                  ]}
+                />
+              )}
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                Faint line = daily logs · bold = 7-day average (the real trend)
+              </p>
+            </>
           )}
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            Faint line = daily logs · bold = 7-day average (the real trend)
-          </p>
         </CardContent>
       </Card>
 
@@ -279,7 +286,7 @@ function NutritionView() {
   const [days, setDays] = useState(30)
   const { data: profile } = useProfile()
   const { data: weight } = useLatestWeight()
-  const { data: trends } = useNutritionTrends(days)
+  const { data: trends, isLoading: tLoading } = useNutritionTrends(days)
 
   const goal = profile ? resolveCalorieGoal(profile, weight ?? null).goal : null
   const macros =
@@ -304,7 +311,23 @@ function NutritionView() {
     <>
       <RangeToggle days={days} onChange={setDays} />
 
-      {loggedCount === 0 ? (
+      {tLoading ? (
+        <>
+          <div className="grid grid-cols-3 gap-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-16 w-full" />
+            ))}
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Calories</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-40 w-full" />
+            </CardContent>
+          </Card>
+        </>
+      ) : loggedCount === 0 ? (
         <Card>
           <p className="py-10 text-center text-sm text-muted-foreground">
             Log a few days to see your nutrition trends.

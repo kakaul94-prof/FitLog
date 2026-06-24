@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import {
   User,
@@ -6,6 +7,7 @@ import {
   ChevronRight,
   Library,
   Download,
+  Upload,
   Sun,
   Moon,
   Monitor,
@@ -18,6 +20,11 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/auth'
 import { exportData } from '@/features/settings/exportData'
+import {
+  validateBackup,
+  restoreBackup,
+  type ParsedBackup,
+} from '@/features/settings/importData'
 import { cn } from '@/lib/utils'
 import { useTheme, type Theme } from '@/lib/theme'
 import {
@@ -36,6 +43,18 @@ const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
 ]
+
+// Friendly names for the headline tables shown in the restore confirm.
+const RESTORE_LABELS: Record<string, string> = {
+  foods: 'foods',
+  recipe_ingredients: 'recipe ingredients',
+  diary_entries: 'diary entries',
+  meals: 'saved meals',
+  exercise_entries: 'cardio entries',
+  workouts: 'workouts',
+  measurements: 'measurements',
+  strength_goals: 'strength goals',
+}
 
 export function MorePage() {
   const { user, signOut } = useAuth()
@@ -76,6 +95,37 @@ export function MorePage() {
       await exportData()
     } finally {
       setExporting(false)
+    }
+  }
+
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [pending, setPending] = useState<ParsedBackup | null>(null)
+  const [restoring, setRestoring] = useState(false)
+  const [restoreErr, setRestoreErr] = useState<string | null>(null)
+
+  const onPickBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    setRestoreErr(null)
+    try {
+      setPending(validateBackup(await file.text()))
+    } catch (err) {
+      setRestoreErr(err instanceof Error ? err.message : 'Could not read file.')
+    }
+  }
+
+  const doRestore = async () => {
+    if (!pending || !user) return
+    setRestoring(true)
+    setRestoreErr(null)
+    try {
+      await restoreBackup(pending, user.id)
+      window.location.reload() // reload so every cache + the profile re-read
+    } catch (err) {
+      setRestoreErr(err instanceof Error ? err.message : 'Restore failed.')
+      setRestoring(false)
+      setPending(null)
     }
   }
 
@@ -175,7 +225,28 @@ export function MorePage() {
               {exporting ? 'Exporting…' : 'Export my data (JSON)'}
             </span>
           </button>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="flex w-full items-center gap-3 p-4 active:bg-accent"
+          >
+            <Upload className="h-5 w-5 text-muted-foreground" />
+            <span className="flex-1 text-left text-sm font-medium">
+              Restore from backup (JSON)
+            </span>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={onPickBackup}
+          />
         </Card>
+        {restoreErr && !pending && (
+          <p className="px-1 text-center text-sm text-destructive">
+            {restoreErr}
+          </p>
+        )}
 
         {user?.email && (
           <p className="text-center text-xs text-muted-foreground">
@@ -190,6 +261,75 @@ export function MorePage() {
           <LogOut className="h-4 w-4" /> Sign out
         </Button>
       </div>
+
+      {pending &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => !restoring && setPending(null)}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="border-b border-border p-3 text-center text-sm font-medium">
+                  Restore from backup?
+                </div>
+                <div className="space-y-3 p-4">
+                  <p className="text-sm text-muted-foreground">
+                    This replaces{' '}
+                    <span className="font-medium text-foreground">
+                      everything
+                    </span>{' '}
+                    currently in your account with this backup. It can’t be
+                    undone.
+                  </p>
+                  <ul className="space-y-1 rounded-lg bg-secondary p-3 text-sm">
+                    {pending.counts
+                      .filter((c) => RESTORE_LABELS[c.table] && c.count > 0)
+                      .map((c) => (
+                        <li
+                          key={c.table}
+                          className="flex justify-between gap-2"
+                        >
+                          <span className="text-muted-foreground">
+                            {RESTORE_LABELS[c.table]}
+                          </span>
+                          <span className="font-medium">{c.count}</span>
+                        </li>
+                      ))}
+                    <li className="flex justify-between gap-2 border-t border-border pt-1 text-muted-foreground">
+                      <span>total records</span>
+                      <span className="font-medium text-foreground">
+                        {pending.counts.reduce((s, c) => s + c.count, 0)}
+                      </span>
+                    </li>
+                  </ul>
+                  {restoreErr && (
+                    <p className="text-sm text-destructive">{restoreErr}</p>
+                  )}
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    disabled={restoring}
+                    onClick={doRestore}
+                  >
+                    {restoring ? 'Restoring…' : 'Replace my data'}
+                  </Button>
+                </div>
+              </Card>
+              <button
+                onClick={() => setPending(null)}
+                disabled={restoring}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

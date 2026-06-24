@@ -895,7 +895,7 @@ function GoalCard({
   const [editing, setEditing] = useState(false)
 
   const priorSessions = (sessions ?? []).map((s) =>
-    s.sets.map((x) => ({ weight_lb: x.weight_lb, reps: x.reps })),
+    s.sets.map((x) => ({ weight_lb: x.weight_lb, reps: x.reps, effort: x.effort })),
   )
   const current = currentE1RM(priorSessions)
 

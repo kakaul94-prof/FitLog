@@ -212,7 +212,7 @@ export function useAddExercise() {
         const order: string[] = []
         const byWorkout = new Map<
           string,
-          { weight_lb: number | null; reps: number | null }[]
+          { weight_lb: number | null; reps: number | null; effort: number | null }[]
         >()
         for (const s of prior) {
           if (!byWorkout.has(s.workout_id)) {
@@ -221,7 +221,7 @@ export function useAddExercise() {
           }
           byWorkout
             .get(s.workout_id)!
-            .push({ weight_lb: s.weight_lb, reps: s.reps })
+            .push({ weight_lb: s.weight_lb, reps: s.reps, effort: s.effort })
         }
         const sug = suggestNext(
           goal,

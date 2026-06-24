@@ -127,7 +127,7 @@ export function useStrengthGoalsOverview() {
       const keys = [...new Set(goals.map((g) => g.exercise_key))]
       const { data: setRows, error: se } = await supabase
         .from('workout_sets')
-        .select('exercise_key,workout_id,reps,weight_lb')
+        .select('exercise_key,workout_id,reps,weight_lb,effort')
         .in('exercise_key', keys)
       if (se) throw se
       const sets = (setRows ?? []) as {
@@ -135,6 +135,7 @@ export function useStrengthGoalsOverview() {
         workout_id: string
         reps: number | null
         weight_lb: number | null
+        effort: number | null
       }[]
 
       const wids = [...new Set(sets.map((s) => s.workout_id))]
@@ -151,7 +152,10 @@ export function useStrengthGoalsOverview() {
       // exercise_key → (workout_id → sets); each workout is one session.
       const byKey = new Map<
         string,
-        Map<string, { weight_lb: number | null; reps: number | null }[]>
+        Map<
+          string,
+          { weight_lb: number | null; reps: number | null; effort: number | null }[]
+        >
       >()
       for (const s of sets) {
         let m = byKey.get(s.exercise_key)
@@ -160,7 +164,7 @@ export function useStrengthGoalsOverview() {
           byKey.set(s.exercise_key, m)
         }
         const arr = m.get(s.workout_id) ?? []
-        arr.push({ weight_lb: s.weight_lb, reps: s.reps })
+        arr.push({ weight_lb: s.weight_lb, reps: s.reps, effort: s.effort })
         m.set(s.workout_id, arr)
       }
 

@@ -4,9 +4,11 @@ import type { ProgressionMethod, StrengthGoal } from './database.types'
 
 // A past set for one exercise. Sessions are arrays of these, newest session
 // first; weight/reps may be null (blank prefill rows are filtered out here).
+// effort is the logged RPE (1 easy … 5 max), optional — drives autoregulation.
 export interface PriorSet {
   weight_lb: number | null
   reps: number | null
+  effort?: number | null
 }
 
 export interface SuggestedSet {
@@ -59,16 +61,31 @@ export function currentE1RM(sessions: PriorSet[][], lookback = 5): number {
   return Math.round(best)
 }
 
-// The top working weight of a session + the (min) reps and set count at it.
+// The top working weight of a session + the (min) reps and set count at it, plus
+// a representative effort = the MAX RPE logged across the top sets (conservative:
+// if any top set was a grind, treat the work as hard). null when none logged.
 function sessionTop(
   sets: PriorSet[],
-): { topWeight: number; reps: number; count: number } | null {
+): {
+  topWeight: number
+  reps: number
+  count: number
+  effort: number | null
+} | null {
   const w = working(sets)
   if (!w.length) return null
   const topWeight = Math.max(...w.map((s) => s.weight_lb as number))
   const atTop = w.filter((s) => s.weight_lb === topWeight)
   const reps = Math.min(...atTop.map((s) => s.reps as number))
-  return { topWeight, reps, count: atTop.length }
+  const efforts = atTop
+    .map((s) => s.effort)
+    .filter((e): e is number => typeof e === 'number')
+  return {
+    topWeight,
+    reps,
+    count: atTop.length,
+    effort: efforts.length ? Math.max(...efforts) : null,
+  }
 }
 
 // Weekly 5/3/1 waves: % of training max, reps, and whether the last set is AMRAP.
@@ -147,6 +164,7 @@ export function suggestNext(
     topWeight: number
     reps: number
     count: number
+    effort: number | null
   }
   const hit = last.count >= setCount && last.reps >= targetReps
   // Stall = two sessions at the same top weight, neither hitting the target.
@@ -161,11 +179,31 @@ export function suggestNext(
   let reps: number
   let action: SuggestAction
   let rationale: string
+  // Whether effort (RPE) changed the suggested jump — appends its source below.
+  let usedRpe = false
   if (hit) {
-    weight = round5(last.topWeight + inc)
-    reps = bottomReps
-    action = 'increase'
-    rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb — go up ${inc} lb.`
+    // Autoregulate the jump by how hard the top sets felt (5 = max, 1 = easy);
+    // no RPE logged falls through to the standard +inc.
+    const e = last.effort
+    if (e != null && e >= 5) {
+      weight = last.topWeight
+      reps = targetReps
+      action = 'repeat'
+      rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb but it was max effort (RPE ${e}) — hold here to consolidate before adding load.`
+      usedRpe = true
+    } else if (e != null && e <= 2) {
+      const bigInc = round5(inc * 1.5)
+      weight = round5(last.topWeight + bigInc)
+      reps = bottomReps
+      action = 'increase'
+      rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb and it felt easy (RPE ${e}) — bigger jump (+${bigInc} lb).`
+      usedRpe = true
+    } else {
+      weight = round5(last.topWeight + inc)
+      reps = bottomReps
+      action = 'increase'
+      rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb — go up ${inc} lb.`
+    }
   } else if (stalled) {
     weight = round5(last.topWeight * 0.9)
     reps = bottomReps
@@ -190,7 +228,9 @@ export function suggestNext(
     headline: `${setCount} × ${reps} @ ${weight} lb`,
     action,
     rationale,
-    source,
+    source: usedRpe
+      ? `${source} · RPE autoregulation — Helms et al., RTS`
+      : source,
   }
 }
 

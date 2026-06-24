@@ -625,6 +625,7 @@ export function FoodPickerPage() {
           food={servingFood}
           meal={meal}
           pending={logOne.isPending}
+          defaultServings={history?.lastServings.get(servingFood.id) ?? 1}
           onClose={() => setServingFood(null)}
           onAdd={async (s) => {
             await logOne.mutateAsync({
@@ -722,6 +723,7 @@ function ServingSheet({
   food,
   meal,
   pending,
+  defaultServings,
   onClose,
   onAdd,
   onEditDetails,
@@ -729,11 +731,13 @@ function ServingSheet({
   food: Food
   meal: Meal
   pending: boolean
+  defaultServings: number
   onClose: () => void
   onAdd: (servings: number) => void
   onEditDetails: () => void
 }) {
-  const [servings, setServings] = useState('1')
+  // Remounts per food (conditional render), so the last-used default sticks.
+  const [servings, setServings] = useState(String(defaultServings))
   const s = parseFloat(servings) || 0
   const scaled = scaleNutrients(food.nutrients, s)
   const step = (delta: number) =>

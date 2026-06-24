@@ -21,7 +21,12 @@ export function useFoods(search = '') {
   })
 }
 
-export type FoodHistory = { recent: Food[]; frequent: Food[] }
+export type FoodHistory = {
+  recent: Food[]
+  frequent: Food[]
+  /** Most-recent servings logged per food_id — pre-fills the serving sheet. */
+  lastServings: Map<string, number>
+}
 
 /**
  * Recently- and frequently-logged foods, derived from the last ~60 days of
@@ -35,17 +40,18 @@ export function useFoodHistory() {
       const since = addDaysISO(todayISO(), -60)
       const { data, error } = await supabase
         .from('diary_entries')
-        .select('food_id, created_at')
+        .select('food_id, created_at, servings')
         .gte('entry_date', since)
         .not('food_id', 'is', null)
         .order('created_at', { ascending: false })
         .limit(500)
       if (error) throw error
-      const rows = (data ?? []) as { food_id: string }[]
+      const rows = (data ?? []) as { food_id: string; servings: number }[]
 
       const seen = new Set<string>()
       const recencyIds: string[] = []
       const counts = new Map<string, number>()
+      const lastServings = new Map<string, number>()
       for (const r of rows) {
         const id = r.food_id
         if (!id) continue
@@ -53,9 +59,12 @@ export function useFoodHistory() {
         if (!seen.has(id)) {
           seen.add(id)
           recencyIds.push(id)
+          // Rows are newest-first, so the first sighting is the latest log.
+          if (typeof r.servings === 'number') lastServings.set(id, r.servings)
         }
       }
-      if (recencyIds.length === 0) return { recent: [], frequent: [] }
+      if (recencyIds.length === 0)
+        return { recent: [], frequent: [], lastServings }
 
       const { data: foodRows, error: fErr } = await supabase
         .from('foods')
@@ -74,7 +83,11 @@ export function useFoodHistory() {
         .filter((id) => byId.has(id))
         .sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0))
         .map((id) => byId.get(id) as Food)
-      return { recent: recent.slice(0, 50), frequent: frequent.slice(0, 50) }
+      return {
+        recent: recent.slice(0, 50),
+        frequent: frequent.slice(0, 50),
+        lastServings,
+      }
     },
   })
 }

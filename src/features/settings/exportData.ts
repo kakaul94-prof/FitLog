@@ -1,13 +1,21 @@
 import { supabase } from '@/lib/supabase'
 
-const TABLES = [
+// All owner-scoped data tables, ordered PARENTS-FIRST so a restore can reuse
+// this list for FK-safe inserts (export itself is order-independent).
+// Excludes form_videos: that row only points at a binary in Storage, which a
+// JSON backup can't carry — so it's left out to keep export/restore symmetric.
+export const TABLES = [
   'profiles',
   'foods',
   'recipe_ingredients',
   'diary_entries',
-  'exercise_entries',
+  'meals',
+  'meal_items',
   'custom_activities',
+  'exercise_entries',
   'custom_exercises',
+  'exercise_notes',
+  'strength_goals',
   'routines',
   'routine_exercises',
   'workouts',

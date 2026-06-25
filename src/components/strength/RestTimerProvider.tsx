@@ -16,6 +16,11 @@ import {
   playChime,
   scheduleRestNotification,
 } from '@/lib/restTimer'
+import {
+  cancelNativeRest,
+  isNativeApp,
+  startNativeRest,
+} from '@/lib/restTimerNative'
 
 const MIN = 15
 const MAX = 600
@@ -98,9 +103,14 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
       if (rem > 0) return
       if (fired) return
       fired = true
-      navigator.vibrate?.([200, 100, 200])
-      if (getChime() && ctxRef.current) playChime(ctxRef.current)
-      if (getNotify() && !triggerScheduledRef.current) notifyPhone()
+      // On native with notifications on, the RestTimer plugin owns the end alert
+      // (vibrate + music duck + banner) so it fires even when backgrounded — skip
+      // the JS alerts here to avoid doubling up.
+      if (!(isNativeApp() && getNotify())) {
+        navigator.vibrate?.([200, 100, 200])
+        if (getChime() && ctxRef.current) playChime(ctxRef.current)
+        if (getNotify() && !triggerScheduledRef.current) notifyPhone()
+      }
       setEndsAt(null)
       setDone(true)
       clearTimeout(flashRef.current)
@@ -125,6 +135,15 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
   // pending banner is cancelled in pause/stop via closeRestNotification.
   useEffect(() => {
     if (endsAt == null) return
+    // Native app (notifications on): the RestTimer plugin shows the live
+    // system-ticked countdown and arms the end alarm (works backgrounded). It
+    // updates in place on bump; pause()/stop() cancel it explicitly.
+    if (isNativeApp() && getNotify()) {
+      void startNativeRest(endsAt)
+      return
+    }
+    // Web/PWA: hand the completion banner to the OS via Notification Triggers
+    // (Chrome/Android) when supported, so it lands on time while frozen.
     let cancelled = false
     void scheduleRestNotification(endsAt).then((ok) => {
       if (!cancelled) triggerScheduledRef.current = ok
@@ -176,6 +195,7 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     setEndsAt(null)
     triggerScheduledRef.current = false
     closeRestNotification() // cancel the scheduled completion banner
+    void cancelNativeRest()
   }, [])
   const resume = useCallback(() => {
     const p = pausedRef.current
@@ -189,6 +209,7 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     setPaused(null)
     triggerScheduledRef.current = false
     closeRestNotification()
+    void cancelNativeRest()
   }, [])
 
   const setDur = useCallback((sec: number) => {

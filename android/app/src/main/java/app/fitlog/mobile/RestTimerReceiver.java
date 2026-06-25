@@ -68,32 +68,30 @@ public class RestTimerReceiver extends BroadcastReceiver {
         }
     }
 
-    /** Request transient "may duck" audio focus, hold briefly, then release so the
-     *  music restores. If the process dies first, focus auto-releases anyway. */
+    /** Force the media volume down briefly, then restore it. Deterministic — unlike
+     *  audio-focus "may duck", which players can ignore. goAsync() keeps the process
+     *  alive long enough to run the restore. SecurityException if DND blocks it. */
     private void duck(Context ctx) {
         final AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
         if (am == null) return;
-        final PendingResult pr = goAsync();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            final AudioFocusRequest req =
-                    new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                            .setAudioAttributes(new AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                    .build())
-                            .build();
-            am.requestAudioFocus(req);
+        try {
+            final int cur = am.getStreamVolume(AudioManager.STREAM_MUSIC);
+            final int max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            final int low = Math.max(0, Math.round(max * 0.2f));
+            if (cur <= low) return; // already quiet — nothing to dip
+            final PendingResult pr = goAsync();
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, low, 0);
+            android.util.Log.d("RestTimer", "ducked music " + cur + " -> " + low);
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                am.abandonAudioFocusRequest(req);
+                try {
+                    am.setStreamVolume(AudioManager.STREAM_MUSIC, cur, 0);
+                } catch (Exception ignored) {
+                }
+                android.util.Log.d("RestTimer", "restored music -> " + cur);
                 pr.finish();
             }, DUCK_MS);
-        } else {
-            am.requestAudioFocus(NOOP, AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                am.abandonAudioFocus(NOOP);
-                pr.finish();
-            }, DUCK_MS);
+        } catch (SecurityException e) {
+            android.util.Log.w("RestTimer", "duck blocked (DND?)", e);
         }
     }
 }

@@ -142,16 +142,18 @@ public class RestTimerPlugin extends Plugin {
     }
 
     private void ensureNotifPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && getActivity() != null) {
-            if (ContextCompat.checkSelfPermission(
-                            getContext(), android.Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        final android.app.Activity act = getActivity();
+        if (act == null) return;
+        if (ContextCompat.checkSelfPermission(
+                        getContext(), android.Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED) return;
+        // Must run on the UI thread or the system permission dialog never appears.
+        act.runOnUiThread(() ->
                 ActivityCompat.requestPermissions(
-                        getActivity(),
+                        act,
                         new String[] { android.Manifest.permission.POST_NOTIFICATIONS },
-                        9301);
-            }
-        }
+                        9301));
     }
 
     private void scheduleAlarm(Context ctx, long endsAt) {

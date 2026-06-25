@@ -49,6 +49,32 @@ type PRHit = {
   detail?: string
 }
 
+// Stable signature of the workout's logged content (exercises + sets), used to
+// tell whether anything was actually edited while viewing. Ordering is stable
+// (exercises by position, sets by set_number), so plain array order is fine.
+const serializeWorkout = (ex: WorkoutExercise[], st: WorkoutSet[]) =>
+  JSON.stringify({
+    ex: ex.map((e) => ({
+      id: e.id,
+      position: e.position,
+      notes: e.notes,
+      superset_group: e.superset_group,
+      started_at: e.started_at,
+      ended_at: e.ended_at,
+    })),
+    st: st.map((s) => ({
+      id: s.id,
+      we: s.workout_exercise_id,
+      set_number: s.set_number,
+      reps: s.reps,
+      weight_lb: s.weight_lb,
+      duration_sec: s.duration_sec,
+      distance: s.distance,
+      effort: s.effort,
+      is_warmup: s.is_warmup,
+    })),
+  })
+
 export function WorkoutPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -90,15 +116,29 @@ export function WorkoutPage() {
     onChangeRest,
   )
 
+  // Snapshot the workout's content on first load so we can tell whether anything
+  // was actually logged or edited while viewing. An untouched workout (e.g. one
+  // reopened just to look at it) is not "dirty" and skips the exit prompt.
+  const loadedRef = useRef(false)
+  const [original, setOriginal] = useState<string | null>(null)
+  const signature = useMemo(() => serializeWorkout(exercises, sets), [exercises, sets])
+  useEffect(() => {
+    if (loadedRef.current || !data?.workout) return
+    loadedRef.current = true
+    setOriginal(signature)
+  }, [data?.workout, signature])
+  const dirty = original != null && signature !== original
+
   // Pressing back (arrow or Android system gesture) asks whether to keep an
-  // in-progress workout; discard deletes it (sets + exercises cascade). Once
-  // the workout is marked done (the Done button) the prompt is skipped — back
-  // just navigates. Navigations deeper into the workout (add exercise, an
-  // exercise's stats) pass through, and leavingRef lets Done exit cleanly.
+  // in-progress workout; discard deletes it (sets + exercises cascade). The
+  // prompt is skipped when the workout is already done, or when nothing was
+  // changed this visit — back just navigates. Navigations deeper into the
+  // workout (add exercise, an exercise's stats) pass through, and leavingRef
+  // lets Done exit cleanly.
   const del = useDeleteWorkout()
   const leavingRef = useRef(false)
   const blocker = useBlocker(({ nextLocation }) => {
-    if (leavingRef.current || workout?.completed) return false
+    if (leavingRef.current || workout?.completed || !dirty) return false
     const p = nextLocation.pathname
     const internal =
       p.startsWith(`/workout/${id}`) || p.startsWith('/lift/exercise/')

@@ -75,15 +75,28 @@ public class RestTimerPlugin extends Plugin {
     @PluginMethod
     public void start(PluginCall call) {
         Context ctx = getContext();
-        Double endsAtD = call.getDouble("endsAt");
-        long endsAt = endsAtD != null ? endsAtD.longValue() : 0L;
-        if (endsAt <= System.currentTimeMillis()) {
+        long now = System.currentTimeMillis();
+        // Read endsAt robustly: a large JS integer can arrive as Long/Integer
+        // (getDouble() can then return null). opt() + instanceof Number handles
+        // every numeric type, and a string as a last resort.
+        long endsAt = 0L;
+        try {
+            Object raw = call.getData() != null ? call.getData().opt("endsAt") : null;
+            if (raw instanceof Number) endsAt = ((Number) raw).longValue();
+            else if (raw != null) endsAt = Long.parseLong(raw.toString().trim());
+        } catch (Exception e) {
+            android.util.Log.e("RestTimer", "endsAt parse failed", e);
+        }
+        android.util.Log.d("RestTimer", "start: endsAt=" + endsAt + " now=" + now + " delta=" + (endsAt - now));
+        if (endsAt <= now) {
+            android.util.Log.w("RestTimer", "early return — endsAt not in the future");
             call.resolve();
             return;
         }
 
         ensureNotifPermission();
         createChannels(ctx);
+        android.util.Log.d("RestTimer", "channels created; posting countdown notification");
 
         NotificationManager nm =
                 (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -99,7 +112,12 @@ public class RestTimerPlugin extends Plugin {
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setContentIntent(openAppIntent(ctx));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) b.setChronometerCountDown(true);
-        nm.notify(RUNNING_ID, b.build());
+        try {
+            nm.notify(RUNNING_ID, b.build());
+            android.util.Log.d("RestTimer", "notify posted OK");
+        } catch (Exception e) {
+            android.util.Log.e("RestTimer", "notify failed", e);
+        }
 
         scheduleAlarm(ctx, endsAt);
         call.resolve();

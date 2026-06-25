@@ -37,6 +37,7 @@ import {
   notifyPhone,
   requestNotifyPermission,
 } from '@/lib/restTimer'
+import { isNativeApp, requestNativeRestPermission } from '@/lib/restTimerNative'
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -61,9 +62,10 @@ export function MorePage() {
   const [exporting, setExporting] = useState(false)
   const [theme, setTheme] = useTheme()
   const [chime, setChimeOn] = useState(getChime)
-  const [notify, setNotifyOn] = useState(
-    () =>
-      getNotify() && notifySupported() && Notification.permission === 'granted',
+  const [notify, setNotifyOn] = useState(() =>
+    isNativeApp()
+      ? getNotify()
+      : getNotify() && notifySupported() && Notification.permission === 'granted',
   )
 
   const toggleChime = () => {
@@ -76,6 +78,14 @@ export function MorePage() {
     if (notify) {
       setNotifyOn(false)
       setNotify(false)
+      return
+    }
+    if (isNativeApp()) {
+      // Native: request POST_NOTIFICATIONS via the RestTimer plugin; the
+      // countdown + end alert (vibrate + volume dip) are handled natively.
+      await requestNativeRestPermission()
+      setNotifyOn(true)
+      setNotify(true)
       return
     }
     const granted = await requestNotifyPermission()
@@ -196,13 +206,15 @@ export function MorePage() {
               label="Rest timer chime"
             />
           </div>
-          {notifySupported() && (
+          {(isNativeApp() || notifySupported()) && (
             <div className="flex items-center gap-3 p-4">
               <Bell className="h-5 w-5 shrink-0 text-muted-foreground" />
               <div className="flex-1">
                 <p className="text-sm font-medium">Rest timer notification</p>
                 <p className="text-xs text-muted-foreground">
-                  Show a phone banner when the rest timer ends
+                  {isNativeApp()
+                    ? 'Live countdown, then a buzz + volume dip when rest ends'
+                    : 'Show a phone banner when the rest timer ends'}
                 </p>
               </div>
               <Switch

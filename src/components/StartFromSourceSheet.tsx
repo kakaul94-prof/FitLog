@@ -17,6 +17,13 @@ import {
 import { roundNutrients } from '@/lib/nutrients'
 import { buildUsdaDraft, type FoodDraft } from '@/lib/foodDraft'
 import { cn } from '@/lib/utils'
+import {
+  canNativeCamera,
+  canNativeBarcode,
+  captureLabelPhoto,
+  scanBarcodeNative,
+  isUserCancel,
+} from '@/lib/capture'
 
 // Top-anchored sheet that starts a new food from a source (USDA search, a
 // scanned label, or a barcode), or skips straight to manual entry. Every path
@@ -97,10 +104,7 @@ export function StartFromSourceSheet({
     nav(newFoodPath, { state: { draft } })
   }
 
-  const onScanFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = '' // allow re-picking the same file
-    if (!file) return
+  const runLabelScan = async (file: File) => {
     setScanLoading(true)
     setScanErr('')
     try {
@@ -109,6 +113,50 @@ export function StartFromSourceSheet({
       setScanErr(err instanceof Error ? err.message : 'Scan failed')
     } finally {
       setScanLoading(false)
+    }
+  }
+
+  // Label tab: native camera (live photo) when available; else the file input.
+  const onScanLabel = async () => {
+    if (!canNativeCamera()) {
+      fileRef.current?.click()
+      return
+    }
+    try {
+      const file = await captureLabelPhoto()
+      if (file) await runLabelScan(file)
+    } catch (err) {
+      if (!isUserCancel(err))
+        setScanErr(err instanceof Error ? err.message : 'Camera failed')
+    }
+  }
+
+  const onScanFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (file) runLabelScan(file)
+  }
+
+  // Barcode tab: native ML Kit live scanner when available; else the file input.
+  const onScanBarcode = async () => {
+    if (!canNativeBarcode()) {
+      barcodeRef.current?.click()
+      return
+    }
+    setBcLoading(true)
+    setScanErr('')
+    try {
+      const code = await scanBarcodeNative()
+      if (!code) {
+        setScanErr('No barcode detected. Try again, or type the digits below.')
+        return
+      }
+      emitScanned(await lookupBarcode(code), code.replace(/\D/g, ''))
+    } catch (err) {
+      if (!isUserCancel(err))
+        setScanErr(err instanceof Error ? err.message : 'Barcode scan failed')
+    } finally {
+      setBcLoading(false)
     }
   }
 
@@ -281,7 +329,7 @@ export function StartFromSourceSheet({
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => fileRef.current?.click()}
+                  onClick={onScanLabel}
                   disabled={scanLoading || bcLoading}
                 >
                   {scanLoading ? (
@@ -306,7 +354,7 @@ export function StartFromSourceSheet({
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => barcodeRef.current?.click()}
+                  onClick={onScanBarcode}
                   disabled={scanLoading || bcLoading}
                 >
                   {bcLoading ? (

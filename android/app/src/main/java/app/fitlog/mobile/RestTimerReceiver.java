@@ -81,17 +81,15 @@ public class RestTimerReceiver extends BroadcastReceiver {
             if (cur <= low) return; // already quiet — nothing to dip
             final PendingResult pr = goAsync();
             am.setStreamVolume(AudioManager.STREAM_MUSIC, low, 0);
-            android.util.Log.d("RestTimer", "ducked music " + cur + " -> " + low);
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 try {
                     am.setStreamVolume(AudioManager.STREAM_MUSIC, cur, 0);
                 } catch (Exception ignored) {
                 }
-                android.util.Log.d("RestTimer", "restored music -> " + cur);
                 pr.finish();
             }, DUCK_MS);
-        } catch (SecurityException e) {
-            android.util.Log.w("RestTimer", "duck blocked (DND?)", e);
+        } catch (SecurityException ignored) {
+            // volume changes can be blocked by DND/zen — fine to skip
         }
     }
 }

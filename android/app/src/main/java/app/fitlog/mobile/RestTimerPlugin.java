@@ -84,19 +84,15 @@ public class RestTimerPlugin extends Plugin {
             Object raw = call.getData() != null ? call.getData().opt("endsAt") : null;
             if (raw instanceof Number) endsAt = ((Number) raw).longValue();
             else if (raw != null) endsAt = Long.parseLong(raw.toString().trim());
-        } catch (Exception e) {
-            android.util.Log.e("RestTimer", "endsAt parse failed", e);
+        } catch (Exception ignored) {
         }
-        android.util.Log.d("RestTimer", "start: endsAt=" + endsAt + " now=" + now + " delta=" + (endsAt - now));
         if (endsAt <= now) {
-            android.util.Log.w("RestTimer", "early return — endsAt not in the future");
             call.resolve();
             return;
         }
 
         ensureNotifPermission();
         createChannels(ctx);
-        android.util.Log.d("RestTimer", "channels created; posting countdown notification");
 
         NotificationManager nm =
                 (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -112,12 +108,7 @@ public class RestTimerPlugin extends Plugin {
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setContentIntent(openAppIntent(ctx));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) b.setChronometerCountDown(true);
-        try {
-            nm.notify(RUNNING_ID, b.build());
-            android.util.Log.d("RestTimer", "notify posted OK");
-        } catch (Exception e) {
-            android.util.Log.e("RestTimer", "notify failed", e);
-        }
+        nm.notify(RUNNING_ID, b.build());
 
         scheduleAlarm(ctx, endsAt);
         call.resolve();

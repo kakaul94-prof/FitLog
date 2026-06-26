@@ -2,6 +2,8 @@ package app.fitlog.mobile;
 
 import android.os.Bundle;
 
+import androidx.activity.OnBackPressedCallback;
+
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -9,17 +11,20 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(RestTimerPlugin.class);
         super.onCreate(savedInstanceState);
-    }
 
-    // Hardware back button: navigate back within the webview history (the SPA's
-    // router pushes a history entry per navigation) instead of exiting. Only
-    // exit when there's no page to go back to (at the root).
-    @Override
-    public void onBackPressed() {
-        if (this.bridge != null && this.bridge.getWebView().canGoBack()) {
-            this.bridge.getWebView().goBack();
-        } else {
-            super.onBackPressed();
-        }
+        // Hardware back button: navigate back within the webview history (the SPA
+        // router pushes an entry per navigation) instead of exiting. Registered on
+        // the OnBackPressedDispatcher because the deprecated onBackPressed() is no
+        // longer invoked on newer Android (targetSdk 36). Exit only at the root.
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (bridge != null && bridge.getWebView().canGoBack()) {
+                    bridge.getWebView().goBack();
+                } else {
+                    finish();
+                }
+            }
+        });
     }
 }

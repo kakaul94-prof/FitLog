@@ -22,6 +22,7 @@ the old MyFitnessPal.
 ## Run / build / verify
 
 - `npm run dev` (port 5173). `npm run build` (tsc + vite) — **always build-check before committing.**
+- `npm test` (Vitest, `vitest run`) — fast unit tests for the **pure-logic libs** (`calc`, `nutrients`, `progression`, `date`); no backend/DOM. Co-located `src/lib/*.test.ts` (excluded from the build tsc via `tsconfig.app.json`); config in `vitest.config.ts`. `npm run test:watch` to iterate. Add cases here when you touch the math.
 - Env (`.env`, gitignored): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_USDA_API_KEY`.
 - **Self-test in preview:** dev exposes `window.__supabase`. Test user: `tester@fitlog.app` / `FitLogTester1!`. Sign in via `signInWithPassword`, then seed/drive via eval. Demo data lives in that account (not the owner's). The long-lived preview session can lapse — re-auth if inserts hit RLS errors.
 - **Schema changes need SQL run in the Supabase SQL Editor** (anon client can't do DDL). SQL is in `supabase/schema.sql` (idempotent) + migration files.

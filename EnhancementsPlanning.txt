@@ -138,3 +138,38 @@ in-app with its reasoning + source (PROGRESSION_SOURCE in src/lib/progression.ts
   - Active-segment color: the selected segment is currently NEUTRAL (white chip + normal text, matches the app's tab style). Alt: tint it green (primary) so the active method pops more.
   - Segment labels: currently short "Label" / "Barcode". Could spell them out as "Scan label" / "Scan barcode" for clarity, at the cost of a tighter fit on narrow phones.
   - Default tab: opens on Search (or Label when no USDA key). Could default to scan/barcode if that becomes the more common entry path.
+
+=== Native Android app ideas (suggested by Claude 2026-06-26) ===
+
+Post Capacitor/Android migration — 20 ideas (two brainstorm batches of 10) that
+exploit native device APIs a PWA can't reliably reach.
+NOTE: the app loads the live PROD URL (capacitor.config server.url), so every
+native plugin needs BOTH a new APK (Play/internal track) AND the web code live
+on the URL the app loads — gate native calls on Capacitor.isPluginAvailable so
+the browser PWA / older APKs fall back gracefully.
+
+-- Batch 1 --
+
+- [DONE 2026-06-26 dev] (1) Barcode scanning (native camera + ML Kit). @capacitor/camera (label still photo -> existing Workers AI scanLabel) + @capacitor-mlkit/barcode-scanning (live scanner -> existing Open Food Facts lookupBarcode), gated by Capacitor.isPluginAvailable with the old file input as web/old-APK fallback; added CAMERA permission; new src/lib/capture.ts. Shipped to dev (00a78cc) + a CI step publishing app-debug.apk to a rolling `dev-latest` GitHub release (f978efd) for cable-free installs. Label scan CONFIRMED on-device; barcode ML Kit live-scan PENDING confirmation. CAVEAT: web code is on dev but the APK loads PROD, so the prod-loaded app won't use it until dev->main. (Subsumes Batch-2 #14.)
+- (2) Reliable local + push notifications — meal reminders, a "log before the streak grace expires" nudge, and a rest-timer alert that fires with the screen off (@capacitor/local-notifications). Extends the existing rest-timer done-banner + the "Log reminders" note above. Effort: medium.
+- (3) Offline write queue (SQLite/IndexedDB) — log offline, sync on reconnect. SAME as the "Offline write queue (remaining half — NOT built)" item above. Effort: higher, high value.
+- (4) Health Connect integration — two-way Weight first (smart scale -> measurements), then read Steps/ActiveCalories (feed eat-back), then write Nutrition/ExerciseSession. Watch double-counting + device-local sync tokens. Effort: high.
+- (5) Biometric unlock + persistent session — store the Supabase token in native secure storage, gate with fingerprint/face; fixes session lapses. Effort: medium.
+- (6) App shortcuts (long-press launcher icon) -> Log food / Log weight / Start workout. Effort: low-medium.
+- (7) Haptic feedback (@capacitor/haptics) on completing a set, logging, hitting the calorie goal. Effort: low.
+- (8) Native camera for progress photos — body photos alongside measurements rows. Effort: medium.
+- (9) Home-screen widget — glanceable calories-remaining + quick-add tap. Needs native widget code, not just JS. Effort: high.
+- (10) Splash/status-bar theming + share-to-app (Android share target to receive a food photo / recipe URL). Effort: low (theming) / medium (share target).
+
+-- Batch 2 --
+
+- (11) OTA live updates (Capgo / @capacitor/live-updates) — push web-bundle fixes without a Play release; fits the Cloudflare push-to-deploy habit. Effort: medium. (Top pick.)
+- (12) Native Google Sign-In — one-tap auth via the Supabase Google provider. Effort: medium.
+- (13) Native crash reporting (Sentry / Crashlytics) — on-device stack traces; insurance after the recharts prod-crash history. Effort: low-medium.
+- (14) [BUILT as part of #1] Upgrade existing label/barcode scan to native camera.
+- (15) AI meal-photo logging — snap a plate -> estimate foods/calories (reuses the Workers AI pattern; treat as a confirm-first prefill, accuracy is rough). Effort: medium-high.
+- (16) Keep screen awake during workouts (@capacitor/keep-awake) while a workout / rest timer is active. Effort: low.
+- (17) Quick Settings tile — pull-down tile for Quick add / Log weight. Effort: medium (native).
+- (18) Data export/backup to device — write the existing JSON backup to device storage / share sheet (@capacitor/filesystem + share). Extends the done in-app JSON export/restore. Effort: low.
+- (19) Material You dynamic color + follow system dark mode — wire existing theme tokens to Android system dark + wallpaper colors. Extends the done Light/Dark/System toggle. Effort: low-medium.
+- (20) Wear OS companion — glance calories-remaining, log water/weight, run the rest timer from the wrist. Separate Wear module. Effort: high.

@@ -213,8 +213,9 @@ export function FoodFormPage() {
     if (addToRecipe && !id) {
       await addIng.mutateAsync({
         recipeFoodId: addToRecipe,
-        ingredientFoodId: saved.id,
-        servings: 1,
+        food: saved,
+        amount: 1,
+        unit: 'base',
       })
     }
     // New food created from "Add to {meal}" → return to that list, pre-selected.

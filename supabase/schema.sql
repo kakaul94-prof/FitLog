@@ -104,6 +104,10 @@ create table if not exists public.recipe_ingredients (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   recipe_food_id uuid not null references public.foods(id) on delete cascade,
   ingredient_food_id uuid not null references public.foods(id) on delete restrict,
+  -- amount of `unit`: 'base' = one base serving, a portion id, or a mass unit
+  -- (g/oz/lb). `servings` is the derived base-serving multiplier.
+  amount numeric,
+  unit text,
   servings numeric not null default 1,
   position integer not null default 0,
   created_at timestamptz not null default now()

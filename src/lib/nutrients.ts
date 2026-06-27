@@ -177,3 +177,81 @@ export function servingOptions(food: Food): ServingOption[] {
   }
   return opts
 }
+
+// A selectable measure for a recipe ingredient. `nutrients` are per ONE of
+// `unit`; `grams` is the gram weight of one unit (null when unknown, e.g. a
+// count-based portion). `unit` is what's stored on recipe_ingredients.unit.
+export interface IngredientUnit {
+  unit: string // 'base' | a portion id | a mass unit ('g' | 'oz' | 'lb')
+  label: string
+  nutrients: Nutrients
+  grams: number | null
+}
+
+// Mass units offered for any ingredient whose serving gram-weight is known.
+const INGREDIENT_MASS_UNITS = ['g', 'oz', 'lb'] as const
+
+/**
+ * Measures a recipe ingredient can be entered in: the food's base serving, any
+ * of its portions, plus g/oz/lb when the base serving's gram weight is known.
+ * Mirrors `servingOptions` but adds mass units (recipes let you weigh things).
+ */
+export function ingredientUnits(food: Food): IngredientUnit[] {
+  const units: IngredientUnit[] = [
+    {
+      unit: 'base',
+      label:
+        food.serving_qty === 1
+          ? food.serving_unit
+          : `${food.serving_qty} ${food.serving_unit}`,
+      nutrients: food.nutrients,
+      grams: food.serving_grams,
+    },
+  ]
+  for (const p of food.portions ?? []) {
+    if (!p.label.trim()) continue
+    const n = computePortionNutrients(food.nutrients, food.serving_grams, p)
+    if (n) units.push({ unit: p.id, label: p.label, nutrients: n, grams: p.grams })
+  }
+  const pg = perGram(food.nutrients, food.serving_grams)
+  if (pg) {
+    const baseUnit = food.serving_unit.trim().toLowerCase()
+    for (const u of INGREDIENT_MASS_UNITS) {
+      if (u === baseUnit) continue // base serving already is this mass unit
+      const grams = MASS_UNIT_GRAMS[u]
+      units.push({ unit: u, label: u, nutrients: scaleNutrients(pg, grams), grams })
+    }
+  }
+  return units
+}
+
+/** The chosen measure for an ingredient, falling back to the base serving. */
+export function resolveIngredientUnit(food: Food, unit: string): IngredientUnit {
+  const units = ingredientUnits(food)
+  return units.find((u) => u.unit === unit) ?? units[0]
+}
+
+/** Nutrients for `amount` of `unit` of an ingredient food. */
+export function ingredientNutrients(
+  food: Food,
+  amount: number,
+  unit: string,
+): Nutrients {
+  return scaleNutrients(resolveIngredientUnit(food, unit).nutrients, amount)
+}
+
+/**
+ * Base-serving multiplier equivalent to `amount unit`, stored on
+ * recipe_ingredients.servings for backward-compat. Derived from gram weights
+ * when known, else the raw amount.
+ */
+export function ingredientServings(
+  food: Food,
+  amount: number,
+  unit: string,
+): number {
+  const u = resolveIngredientUnit(food, unit)
+  if (u.grams != null && food.serving_grams && food.serving_grams > 0)
+    return (amount * u.grams) / food.serving_grams
+  return amount
+}

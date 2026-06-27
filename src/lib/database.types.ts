@@ -117,6 +117,10 @@ export interface RecipeIngredient {
   user_id: string
   recipe_food_id: string
   ingredient_food_id: string
+  // amount of `unit` ('base' = a base serving, a portion id, or g/oz/lb).
+  // `servings` is the derived base-serving multiplier (legacy / convenience).
+  amount: number | null
+  unit: string | null
   servings: number
   position: number
   created_at: string

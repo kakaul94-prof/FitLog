@@ -1,6 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { sumNutrients, scaleNutrients } from '@/lib/nutrients'
+import {
+  sumNutrients,
+  scaleNutrients,
+  ingredientNutrients,
+  ingredientServings,
+} from '@/lib/nutrients'
 import type { Food, RecipeIngredient } from '@/lib/database.types'
 
 /** Recompute a recipe food's per-serving nutrients from its ingredients. */
@@ -14,25 +19,25 @@ async function recompute(recipeFoodId: string) {
     (food as { recipe_servings: number | null } | null)?.recipe_servings || 1
   const { data: ings } = await supabase
     .from('recipe_ingredients')
-    .select('servings,ingredient_food_id')
+    .select('servings,amount,unit,ingredient_food_id')
     .eq('recipe_food_id', recipeFoodId)
   const ingredients = (ings ?? []) as {
     servings: number
+    amount: number | null
+    unit: string | null
     ingredient_food_id: string
   }[]
   const ids = ingredients.map((i) => i.ingredient_food_id)
   const foodsRes = ids.length
-    ? await supabase.from('foods').select('id,nutrients').in('id', ids)
+    ? await supabase.from('foods').select('*').in('id', ids)
     : { data: [] }
-  const byId = new Map(
-    ((foodsRes.data ?? []) as { id: string; nutrients: Food['nutrients'] }[]).map(
-      (f) => [f.id, f.nutrients],
-    ),
-  )
+  const byId = new Map(((foodsRes.data ?? []) as Food[]).map((f) => [f.id, f]))
   const total = sumNutrients(
-    ingredients.map((i) =>
-      scaleNutrients(byId.get(i.ingredient_food_id) ?? {}, i.servings),
-    ),
+    ingredients.map((i) => {
+      const f = byId.get(i.ingredient_food_id)
+      if (!f) return {}
+      return ingredientNutrients(f, i.amount ?? i.servings, i.unit ?? 'base')
+    }),
   )
   const perServing = scaleNutrients(total, 1 / yieldServings)
   await supabase
@@ -136,13 +141,13 @@ export function useDuplicateRecipe() {
 
       const { data: risData, error: riErr } = await supabase
         .from('recipe_ingredients')
-        .select('ingredient_food_id,servings,position')
+        .select('ingredient_food_id,amount,unit,servings,position')
         .eq('recipe_food_id', sourceId)
         .order('position')
       if (riErr) throw riErr
       const ingredients = (risData ?? []) as Pick<
         RecipeIngredient,
-        'ingredient_food_id' | 'servings' | 'position'
+        'ingredient_food_id' | 'amount' | 'unit' | 'servings' | 'position'
       >[]
 
       const { data: created, error: createErr } = await supabase
@@ -169,6 +174,8 @@ export function useDuplicateRecipe() {
             ingredients.map((i, idx) => ({
               recipe_food_id: copy.id,
               ingredient_food_id: i.ingredient_food_id,
+              amount: i.amount,
+              unit: i.unit,
               servings: i.servings,
               position: i.position ?? idx,
             })),
@@ -232,17 +239,21 @@ export function useAddIngredient() {
   return useMutation({
     mutationFn: async ({
       recipeFoodId,
-      ingredientFoodId,
-      servings,
+      food,
+      amount,
+      unit,
     }: {
       recipeFoodId: string
-      ingredientFoodId: string
-      servings: number
+      food: Food
+      amount: number
+      unit: string
     }) => {
       const { error } = await supabase.from('recipe_ingredients').insert({
         recipe_food_id: recipeFoodId,
-        ingredient_food_id: ingredientFoodId,
-        servings,
+        ingredient_food_id: food.id,
+        amount,
+        unit,
+        servings: ingredientServings(food, amount, unit),
       })
       if (error) throw error
       await recompute(recipeFoodId)
@@ -261,15 +272,19 @@ export function useUpdateIngredient() {
     mutationFn: async ({
       id,
       recipeFoodId,
-      servings,
+      food,
+      amount,
+      unit,
     }: {
       id: string
       recipeFoodId: string
-      servings: number
+      food: Food
+      amount: number
+      unit: string
     }) => {
       const { error } = await supabase
         .from('recipe_ingredients')
-        .update({ servings })
+        .update({ amount, unit, servings: ingredientServings(food, amount, unit) })
         .eq('id', id)
       if (error) throw error
       await recompute(recipeFoodId)

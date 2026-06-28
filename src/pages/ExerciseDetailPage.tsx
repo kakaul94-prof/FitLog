@@ -10,6 +10,7 @@ import {
   Trash2,
   RotateCw,
   TrendingUp,
+  Trophy,
 } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { ActionSheet } from '@/components/ActionSheet'
@@ -19,7 +20,11 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useLongPress } from '@/lib/useLongPress'
-import { useExerciseHistory, useExerciseSessions } from '@/features/strength/useStrength'
+import {
+  useExerciseHistory,
+  useExerciseSessions,
+  type ExerciseSession,
+} from '@/features/strength/useStrength'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import {
   useFormVideo,
@@ -145,6 +150,87 @@ function setLabel(weight: number | null, reps: number | null): string {
   return '—'
 }
 
+// All-time bests for this lift, derived from the same session history the
+// History tab already loads (no extra query). The persistent counterpart to the
+// live PR banners shown during a workout: heaviest set, biggest single-set
+// volume, and biggest session tonnage. Returns null for unweighted lifts
+// (nothing to rank), so the card simply doesn't appear.
+function RecordsCard({ sessions }: { sessions: ExerciseSession[] }) {
+  let maxWeight = 0
+  let maxWeightReps: number | null = null
+  let bestSetVol = 0
+  let bestSetVolLabel = ''
+  let bestSessionVol = 0
+  let bestSessionDate = ''
+  for (const s of sessions) {
+    let sessionVol = 0
+    for (const x of s.sets) {
+      const w = x.weight_lb ?? 0
+      const r = x.reps ?? 0
+      if (w > maxWeight) {
+        maxWeight = w
+        maxWeightReps = x.reps
+      }
+      const v = r * w
+      if (v > bestSetVol) {
+        bestSetVol = v
+        bestSetVolLabel = `${w} × ${r}`
+      }
+      sessionVol += v
+    }
+    if (sessionVol > bestSessionVol) {
+      bestSessionVol = sessionVol
+      bestSessionDate = s.date
+    }
+  }
+
+  const records = [
+    maxWeight > 0 && {
+      label: 'Heaviest set',
+      value: setLabel(maxWeight, maxWeightReps),
+    },
+    bestSetVol > 0 && {
+      label: 'Best set volume',
+      value: `${Math.round(bestSetVol)} lb`,
+      detail: bestSetVolLabel,
+    },
+    bestSessionVol > 0 && {
+      label: 'Best session volume',
+      value: `${Math.round(bestSessionVol)} lb`,
+      detail: dateLabel(bestSessionDate),
+    },
+  ].filter(Boolean) as { label: string; value: string; detail?: string }[]
+
+  if (!records.length) return null
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-1.5 border-b border-border p-3">
+        <Trophy className="h-4 w-4 text-amber-500" />
+        <span className="text-sm font-semibold">Records</span>
+      </div>
+      <div className="space-y-2 p-3">
+        {records.map((r) => (
+          <div
+            key={r.label}
+            className="flex items-baseline justify-between gap-2"
+          >
+            <span className="text-sm text-muted-foreground">{r.label}</span>
+            <span className="text-sm font-semibold tabular-nums">
+              {r.value}
+              {r.detail && (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  {r.detail}
+                </span>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function HistoryTab({ exerciseKey }: { exerciseKey: string | undefined }) {
   const { data: sessions, isLoading } = useExerciseSessions(exerciseKey)
   const rows = sessions ?? []
@@ -166,6 +252,7 @@ function HistoryTab({ exerciseKey }: { exerciseKey: string | undefined }) {
 
   return (
     <div className="space-y-3">
+      <RecordsCard sessions={rows} />
       {rows.map((s) => {
         const best = s.sets.reduce(
           (m, x) => Math.max(m, estimated1RM(x.weight_lb ?? 0, x.reps ?? 0)),

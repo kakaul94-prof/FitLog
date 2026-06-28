@@ -6,7 +6,16 @@ import {
   Route,
   Outlet,
 } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
+import {
+  PersistQueryClientProvider,
+  type PersistedClient,
+  type Persister,
+} from '@tanstack/react-query-persist-client'
+import { get, set, del } from 'idb-keyval'
+import { setupOnlineManager } from '@/lib/network'
+import { registerDiaryMutationDefaults } from '@/features/diary/useDiary'
+import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ErrorBoundary, RouteErrorElement } from '@/components/ErrorBoundary'
@@ -43,11 +52,43 @@ const CustomExercisesPage = lazyPage(() => import('@/pages/CustomExercisesPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
 const RecipeEditPage = lazyPage(() => import('@/pages/RecipeEditPage'), 'RecipeEditPage')
 
+// Persisted query cache (Phase 1 offline reads): keep entries in memory long
+// enough for the IndexedDB persister to restore them on reopen. gcTime must be
+// >= the persister maxAge or restored queries are garbage-collected on mount.
+const PERSIST_MAX_AGE = 1000 * 60 * 60 * 24 // 24h
+const PERSIST_BUSTER = 'fitlog-cache-v1' // bump to drop the cache on a shape change
+
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 60_000, retry: 1, refetchOnWindowFocus: false },
+    queries: {
+      staleTime: 60_000,
+      gcTime: PERSIST_MAX_AGE,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
   },
 })
+
+// IndexedDB-backed persister (idb-keyval) — survives reload / app reopen, and
+// unlike localStorage isn't ~5MB-capped as the foods library / history grow.
+function createIDBPersister(key: IDBValidKey = 'fitlog-query-cache'): Persister {
+  return {
+    persistClient: (client: PersistedClient) => set(key, client),
+    restoreClient: () => get<PersistedClient>(key),
+    removeClient: () => del(key),
+  }
+}
+const persister = createIDBPersister()
+
+// Wire TanStack Query's online state to Capacitor Network so writes pause while
+// offline and resume on reconnect (Phase 2). Safe everywhere — the plugin's web
+// impl covers the browser PWA; the native plugin lands with the next APK build.
+setupOnlineManager()
+
+// Register diary mutations as keyed defaults so writes that were paused offline
+// and persisted can be resumed after an app restart (kill-resilience for the
+// offline queue). Must run before render so a restored mutation finds its fn.
+registerDiaryMutationDefaults(queryClient)
 
 function Spinner() {
   return (
@@ -109,6 +150,7 @@ function Routed() {
       <RestTimerProvider>
         <RouterProvider router={router} />
         <RestTimerBar />
+        <OfflineIndicator />
       </RestTimerProvider>
     </ErrorBoundary>
   )
@@ -138,11 +180,19 @@ function App() {
   useEffect(() => watchSystemTheme(), [])
 
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister, maxAge: PERSIST_MAX_AGE, buster: PERSIST_BUSTER }}
+      onSuccess={() => {
+        // After the cache restores, fire any writes that were paused offline in
+        // a previous session (they also auto-resume on reconnect).
+        void queryClient.resumePausedMutations()
+      }}
+    >
       <AuthProvider>
         <Gate />
       </AuthProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   )
 }
 

@@ -227,12 +227,13 @@ export function DiaryPage() {
       !confirm(`Delete ${count} ${count === 1 ? 'entry' : 'entries'}?`)
     )
       return
-    delEntries.mutate([...selectedIds], { onSuccess: exitSelect })
+    delEntries.mutate([...selectedIds])
+    exitSelect()
   }
 
   const doMove = async (meal: Meal) => {
     if (!move || move.ids.length === 0) return
-    await moveEntries.mutateAsync({ ids: move.ids, meal })
+    moveEntries.mutate({ ids: move.ids, meal })
     setMove(null)
     exitSelect()
   }

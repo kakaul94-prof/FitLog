@@ -132,7 +132,7 @@ export function FoodPickerPage() {
 
   const addMany = async () => {
     if (picks.length === 0) return
-    await logMany.mutateAsync({
+    logMany.mutate({
       entry_date: date,
       meal,
       items: picks.map((p) => ({
@@ -628,7 +628,7 @@ export function FoodPickerPage() {
           defaultServings={history?.lastServings.get(servingFood.id) ?? 1}
           onClose={() => setServingFood(null)}
           onAdd={async (s) => {
-            await logOne.mutateAsync({
+            logOne.mutate({
               entry_date: date,
               meal,
               food: servingFood,
@@ -651,7 +651,7 @@ export function FoodPickerPage() {
           pending={quickAdd.isPending}
           onClose={() => setQuickOpen(false)}
           onAdd={async ({ name, nutrients }) => {
-            await quickAdd.mutateAsync({ entry_date: date, meal, name, nutrients })
+            quickAdd.mutate({ entry_date: date, meal, name, nutrients })
             noteAdded(1, nutrients.kcal ?? 0, `Added ${name.trim() || 'Quick add'}`)
             setQuickOpen(false)
           }}

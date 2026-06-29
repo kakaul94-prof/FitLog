@@ -11,8 +11,9 @@ import {
   ingredientUnits,
   ingredientNutrients,
   ingredientServings,
+  recipePerServing,
 } from './nutrients'
-import type { Food } from './database.types'
+import type { Food, Nutrients } from './database.types'
 
 describe('scaleNutrients', () => {
   it('multiplies every amount by the factor', () => {
@@ -237,5 +238,73 @@ describe('ingredientServings', () => {
   })
   it('converts a mass amount to a base-serving multiplier', () => {
     expect(ingredientServings(food, 50, 'g')).toBe(0.5) // 50 g / 100 g per cup
+  })
+})
+
+describe('recipePerServing', () => {
+  function mkFood(id: string, nutrients: Nutrients, extra: Partial<Food> = {}): Food {
+    return {
+      id,
+      user_id: 'u1',
+      name: id,
+      brand: null,
+      source: 'manual',
+      source_id: null,
+      serving_qty: 1,
+      serving_unit: 'serving',
+      serving_grams: null,
+      recipe_servings: null,
+      nutrients,
+      portions: [],
+      archived: false,
+      created_at: '',
+      updated_at: '',
+      ...extra,
+    }
+  }
+  const ri = (
+    ingredient_food_id: string,
+    amount: number | null,
+    unit = 'base',
+    servings = 1,
+  ) => ({ ingredient_food_id, amount, unit, servings })
+
+  it('sums base-serving ingredients and divides by the yield', () => {
+    const byId = new Map<string, Food>([
+      ['a', mkFood('a', { kcal: 100, protein: 10 })],
+      ['b', mkFood('b', { kcal: 50 })],
+    ])
+    // (100*2 + 50*1) / 2 servings
+    expect(recipePerServing([ri('a', 2), ri('b', 1)], byId, 2)).toEqual({
+      kcal: 125,
+      protein: 10,
+    })
+  })
+
+  it('skips ingredients whose food is missing', () => {
+    const byId = new Map<string, Food>([['a', mkFood('a', { kcal: 100 })]])
+    expect(recipePerServing([ri('a', 1), ri('ghost', 5)], byId, 1)).toEqual({
+      kcal: 100,
+    })
+  })
+
+  it('falls back to the stored servings when amount is null', () => {
+    const byId = new Map<string, Food>([['a', mkFood('a', { kcal: 100 })]])
+    expect(recipePerServing([ri('a', null, 'base', 3)], byId, 1)).toEqual({
+      kcal: 300,
+    })
+  })
+
+  it('weighs out mass-unit ingredients', () => {
+    const byId = new Map<string, Food>([
+      ['a', mkFood('a', { kcal: 200 }, { serving_grams: 100 })],
+    ])
+    // 50 g of a 100 g / 200 kcal food
+    expect(recipePerServing([ri('a', 50, 'g')], byId, 1)).toEqual({ kcal: 100 })
+  })
+
+  it('treats a zero yield as a single serving', () => {
+    const byId = new Map<string, Food>([['a', mkFood('a', { kcal: 100 })]])
+    expect(recipePerServing([ri('a', 1)], byId, 0)).toEqual({ kcal: 100 })
   })
 })

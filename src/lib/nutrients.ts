@@ -255,3 +255,32 @@ export function ingredientServings(
     return (amount * u.grams) / food.serving_grams
   return amount
 }
+
+// A recipe ingredient row — the fields the per-serving recompute reads
+// (mirrors recipe_ingredients).
+export interface RecipeIngredientInput {
+  ingredient_food_id: string
+  amount: number | null
+  servings: number
+  unit: string | null
+}
+
+/**
+ * Per-serving nutrients for a recipe: sum each ingredient's contribution, then
+ * divide by the recipe yield. An ingredient whose food isn't in `foodsById`
+ * contributes nothing. Pure core of the recompute in useRecipes.
+ */
+export function recipePerServing(
+  ingredients: RecipeIngredientInput[],
+  foodsById: Map<string, Food>,
+  yieldServings: number,
+): Nutrients {
+  const total = sumNutrients(
+    ingredients.map((i) => {
+      const f = foodsById.get(i.ingredient_food_id)
+      if (!f) return {}
+      return ingredientNutrients(f, i.amount ?? i.servings, i.unit ?? 'base')
+    }),
+  )
+  return scaleNutrients(total, 1 / (yieldServings || 1))
+}

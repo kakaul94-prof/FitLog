@@ -24,7 +24,8 @@ interface RawNutrient {
 // `kcal` in nutrients.ts) and only provide these Atwater variants.
 const ENERGY_KCAL_FALLBACK = [2047, 2048] // Atwater General, Atwater Specific
 
-function mapNutrients(list: RawNutrient[] | undefined): Nutrients {
+// Exported for unit tests (the Atwater energy fallback is easy to regress).
+export function mapNutrients(list: RawNutrient[] | undefined): Nutrients {
   const out: Nutrients = {}
   if (!list) return out
   for (const fn of list) {

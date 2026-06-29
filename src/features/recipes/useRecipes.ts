@@ -1,11 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import {
-  sumNutrients,
-  scaleNutrients,
-  ingredientNutrients,
-  ingredientServings,
-} from '@/lib/nutrients'
+import { ingredientServings, recipePerServing } from '@/lib/nutrients'
 import type { Food, RecipeIngredient } from '@/lib/database.types'
 
 /** Recompute a recipe food's per-serving nutrients from its ingredients. */
@@ -32,14 +27,7 @@ async function recompute(recipeFoodId: string) {
     ? await supabase.from('foods').select('*').in('id', ids)
     : { data: [] }
   const byId = new Map(((foodsRes.data ?? []) as Food[]).map((f) => [f.id, f]))
-  const total = sumNutrients(
-    ingredients.map((i) => {
-      const f = byId.get(i.ingredient_food_id)
-      if (!f) return {}
-      return ingredientNutrients(f, i.amount ?? i.servings, i.unit ?? 'base')
-    }),
-  )
-  const perServing = scaleNutrients(total, 1 / yieldServings)
+  const perServing = recipePerServing(ingredients, byId, yieldServings)
   await supabase
     .from('foods')
     .update({ nutrients: perServing })

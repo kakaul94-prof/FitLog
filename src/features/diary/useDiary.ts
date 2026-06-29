@@ -7,7 +7,7 @@ import {
   type UseMutationOptions,
 } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { todayISO, addDaysISO } from '@/lib/date'
+import { todayISO, addDaysISO, computeStreak } from '@/lib/date'
 import type { DiaryEntry, Food, Meal, Nutrients } from '@/lib/database.types'
 
 export function useDiary(date: string) {
@@ -551,14 +551,7 @@ export function useStreak() {
         .gte('entry_date', since)
       if (error) throw error
       const logged = new Set((data ?? []).map((r) => r.entry_date as string))
-      let day = todayISO()
-      if (!logged.has(day)) day = addDaysISO(day, -1) // morning grace
-      let count = 0
-      while (logged.has(day)) {
-        count++
-        day = addDaysISO(day, -1)
-      }
-      return count
+      return computeStreak(logged, todayISO())
     },
   })
 }

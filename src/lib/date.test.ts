@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { addDaysISO, dateLabel, daysBetweenISO, timeLabel, todayISO } from './date'
+import {
+  addDaysISO,
+  computeStreak,
+  dateLabel,
+  daysBetweenISO,
+  timeLabel,
+  todayISO,
+} from './date'
 
 describe('todayISO', () => {
   it('formats a passed date as zero-padded YYYY-MM-DD', () => {
@@ -77,5 +84,52 @@ describe('timeLabel', () => {
     const label = timeLabel('2026-06-26T15:45:00')
     expect(label).toContain(':')
     expect(label).not.toMatch(/[AP]M/)
+  })
+})
+
+describe('computeStreak', () => {
+  const today = '2026-06-29'
+
+  it('is zero with nothing logged', () => {
+    expect(computeStreak([], today)).toBe(0)
+  })
+
+  it('counts a consecutive run ending today', () => {
+    expect(
+      computeStreak(['2026-06-29', '2026-06-28', '2026-06-27'], today),
+    ).toBe(3)
+  })
+
+  it('stops at the first gap', () => {
+    expect(
+      computeStreak(
+        ['2026-06-29', '2026-06-28', '2026-06-26', '2026-06-25'],
+        today,
+      ),
+    ).toBe(2)
+  })
+
+  it('extends through yesterday before today is logged (morning grace)', () => {
+    expect(computeStreak(['2026-06-28', '2026-06-27'], today)).toBe(2)
+  })
+
+  it('is zero once both today and yesterday are missing', () => {
+    expect(computeStreak(['2026-06-27', '2026-06-26'], today)).toBe(0)
+  })
+
+  it('ignores future dates and duplicates', () => {
+    expect(
+      computeStreak(['2026-06-30', '2026-06-29', '2026-06-29'], today),
+    ).toBe(1)
+  })
+
+  it('heals the gap when a missed day is backfilled', () => {
+    const withGap = ['2026-06-29', '2026-06-27'] // 28th missing
+    expect(computeStreak(withGap, today)).toBe(1)
+    expect(computeStreak([...withGap, '2026-06-28'], today)).toBe(3)
+  })
+
+  it('accepts a Set as well as an array', () => {
+    expect(computeStreak(new Set(['2026-06-29', '2026-06-28']), today)).toBe(2)
   })
 })

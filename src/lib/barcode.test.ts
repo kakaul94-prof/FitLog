@@ -93,7 +93,10 @@ describe('lookupBarcode', () => {
     fetchMock
       .mockResolvedValueOnce(notFound())
       .mockResolvedValueOnce(
-        offResponse({ product_name: 'Retry', nutriments: {} }),
+        offResponse({
+          product_name: 'Retry',
+          nutriments: { 'energy-kcal_100g': 100 },
+        }),
       )
     const r = await lookupBarcode('0123456789012')
     expect(fetchMock).toHaveBeenCalledTimes(2)
@@ -111,11 +114,35 @@ describe('lookupBarcode', () => {
       offResponse({
         product_name: '  Oreo  ',
         brands: 'Mondelez, Nabisco',
-        nutriments: {},
+        nutriments: { 'energy-kcal_100g': 480 },
       }),
     )
     const r = await lookupBarcode('1234567890')
     expect(r.name).toBe('Oreo')
     expect(r.brand).toBe('Mondelez')
+  })
+
+  it('rejects a found product that has no nutrition data', async () => {
+    fetchMock.mockResolvedValue(
+      offResponse({ product_name: 'No Facts', nutriments: {} }),
+    )
+    // Names the product so the user knows the scan matched, then points them
+    // at the label scan / manual entry instead of a blank food form.
+    await expect(lookupBarcode('1234567890')).rejects.toThrow(
+      /"No Facts".*no nutrition data/i,
+    )
+  })
+
+  it('warns when a product has nutrients but no calories', async () => {
+    fetchMock.mockResolvedValue(
+      offResponse({
+        product_name: 'Fizzy Water',
+        nutriments: { sodium_100g: 0.05 }, // 50 mg, no energy
+      }),
+    )
+    const r = await lookupBarcode('1234567890')
+    expect(r.nutrients.sodium).toBe(50)
+    expect(r.nutrients.kcal).toBeUndefined()
+    expect(r.warnings.some((w) => /calories/i.test(w))).toBe(true)
   })
 })

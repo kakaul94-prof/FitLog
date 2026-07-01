@@ -145,6 +145,9 @@ export async function lookupBarcode(rawCode: string): Promise<ScannedFood> {
       `No product found for barcode ${code} in Open Food Facts. Try the label scan, or enter the values manually.`,
     )
 
+  const name = (product.product_name || product.product_name_en || '').trim()
+  const brand = (product.brands || '').split(',')[0].trim() || null
+
   const nutr = product.nutriments ?? {}
   const per100: Nutrients = {}
   for (const offKey in OFF_TO_KEY) {
@@ -159,13 +162,26 @@ export async function lookupBarcode(rawCode: string): Promise<ScannedFood> {
     if (kj != null && kj > 0) per100.kcal = kj / 4.184
   }
 
+  // OFF has the barcode but no nutrition table — common for regional/branded
+  // entries a contributor only named. Don't silently open a blank food; say so
+  // and point at the label scan / manual entry the source sheet already offers.
+  if (Object.keys(per100).length === 0) {
+    const label = name ? `"${name}"` : `barcode ${code}`
+    throw new Error(
+      `Found ${label} in Open Food Facts, but it has no nutrition data. Scan the nutrition label, or enter the values manually.`,
+    )
+  }
+
   // Prefer a real serving when OFF knows its gram weight; else per 100 g.
   const servingG = num(product.serving_quantity)
   const useServing = servingG != null && servingG > 0
   const nutrients = useServing ? scaleNutrients(per100, servingG / 100) : per100
 
-  const name = (product.product_name || product.product_name_en || '').trim()
-  const brand = (product.brands || '').split(',')[0].trim() || null
+  const warnings = sanityCheck(nutrients)
+  if (nutrients.kcal == null)
+    warnings.push(
+      "Open Food Facts didn't list calories for this product — add them from the label.",
+    )
 
   return {
     name,
@@ -174,6 +190,6 @@ export async function lookupBarcode(rawCode: string): Promise<ScannedFood> {
     serving_unit: useServing ? 'serving' : 'g',
     serving_grams: useServing ? servingG : 100,
     nutrients,
-    warnings: sanityCheck(nutrients),
+    warnings,
   }
 }

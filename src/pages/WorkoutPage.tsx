@@ -7,10 +7,10 @@ import {
   Plus,
   X,
   Link2,
-  Save,
-  Trash2,
   Check,
   Play,
+  LogOut,
+  Trash2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -27,8 +27,9 @@ import {
   useDeleteExercise,
   useLastExerciseNote,
   useUpdateWorkout,
-  useDeleteWorkout,
+  useRestoreWorkout,
   useExerciseBests,
+  type WorkoutSnapshot,
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
 import { estimated1RM } from '@/lib/calc'
@@ -116,26 +117,33 @@ export function WorkoutPage() {
     onChangeRest,
   )
 
-  // Snapshot the workout's content on first load so we can tell whether anything
-  // was actually logged or edited while viewing. An untouched workout (e.g. one
-  // reopened just to look at it) is not "dirty" and skips the exit prompt.
+  // Snapshot the workout's content on first load: the signature tells whether
+  // anything was edited this visit (an untouched workout skips the exit prompt),
+  // and the full snapshot lets "Discard changes" revert this session's edits.
   const loadedRef = useRef(false)
   const [original, setOriginal] = useState<string | null>(null)
+  const snapshotRef = useRef<WorkoutSnapshot | null>(null)
   const signature = useMemo(() => serializeWorkout(exercises, sets), [exercises, sets])
   useEffect(() => {
     if (loadedRef.current || !data?.workout) return
     loadedRef.current = true
     setOriginal(signature)
-  }, [data?.workout, signature])
+    snapshotRef.current = {
+      exercises: data.exercises,
+      sets: data.sets,
+      rest_seconds: data.workout.rest_seconds,
+    }
+  }, [data, signature])
   const dirty = original != null && signature !== original
 
-  // Pressing back (arrow or Android system gesture) asks whether to keep an
-  // in-progress workout; discard deletes it (sets + exercises cascade). The
-  // prompt is skipped when the workout is already done, or when nothing was
-  // changed this visit — back just navigates. Navigations deeper into the
-  // workout (add exercise, an exercise's stats) pass through, and leavingRef
-  // lets Done exit cleanly.
-  const del = useDeleteWorkout()
+  // Pressing back (arrow or Android system gesture) on a changed, in-progress
+  // workout asks how to leave: "Save & exit" keeps the live-saved edits (resume
+  // later); "Discard changes" reverts this session's edits. The workout itself
+  // is never deleted here — that's long-press on the list. The prompt is skipped
+  // when the workout is done or nothing changed this visit. Navigations deeper
+  // in (add exercise, an exercise's stats) pass through; leavingRef lets Done /
+  // Save / Discard exit cleanly.
+  const restore = useRestoreWorkout()
   const leavingRef = useRef(false)
   const blocker = useBlocker(({ nextLocation }) => {
     if (leavingRef.current || workout?.completed || !dirty) return false
@@ -145,6 +153,30 @@ export function WorkoutPage() {
     return !internal
   })
   const showExit = blocker.state === 'blocked'
+  // Leave, keeping everything logged this session (already saved live).
+  const saveExit = () => {
+    leavingRef.current = true
+    blocker.proceed?.()
+  }
+  // Revert this session's edits to the on-open snapshot, then leave. On failure
+  // (e.g. offline) stay put so the user isn't misled into thinking it worked.
+  const discardChanges = async () => {
+    const snap = snapshotRef.current
+    if (snap && data) {
+      try {
+        await restore.mutateAsync({
+          workoutId: id!,
+          snapshot: snap,
+          current: { exercises: data.exercises, sets: data.sets },
+        })
+      } catch {
+        alert('Could not discard changes — check your connection and try again.')
+        return
+      }
+    }
+    leavingRef.current = true
+    blocker.proceed?.()
+  }
   // Save the workout as done, then leave. leavingRef guarantees we exit even
   // before the cache reflects completed=true (so the blocker can't re-fire).
   const finish = async () => {
@@ -153,11 +185,6 @@ export function WorkoutPage() {
       await updateWorkout.mutateAsync({ id: workoutId, completed: true })
     nav('/strength')
   }
-  const discardWorkout = async () => {
-    if (id) await del.mutateAsync(id)
-    blocker.proceed?.()
-  }
-
   const blocks: { group: number | null; exercises: WorkoutExercise[] }[] = []
   const seen = new Set<number>()
   for (const ex of exercises) {
@@ -265,7 +292,9 @@ export function WorkoutPage() {
         createPortal(
           <div
             className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
-            onClick={() => blocker.reset?.()}
+            onClick={() => {
+              if (!restore.isPending) blocker.reset?.()
+            }}
           >
             <div
               className="mx-auto w-full max-w-md p-3"
@@ -273,29 +302,31 @@ export function WorkoutPage() {
             >
               <Card className="overflow-hidden">
                 <div className="border-b border-border p-3 text-center text-xs text-muted-foreground">
-                  Save this workout?
+                  Leave workout?
                 </div>
                 <button
-                  onClick={() => blocker.proceed?.()}
-                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
+                  onClick={saveExit}
+                  disabled={restore.isPending}
+                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent disabled:opacity-50"
                 >
-                  <Save className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Save workout</span>
+                  <LogOut className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Save &amp; exit</span>
                 </button>
                 <button
-                  onClick={discardWorkout}
-                  disabled={del.isPending}
+                  onClick={discardChanges}
+                  disabled={restore.isPending}
                   className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent disabled:opacity-50"
                 >
                   <Trash2 className="h-4 w-4" />
                   <span className="text-sm font-medium">
-                    {del.isPending ? 'Discarding…' : 'Discard workout'}
+                    {restore.isPending ? 'Discarding…' : 'Discard changes'}
                   </span>
                 </button>
               </Card>
               <button
                 onClick={() => blocker.reset?.()}
-                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+                disabled={restore.isPending}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent disabled:opacity-50"
               >
                 Cancel
               </button>

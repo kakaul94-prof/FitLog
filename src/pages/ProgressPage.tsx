@@ -19,6 +19,10 @@ import type { Measurement } from '@/lib/database.types'
 import { useProfile } from '@/features/profile/useProfile'
 import { useNutritionTrends } from '@/features/insights/useNutritionTrends'
 import {
+  useMicronutrientTrends,
+  type MicroStat,
+} from '@/features/insights/useMicronutrientTrends'
+import {
   movingAverage,
   bmi,
   resolveCalorieGoal,
@@ -409,9 +413,90 @@ function NutritionView() {
               </CardContent>
             </Card>
           )}
+
+          <MicronutrientCard days={days} />
         </>
       )}
     </>
+  )
+}
+
+function MicronutrientCard({ days }: { days: number }) {
+  const { data } = useMicronutrientTrends(days)
+  const [showAll, setShowAll] = useState(false)
+  if (!data || data.loggedCount === 0) return null
+
+  const low = data.stats.filter((s) => s.direction === 'floor' && s.flagged)
+  const over = data.stats.filter((s) => s.direction === 'limit' && s.flagged)
+  const shown = showAll ? data.stats : [...low, ...over]
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Micronutrients</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {low.length > 0 ? (
+          <p className="text-sm">
+            <span className="text-muted-foreground">Low this week: </span>
+            {low.slice(0, 4).map((s) => s.label).join(', ')}
+            {low.length > 4 && ` +${low.length - 4} more`}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            You’re on track with your micronutrient targets this week.
+          </p>
+        )}
+        {over.length > 0 && (
+          <p className="text-sm">
+            <span className="text-muted-foreground">Over on: </span>
+            {over.map((s) => s.label).join(', ')}
+          </p>
+        )}
+
+        {shown.length > 0 && (
+          <div className="space-y-2">
+            {shown.map((s) => (
+              <MicroBar key={s.key} stat={s} />
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="text-xs font-medium text-primary"
+        >
+          {showAll ? 'Show less' : `Show all ${data.stats.length}`}
+        </button>
+
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          Targets are FDA Daily Values, averaged over your logged days. Foods
+          without micronutrient data count as 0, so amounts can read low.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function MicroBar({ stat }: { stat: MicroStat }) {
+  const width = Math.min(100, stat.pctDV)
+  const color = stat.flagged ? RING_OVER : RING_GREEN
+  return (
+    <div>
+      <div className="mb-0.5 flex items-baseline justify-between text-xs">
+        <span className="text-foreground">{stat.label}</span>
+        <span className="tabular-nums text-muted-foreground">
+          {stat.avgPerDay.toLocaleString()}
+          {stat.unit} · {stat.pctDV}% DV
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${width}%`, background: color }}
+        />
+      </div>
+    </div>
   )
 }
 

@@ -15,42 +15,47 @@ export interface NutrientDef {
   unit: string // display unit
   dv: number | null // FDA Daily Value (adult), null if none
   group: NutrientGroup
+  // Weekly micro-insight direction: 'floor' = aim to reach the DV (flag when
+  // consistently low), 'limit' = stay under it (flag when consistently over).
+  // null = not surfaced there (macros carry their own targets; no-DV nutrients
+  // can't be scored).
+  direction: 'floor' | 'limit' | null
   usda: number // USDA FoodData Central nutrient number (for import)
 }
 
 // Daily Values per FDA (adults & children 4+). Used for "% DV" displays.
 export const NUTRIENTS: NutrientDef[] = [
-  { key: 'kcal', label: 'Calories', unit: '', dv: null, group: 'energy', usda: 1008 },
-  { key: 'protein', label: 'Protein', unit: 'g', dv: 50, group: 'macro', usda: 1003 },
-  { key: 'carb', label: 'Carbs', unit: 'g', dv: 275, group: 'macro', usda: 1005 },
-  { key: 'fat', label: 'Fat', unit: 'g', dv: 78, group: 'macro', usda: 1004 },
-  { key: 'fiber', label: 'Fiber', unit: 'g', dv: 28, group: 'carb_sub', usda: 1079 },
-  { key: 'sugar', label: 'Total Sugars', unit: 'g', dv: null, group: 'carb_sub', usda: 2000 },
-  { key: 'added_sugar', label: 'Added Sugars', unit: 'g', dv: 50, group: 'carb_sub', usda: 1235 },
-  { key: 'sat_fat', label: 'Saturated Fat', unit: 'g', dv: 20, group: 'fat_sub', usda: 1258 },
-  { key: 'trans_fat', label: 'Trans Fat', unit: 'g', dv: null, group: 'fat_sub', usda: 1257 },
-  { key: 'cholesterol', label: 'Cholesterol', unit: 'mg', dv: 300, group: 'other', usda: 1253 },
-  { key: 'sodium', label: 'Sodium', unit: 'mg', dv: 2300, group: 'mineral', usda: 1093 },
-  { key: 'potassium', label: 'Potassium', unit: 'mg', dv: 4700, group: 'mineral', usda: 1092 },
-  { key: 'calcium', label: 'Calcium', unit: 'mg', dv: 1300, group: 'mineral', usda: 1087 },
-  { key: 'iron', label: 'Iron', unit: 'mg', dv: 18, group: 'mineral', usda: 1089 },
-  { key: 'magnesium', label: 'Magnesium', unit: 'mg', dv: 420, group: 'mineral', usda: 1090 },
-  { key: 'phosphorus', label: 'Phosphorus', unit: 'mg', dv: 1250, group: 'mineral', usda: 1091 },
-  { key: 'zinc', label: 'Zinc', unit: 'mg', dv: 11, group: 'mineral', usda: 1095 },
-  { key: 'copper', label: 'Copper', unit: 'mg', dv: 0.9, group: 'mineral', usda: 1098 },
-  { key: 'manganese', label: 'Manganese', unit: 'mg', dv: 2.3, group: 'mineral', usda: 1101 },
-  { key: 'selenium', label: 'Selenium', unit: 'mcg', dv: 55, group: 'mineral', usda: 1103 },
-  { key: 'vit_a', label: 'Vitamin A', unit: 'mcg', dv: 900, group: 'vitamin', usda: 1106 },
-  { key: 'vit_c', label: 'Vitamin C', unit: 'mg', dv: 90, group: 'vitamin', usda: 1162 },
-  { key: 'vit_d', label: 'Vitamin D', unit: 'mcg', dv: 20, group: 'vitamin', usda: 1114 },
-  { key: 'vit_e', label: 'Vitamin E', unit: 'mg', dv: 15, group: 'vitamin', usda: 1109 },
-  { key: 'vit_k', label: 'Vitamin K', unit: 'mcg', dv: 120, group: 'vitamin', usda: 1185 },
-  { key: 'b1', label: 'Thiamin (B1)', unit: 'mg', dv: 1.2, group: 'vitamin', usda: 1165 },
-  { key: 'b2', label: 'Riboflavin (B2)', unit: 'mg', dv: 1.3, group: 'vitamin', usda: 1166 },
-  { key: 'b3', label: 'Niacin (B3)', unit: 'mg', dv: 16, group: 'vitamin', usda: 1167 },
-  { key: 'b6', label: 'Vitamin B6', unit: 'mg', dv: 1.7, group: 'vitamin', usda: 1175 },
-  { key: 'folate', label: 'Folate', unit: 'mcg', dv: 400, group: 'vitamin', usda: 1190 },
-  { key: 'b12', label: 'Vitamin B12', unit: 'mcg', dv: 2.4, group: 'vitamin', usda: 1178 },
+  { key: 'kcal', label: 'Calories', unit: '', dv: null, group: 'energy', direction: null, usda: 1008 },
+  { key: 'protein', label: 'Protein', unit: 'g', dv: 50, group: 'macro', direction: null, usda: 1003 },
+  { key: 'carb', label: 'Carbs', unit: 'g', dv: 275, group: 'macro', direction: null, usda: 1005 },
+  { key: 'fat', label: 'Fat', unit: 'g', dv: 78, group: 'macro', direction: null, usda: 1004 },
+  { key: 'fiber', label: 'Fiber', unit: 'g', dv: 28, group: 'carb_sub', direction: 'floor', usda: 1079 },
+  { key: 'sugar', label: 'Total Sugars', unit: 'g', dv: null, group: 'carb_sub', direction: null, usda: 2000 },
+  { key: 'added_sugar', label: 'Added Sugars', unit: 'g', dv: 50, group: 'carb_sub', direction: 'limit', usda: 1235 },
+  { key: 'sat_fat', label: 'Saturated Fat', unit: 'g', dv: 20, group: 'fat_sub', direction: 'limit', usda: 1258 },
+  { key: 'trans_fat', label: 'Trans Fat', unit: 'g', dv: null, group: 'fat_sub', direction: null, usda: 1257 },
+  { key: 'cholesterol', label: 'Cholesterol', unit: 'mg', dv: 300, group: 'other', direction: 'limit', usda: 1253 },
+  { key: 'sodium', label: 'Sodium', unit: 'mg', dv: 2300, group: 'mineral', direction: 'limit', usda: 1093 },
+  { key: 'potassium', label: 'Potassium', unit: 'mg', dv: 4700, group: 'mineral', direction: 'floor', usda: 1092 },
+  { key: 'calcium', label: 'Calcium', unit: 'mg', dv: 1300, group: 'mineral', direction: 'floor', usda: 1087 },
+  { key: 'iron', label: 'Iron', unit: 'mg', dv: 18, group: 'mineral', direction: 'floor', usda: 1089 },
+  { key: 'magnesium', label: 'Magnesium', unit: 'mg', dv: 420, group: 'mineral', direction: 'floor', usda: 1090 },
+  { key: 'phosphorus', label: 'Phosphorus', unit: 'mg', dv: 1250, group: 'mineral', direction: 'floor', usda: 1091 },
+  { key: 'zinc', label: 'Zinc', unit: 'mg', dv: 11, group: 'mineral', direction: 'floor', usda: 1095 },
+  { key: 'copper', label: 'Copper', unit: 'mg', dv: 0.9, group: 'mineral', direction: 'floor', usda: 1098 },
+  { key: 'manganese', label: 'Manganese', unit: 'mg', dv: 2.3, group: 'mineral', direction: 'floor', usda: 1101 },
+  { key: 'selenium', label: 'Selenium', unit: 'mcg', dv: 55, group: 'mineral', direction: 'floor', usda: 1103 },
+  { key: 'vit_a', label: 'Vitamin A', unit: 'mcg', dv: 900, group: 'vitamin', direction: 'floor', usda: 1106 },
+  { key: 'vit_c', label: 'Vitamin C', unit: 'mg', dv: 90, group: 'vitamin', direction: 'floor', usda: 1162 },
+  { key: 'vit_d', label: 'Vitamin D', unit: 'mcg', dv: 20, group: 'vitamin', direction: 'floor', usda: 1114 },
+  { key: 'vit_e', label: 'Vitamin E', unit: 'mg', dv: 15, group: 'vitamin', direction: 'floor', usda: 1109 },
+  { key: 'vit_k', label: 'Vitamin K', unit: 'mcg', dv: 120, group: 'vitamin', direction: 'floor', usda: 1185 },
+  { key: 'b1', label: 'Thiamin (B1)', unit: 'mg', dv: 1.2, group: 'vitamin', direction: 'floor', usda: 1165 },
+  { key: 'b2', label: 'Riboflavin (B2)', unit: 'mg', dv: 1.3, group: 'vitamin', direction: 'floor', usda: 1166 },
+  { key: 'b3', label: 'Niacin (B3)', unit: 'mg', dv: 16, group: 'vitamin', direction: 'floor', usda: 1167 },
+  { key: 'b6', label: 'Vitamin B6', unit: 'mg', dv: 1.7, group: 'vitamin', direction: 'floor', usda: 1175 },
+  { key: 'folate', label: 'Folate', unit: 'mcg', dv: 400, group: 'vitamin', direction: 'floor', usda: 1190 },
+  { key: 'b12', label: 'Vitamin B12', unit: 'mcg', dv: 2.4, group: 'vitamin', direction: 'floor', usda: 1178 },
 ]
 
 export const NUTRIENT_BY_KEY = Object.fromEntries(

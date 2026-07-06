@@ -261,7 +261,7 @@ create table if not exists public.workout_sets (
   weight_lb numeric,
   duration_sec numeric,
   distance numeric,
-  effort integer check (effort between 1 and 5),
+  effort integer check (effort between 1 and 10),
   is_warmup boolean not null default false,
   created_at timestamptz not null default now()
 );

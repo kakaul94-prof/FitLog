@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -9,16 +9,20 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import {
   useCustomExercises,
+  useCustomExerciseUsage,
   useCreateCustomExercise,
   useUpdateCustomExercise,
   useDeleteCustomExercise,
 } from '@/features/strength/useCustomExercises'
 import type { CustomExercise, ExerciseType } from '@/lib/database.types'
 
+type SortMode = 'recent' | 'alpha' | 'used'
+
 export function CustomExercisesPage() {
   const nav = useNavigate()
   const [params] = useSearchParams()
   const { data: custom } = useCustomExercises()
+  const { data: usage } = useCustomExerciseUsage()
   const createC = useCreateCustomExercise()
   const updateC = useUpdateCustomExercise()
   const deleteC = useDeleteCustomExercise()
@@ -31,6 +35,7 @@ export function CustomExercisesPage() {
   const [cmuscle, setCmuscle] = useState('')
   const [cequip, setCequip] = useState('')
   const [ctype, setCtype] = useState<ExerciseType>('weighted')
+  const [sort, setSort] = useState<SortMode>('recent')
 
   const openNew = () => {
     setCname('')
@@ -65,7 +70,21 @@ export function CustomExercisesPage() {
       deleteC.mutate(c.id)
   }
 
-  const list = custom ?? []
+  const list = useMemo(() => {
+    const arr = [...(custom ?? [])]
+    if (sort === 'alpha') {
+      arr.sort((a, b) => a.name.localeCompare(b.name))
+    } else if (sort === 'recent') {
+      arr.sort((a, b) => b.created_at.localeCompare(a.created_at))
+    } else {
+      arr.sort(
+        (a, b) =>
+          (usage?.get(b.id) ?? 0) - (usage?.get(a.id) ?? 0) ||
+          a.name.localeCompare(b.name),
+      )
+    }
+    return arr
+  }, [custom, sort, usage])
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background">
@@ -142,6 +161,24 @@ export function CustomExercisesPage() {
               </Button>
             </div>
           </Card>
+        )}
+
+        {list.length > 0 && (
+          <div className="flex items-center justify-end gap-2">
+            <Label htmlFor="sort" className="text-xs text-muted-foreground">
+              Sort
+            </Label>
+            <Select
+              id="sort"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortMode)}
+              className="h-9 w-auto text-sm"
+            >
+              <option value="recent">Recently added</option>
+              <option value="alpha">A–Z</option>
+              <option value="used">Most used</option>
+            </Select>
+          </div>
         )}
 
         <Card className="divide-y divide-border overflow-hidden">

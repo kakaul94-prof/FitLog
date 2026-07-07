@@ -466,6 +466,8 @@ create table if not exists public.strength_goals (
   exercise_key text not null,
   exercise_name text not null,
   target_1rm_lb numeric not null,
+  target_weight_lb numeric not null,
+  target_reps integer not null default 1,
   method text not null default 'double' check (method in ('linear', 'double', '531')),
   increment_lb numeric,
   rep_low integer not null default 5,

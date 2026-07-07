@@ -36,6 +36,7 @@ import {
   currentE1RM,
   suggestNext,
   weightForReps,
+  formatGoalTarget,
   requiredPace,
   formatPace,
   projectGoalEta,
@@ -1090,7 +1091,7 @@ function GoalCard({
           <span className="text-muted-foreground">
             {current ? `Now ~${current} lb` : 'No history yet'}
           </span>
-          <span className="font-medium">Goal {goal.target_1rm_lb} lb 1RM</span>
+          <span className="font-medium">Goal {formatGoalTarget(goal)}</span>
         </div>
         <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
           <div
@@ -1196,7 +1197,10 @@ function GoalForm({
 }) {
   const save = useSaveStrengthGoal()
   const update = useUpdateStrengthGoal()
-  const [target, setTarget] = useState(goal ? String(goal.target_1rm_lb) : '')
+  const [weight, setWeight] = useState(
+    goal ? String(goal.target_weight_lb) : '',
+  )
+  const [reps, setReps] = useState(String(goal?.target_reps ?? 1))
   const [method, setMethod] = useState<ProgressionMethod>(
     goal?.method ?? 'double',
   )
@@ -1207,14 +1211,19 @@ function GoalForm({
   const [targetDate, setTargetDate] = useState(goal?.target_date ?? '')
   const pending = save.isPending || update.isPending
 
+  const w = parseFloat(weight)
+  const r = Math.max(1, parseInt(reps, 10) || 1)
+  const derived1RM = w > 0 ? Math.round(estimated1RM(w, r)) : 0
+
   const onSave = () => {
-    const t = parseFloat(target)
-    if (!t) return
+    if (!(w > 0)) return
     const repLow = parseInt(lo, 10) || 5
     const base = {
       exercise_key: exerciseKey,
       exercise_name: name,
-      target_1rm_lb: t,
+      target_weight_lb: w,
+      target_reps: r,
+      target_1rm_lb: derived1RM,
       method,
       increment_lb: parseFloat(inc) || 5,
       rep_low: repLow,
@@ -1232,17 +1241,35 @@ function GoalForm({
         {goal ? 'Edit goal' : 'New strength goal'}
       </div>
 
-      <label className="block text-xs text-muted-foreground">
-        Target 1RM (lb)
-        <Input
-          type="number"
-          inputMode="decimal"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          placeholder="e.g. 200"
-          className="mt-1"
-        />
-      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block text-xs text-muted-foreground">
+          Target weight (lb)
+          <Input
+            type="number"
+            inputMode="decimal"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder="e.g. 225"
+            className="mt-1"
+          />
+        </label>
+        <label className="block text-xs text-muted-foreground">
+          Target reps
+          <Input
+            type="number"
+            inputMode="numeric"
+            value={reps}
+            onChange={(e) => setReps(e.target.value)}
+            placeholder="1"
+            className="mt-1"
+          />
+        </label>
+      </div>
+      {derived1RM > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          = {derived1RM} lb est. 1RM (Epley) — what progress tracks against
+        </p>
+      )}
 
       <label className="block text-xs text-muted-foreground">
         Target date (optional)
@@ -1326,7 +1353,7 @@ function GoalForm({
         <Button
           className="flex-1"
           onClick={onSave}
-          disabled={!parseFloat(target) || pending}
+          disabled={!(w > 0) || pending}
         >
           {pending ? 'Saving…' : 'Save goal'}
         </Button>

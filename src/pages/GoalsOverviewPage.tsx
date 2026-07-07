@@ -11,6 +11,7 @@ import {
 import {
   requiredPace,
   formatPace,
+  formatGoalTarget,
   PROGRESSION_LABEL,
   type Suggestion,
 } from '@/lib/progression'
@@ -101,7 +102,7 @@ function GoalRow({ r, onOpen }: { r: GoalOverview; onOpen: () => void }) {
         <span className="text-muted-foreground">
           {current ? `Now ~${current} lb` : 'No history yet'}
         </span>
-        <span className="font-medium">Goal {goal.target_1rm_lb} lb</span>
+        <span className="font-medium">Goal {formatGoalTarget(goal)}</span>
       </div>
       <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
         <div

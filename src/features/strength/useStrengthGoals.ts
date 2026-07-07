@@ -24,6 +24,8 @@ export interface NewStrengthGoal {
   exercise_key: string
   exercise_name: string
   target_1rm_lb: number
+  target_weight_lb: number
+  target_reps: number
   method: ProgressionMethod
   increment_lb: number
   rep_low: number

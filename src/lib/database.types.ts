@@ -305,7 +305,7 @@ export interface Measurement {
   created_at: string
 }
 
-// Per-exercise strength goal (target 1RM) + progression state. The app suggests
+// Per-exercise strength goal (target weight × reps) + progression state. Suggests
 // the next session toward target_1rm_lb via `method`. Current strength is
 // derived live from workout_sets (not stored), so switching method never resets.
 // tm_lb/cycle/week hold 5/3/1 state only (ignored by the other methods).
@@ -315,6 +315,8 @@ export interface StrengthGoal {
   exercise_key: string
   exercise_name: string
   target_1rm_lb: number
+  target_weight_lb: number
+  target_reps: number
   method: ProgressionMethod
   increment_lb: number | null
   rep_low: number

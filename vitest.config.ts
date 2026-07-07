@@ -14,5 +14,9 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     environment: 'node',
+    // A dummy USDA key so barcode/USDA code paths are exercised deterministically
+    // (real key lives in .env, which is gitignored and absent in CI). All network
+    // calls are mocked in the tests.
+    env: { VITE_USDA_API_KEY: 'test-key' },
   },
 })

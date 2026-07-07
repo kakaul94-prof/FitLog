@@ -115,3 +115,43 @@ export async function getUsdaFood(
     nutrients: mapNutrients(f.foodNutrients as RawNutrient[] | undefined),
   }
 }
+
+// Resolve a UPC/EAN to a USDA Branded food (manufacturer-submitted, per 100 g).
+// Used as a second opinion / fallback alongside Open Food Facts in the barcode
+// importer. Null when USDA isn't configured or there's no exact GTIN match.
+// USDA stores the 12-digit UPC, so a 13-digit EAN with leading zeros won't match
+// as text — we query both forms and confirm on gtinUpc (ignoring leading zeros)
+// so a stray text hit on the digits can't masquerade as the product.
+export async function lookupUsdaByBarcode(
+  rawCode: string,
+  signal?: AbortSignal,
+): Promise<UsdaFoodDetail | null> {
+  if (!KEY) return null
+  const digits = rawCode.replace(/\D/g, '')
+  const stripped = digits.replace(/^0+/, '')
+  if (!stripped) return null
+  const queries = stripped === digits ? [digits] : [digits, stripped]
+  for (const q of queries) {
+    const url =
+      `${API}/foods/search?api_key=${KEY}` +
+      `&query=${encodeURIComponent(q)}&dataType=Branded&pageSize=5`
+    let res: Response
+    try {
+      res = await fetch(url, { signal })
+    } catch {
+      return null // network/USDA hiccup — never let it break the scan
+    }
+    if (!res.ok) continue
+    const data = (await res.json().catch(() => null)) as {
+      foods?: Array<{ fdcId?: number; gtinUpc?: string }>
+    } | null
+    const hit = (data?.foods ?? []).find(
+      (food) =>
+        typeof food.gtinUpc === 'string' &&
+        food.gtinUpc.replace(/^0+/, '') === stripped &&
+        food.fdcId != null,
+    )
+    if (hit?.fdcId != null) return getUsdaFood(hit.fdcId, signal)
+  }
+  return null
+}

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { mapNutrients } from './usda'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { lookupUsdaByBarcode, mapNutrients } from './usda'
 
 // Stable FDC nutrient ids (external identifiers; see nutrients.ts `usda` field).
 const PROTEIN = 1003
@@ -63,5 +63,71 @@ describe('mapNutrients', () => {
       { nutrientId: ATWATER_GENERAL, value: 250 },
     ])
     expect(out.kcal).toBe(250)
+  })
+})
+
+// lookupUsdaByBarcode hits FDC's search + food endpoints; stub fetch so we
+// exercise the GTIN matching and leading-zero retry. VITE_USDA_API_KEY is set to
+// a dummy in vitest.config.ts so the code path runs (real calls are mocked).
+describe('lookupUsdaByBarcode', () => {
+  const fetchMock = vi.fn()
+  const okJson = (body: unknown) => ({
+    ok: true,
+    status: 200,
+    json: async () => body,
+  })
+
+  beforeEach(() => vi.stubGlobal('fetch', fetchMock))
+  afterEach(() => {
+    fetchMock.mockReset()
+    vi.unstubAllGlobals()
+  })
+
+  it('matches a Branded food by gtinUpc and returns per-100g nutrients', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        okJson({ foods: [{ fdcId: 42, gtinUpc: '036000291452' }] }),
+      )
+      .mockResolvedValueOnce(
+        okJson({
+          description: 'Soda',
+          brandOwner: 'BrandCo',
+          foodNutrients: [{ nutrient: { id: 1008 }, amount: 41 }],
+        }),
+      )
+    const r = await lookupUsdaByBarcode('036000291452')
+    expect(r?.name).toBe('Soda')
+    expect(r?.brand).toBe('BrandCo')
+    expect(r?.nutrients.kcal).toBe(41)
+  })
+
+  it('ignores a text hit whose gtinUpc does not match the code', async () => {
+    fetchMock.mockResolvedValue(
+      okJson({ foods: [{ fdcId: 1, gtinUpc: '999999999999' }] }),
+    )
+    expect(await lookupUsdaByBarcode('036000291452')).toBeNull()
+  })
+
+  it('retries the zero-stripped form for a leading-0 code', async () => {
+    fetchMock
+      .mockResolvedValueOnce(okJson({ foods: [] })) // raw 13-digit: no hit
+      .mockResolvedValueOnce(
+        okJson({ foods: [{ fdcId: 7, gtinUpc: '036000291452' }] }),
+      ) // stripped: hit
+      .mockResolvedValueOnce(
+        okJson({
+          description: 'X',
+          foodNutrients: [{ nutrient: { id: 1008 }, amount: 10 }],
+        }),
+      )
+    const r = await lookupUsdaByBarcode('0036000291452')
+    expect(r?.nutrients.kcal).toBe(10)
+    expect(fetchMock.mock.calls[0][0]).toContain('query=0036000291452')
+    expect(fetchMock.mock.calls[1][0]).toContain('query=36000291452')
+  })
+
+  it('returns null without fetching when the code has no digits', async () => {
+    expect(await lookupUsdaByBarcode('---')).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

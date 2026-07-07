@@ -119,20 +119,20 @@ describe('suggestNext — double progression', () => {
 })
 
 describe('suggestNext — RPE autoregulation', () => {
-  it('holds the weight when the last session was max effort (RPE 5)', () => {
-    const s = suggestNext(makeGoal(), [sets(100, 5, 3, 5)])
+  it('holds the weight when the last session was max effort (RPE 9)', () => {
+    const s = suggestNext(makeGoal(), [sets(100, 5, 3, 9)])
     expect(s.action).toBe('repeat')
     expect(s.sets[0].weightLb).toBe(100)
     expect(s.source).toMatch(/RPE/)
   })
-  it('takes a bigger jump when it felt easy (RPE <= 2)', () => {
-    const s = suggestNext(makeGoal(), [sets(100, 5, 3, 2)])
+  it('takes a bigger jump when it felt easy (RPE <= 6)', () => {
+    const s = suggestNext(makeGoal(), [sets(100, 5, 3, 5)])
     expect(s.action).toBe('increase')
     expect(s.sets[0].weightLb).toBe(110) // +1.5x the 5 lb increment
     expect(s.source).toMatch(/RPE/)
   })
   it('takes the standard jump at moderate effort and stays silent on RPE', () => {
-    const s = suggestNext(makeGoal(), [sets(100, 5, 3, 3)])
+    const s = suggestNext(makeGoal(), [sets(100, 5, 3, 7)])
     expect(s.action).toBe('increase')
     expect(s.sets[0].weightLb).toBe(105)
     expect(s.source).not.toMatch(/RPE/)

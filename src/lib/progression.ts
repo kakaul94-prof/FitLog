@@ -4,7 +4,7 @@ import type { ProgressionMethod, StrengthGoal } from './database.types'
 
 // A past set for one exercise. Sessions are arrays of these, newest session
 // first; weight/reps may be null (blank prefill rows are filtered out here).
-// effort is the logged RPE (1 easy … 5 max), optional — drives autoregulation.
+// effort is the logged RPE (1 easy … 10 max), optional — drives autoregulation.
 export interface PriorSet {
   weight_lb: number | null
   reps: number | null
@@ -47,6 +47,20 @@ const round5 = (n: number) => Math.round(n / 5) * 5
 export function weightForReps(target1RM: number, reps: number): number {
   if (reps <= 1 || target1RM <= 0) return target1RM
   return target1RM / (1 + reps / 30)
+}
+
+/**
+ * A goal's target for display: "225 × 5", or "225 lb 1RM" for a single-rep
+ * goal (Epley leaves a 1-rep target's weight unchanged, so the 1RM reads true).
+ */
+export function formatGoalTarget(g: {
+  target_weight_lb: number
+  target_reps: number
+  target_1rm_lb: number
+}): string {
+  return g.target_weight_lb && g.target_reps > 1
+    ? `${g.target_weight_lb} × ${g.target_reps}`
+    : `${g.target_1rm_lb} lb 1RM`
 }
 
 const working = (sets: PriorSet[]) =>
@@ -182,16 +196,16 @@ export function suggestNext(
   // Whether effort (RPE) changed the suggested jump — appends its source below.
   let usedRpe = false
   if (hit) {
-    // Autoregulate the jump by how hard the top sets felt (5 = max, 1 = easy);
-    // no RPE logged falls through to the standard +inc.
+    // Autoregulate the jump by how hard the top sets felt on the 1-10 RPE scale
+    // (>=9 = max, <=6 = easy, 7-8 = standard); no RPE logged falls to +inc.
     const e = last.effort
-    if (e != null && e >= 5) {
+    if (e != null && e >= 9) {
       weight = last.topWeight
       reps = targetReps
       action = 'repeat'
       rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb but it was max effort (RPE ${e}) — hold here to consolidate before adding load.`
       usedRpe = true
-    } else if (e != null && e <= 2) {
+    } else if (e != null && e <= 6) {
       const bigInc = round5(inc * 1.5)
       weight = round5(last.topWeight + bigInc)
       reps = bottomReps

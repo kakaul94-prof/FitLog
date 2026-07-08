@@ -21,6 +21,9 @@ dist-ssr
 Screenshot_*.png
 workoutlog.csv
 
+# Generated at build time from the last 5 git commits (scripts/gen-patchnotes.mjs)
+src/data/patchNotes.generated.ts
+
 # Playwright / E2E
 /test-results
 /playwright-report

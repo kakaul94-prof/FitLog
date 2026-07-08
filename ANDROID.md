@@ -10,8 +10,8 @@ reused unchanged.
 ## Decisions (locked)
 
 - **Wrapper:** Capacitor (loads the live site in a native WebView; full native API access).
-- **Content source:** **live URL** → the app loads `https://fitlog-9wl.pages.dev` (prod).
-  Your existing *push to `main` → Cloudflare redeploy* flow IS the app's update channel —
+- **Content source:** **live URL** → the app loads `https://fitlog-9wl.pages.dev` (the dev site).
+  Your existing *push to `dev` → Cloudflare redeploy* flow IS the app's update channel —
   no rebuild/re-upload for UI changes.
 - **Platform:** Android first (all buildable on the Windows PC). iOS deferred (needs a Mac).
 - **Distribution:** Play **Internal testing** track — installs via Play on up to 100

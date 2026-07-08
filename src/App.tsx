@@ -34,6 +34,7 @@ const StrengthPage = lazyPage(() => import('@/pages/StrengthPage'), 'StrengthPag
 const ProgressPage = lazyPage(() => import('@/pages/ProgressPage'), 'ProgressPage')
 const MorePage = lazyPage(() => import('@/pages/MorePage'), 'MorePage')
 const ProfilePage = lazyPage(() => import('@/pages/ProfilePage'), 'ProfilePage')
+const PatchNotesPage = lazyPage(() => import('@/pages/PatchNotesPage'), 'PatchNotesPage')
 const LibraryPage = lazyPage(() => import('@/pages/LibraryPage'), 'LibraryPage')
 const FoodFormPage = lazyPage(() => import('@/pages/FoodFormPage'), 'FoodFormPage')
 const FoodPickerPage = lazyPage(() => import('@/pages/FoodPickerPage'), 'FoodPickerPage')
@@ -118,6 +119,7 @@ const router = createBrowserRouter(
         <Route path="progress" element={<ProgressPage />} />
         <Route path="more" element={<MorePage />} />
         <Route path="profile" element={<ProfilePage />} />
+        <Route path="patch-notes" element={<PatchNotesPage />} />
         <Route path="foods" element={<LibraryPage />} />
         <Route path="foods/new" element={<FoodFormPage />} />
         <Route path="foods/:id" element={<FoodFormPage />} />

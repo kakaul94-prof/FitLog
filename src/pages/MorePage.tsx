@@ -14,6 +14,7 @@ import {
   Palette,
   Volume2,
   Bell,
+  Sparkles,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -253,6 +254,17 @@ export function MorePage() {
             className="hidden"
             onChange={onPickBackup}
           />
+        </Card>
+
+        <Card className="overflow-hidden">
+          <Link
+            to="/patch-notes"
+            className="flex items-center gap-3 p-4 active:bg-accent"
+          >
+            <Sparkles className="h-5 w-5 text-muted-foreground" />
+            <span className="flex-1 text-sm font-medium">Patch Notes</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
         </Card>
         {restoreErr && !pending && (
           <p className="px-1 text-center text-sm text-destructive">

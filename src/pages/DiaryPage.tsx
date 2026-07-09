@@ -1,6 +1,6 @@
 import { useRef, useState, type TouchEvent as ReactTouchEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft,
   ChevronRight,
@@ -92,7 +92,10 @@ function DiarySkeleton() {
 
 export function DiaryPage() {
   const nav = useNavigate()
-  const [date, setDate] = useState(todayISO())
+  // Seed from ?date= so returning here from add-food keeps the day you were on;
+  // a fresh Diary-tab tap (no param) still opens today.
+  const [params] = useSearchParams()
+  const [date, setDate] = useState(() => params.get('date') || todayISO())
   const { data: entries, isLoading: diaryLoading } = useDiary(date)
   const { data: profile, isLoading: profileLoading } = useProfile()
   const { data: weight } = useLatestWeight()

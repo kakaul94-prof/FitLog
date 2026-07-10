@@ -14,6 +14,7 @@ import {
   Loader2,
   Database,
   Zap,
+  Camera,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -305,12 +306,24 @@ export function FoodPickerPage() {
           </Card>
         ) : (
           <>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={() => setSourceOpen(true)}>
             <Plus className="h-4 w-4" /> New food
           </Button>
           <Button variant="outline" onClick={() => setQuickOpen(true)}>
             <Zap className="h-4 w-4" /> Quick add
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() =>
+              nav(
+                `/diary/scan?meal=${meal}&date=${date}&returnTo=${encodeURIComponent(
+                  location.pathname + location.search,
+                )}`,
+              )
+            }
+          >
+            <Camera className="h-4 w-4" /> Snap meal
           </Button>
           <Button variant="outline" onClick={() => setCopyOpen(true)}>
             <Copy className="h-4 w-4" /> Copy day

@@ -155,6 +155,7 @@ const KEYS = {
   logFood: ['diary', 'logFood'],
   logFoods: ['diary', 'logFoods'],
   quickAdd: ['diary', 'quickAdd'],
+  quickAddFoods: ['diary', 'quickAddFoods'],
   updateServings: ['diary', 'updateServings'],
   deleteEntry: ['diary', 'deleteEntry'],
   deleteEntries: ['diary', 'deleteEntries'],
@@ -279,6 +280,52 @@ function quickAddMutation(
  */
 export function useQuickAddFood() {
   return useMutation(quickAddMutation(useQueryClient()))
+}
+
+type QuickAddFoodsVars = {
+  entry_date: string
+  meal: Meal
+  items: { name?: string; nutrients: Nutrients }[]
+  _rows?: ReturnType<typeof newQuickRow>[]
+}
+
+function quickAddFoodsMutation(
+  qc: QueryClient,
+): UseMutationOptions<void, Error, QuickAddFoodsVars, DiaryCtx> {
+  return {
+    mutationKey: KEYS.quickAddFoods,
+    mutationFn: async (v) => {
+      const rows =
+        v._rows ??
+        v.items.map((it) =>
+          newQuickRow(v.entry_date, v.meal, it.name, it.nutrients),
+        )
+      if (rows.length === 0) return
+      const { error } = await supabase.from('diary_entries').insert(rows)
+      if (error) throw error
+    },
+    onMutate: async (v) => {
+      const rows = (v._rows = v.items.map((it) =>
+        newQuickRow(v.entry_date, v.meal, it.name, it.nutrients),
+      ))
+      const snap = await snapshotDiary(qc)
+      qc.setQueryData<DiaryEntry[]>(['diary', v.entry_date], (old) => [
+        ...(old ?? []),
+        ...rows.map(asCacheRow),
+      ])
+      return { snap }
+    },
+    onError: (_e, _v, ctx) => ctx && rollbackDiary(qc, ctx.snap),
+    onSettled: (_d, _e, v) => {
+      qc.invalidateQueries({ queryKey: ['diary', v.entry_date] })
+      qc.invalidateQueries({ queryKey: ['streak'] })
+    },
+  }
+}
+
+/** Quick Add several items to one day/meal in a single insert (meal-photo scan). */
+export function useQuickAddFoods() {
+  return useMutation(quickAddFoodsMutation(useQueryClient()))
 }
 
 function updateServingsMutation(
@@ -435,6 +482,7 @@ export function registerDiaryMutationDefaults(qc: QueryClient) {
   qc.setMutationDefaults(KEYS.logFood, logFoodMutation(qc))
   qc.setMutationDefaults(KEYS.logFoods, logFoodsMutation(qc))
   qc.setMutationDefaults(KEYS.quickAdd, quickAddMutation(qc))
+  qc.setMutationDefaults(KEYS.quickAddFoods, quickAddFoodsMutation(qc))
   qc.setMutationDefaults(KEYS.updateServings, updateServingsMutation(qc))
   qc.setMutationDefaults(KEYS.deleteEntry, deleteEntryMutation(qc))
   qc.setMutationDefaults(KEYS.deleteEntries, deleteEntriesMutation(qc))

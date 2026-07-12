@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronRight, Copy, Trash2 } from 'lucide-react'
+import { ChevronRight, Copy, Trash2, Link2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { ImportRecipeSheet } from '@/components/ImportRecipeSheet'
 import {
   useRecipes,
   useDeleteRecipe,
@@ -8,12 +11,13 @@ import {
 } from '@/features/recipes/useRecipes'
 
 // Body of the "Recipes" tab in LibraryPage. The new-recipe (+) action lives in
-// the shared LibraryPage header.
+// the shared LibraryPage header; "Import from a link" lives here at the top.
 export function RecipesList() {
   const nav = useNavigate()
   const { data: recipes } = useRecipes()
   const del = useDeleteRecipe()
   const duplicate = useDuplicateRecipe()
+  const [importOpen, setImportOpen] = useState(false)
 
   const duplicateRecipe = async (id: string) => {
     const r = await duplicate.mutateAsync(id)
@@ -22,6 +26,14 @@ export function RecipesList() {
 
   return (
     <div className="space-y-3 p-4">
+      <Button
+        variant="outline"
+        className="w-full"
+        onClick={() => setImportOpen(true)}
+      >
+        <Link2 className="h-4 w-4" /> Import from a link
+      </Button>
+
       <Card className="divide-y divide-border overflow-hidden">
         {(recipes ?? []).map((r) => (
           <div key={r.id} className="flex items-center">
@@ -61,10 +73,21 @@ export function RecipesList() {
         ))}
         {(recipes ?? []).length === 0 && (
           <div className="p-6 text-center text-sm text-muted-foreground">
-            No recipes yet. Tap + to build one from your foods.
+            No recipes yet. Import one from a link, or tap + to build one from
+            your foods.
           </div>
         )}
       </Card>
+
+      {importOpen && (
+        <ImportRecipeSheet
+          onClose={() => setImportOpen(false)}
+          onImported={(id) => {
+            setImportOpen(false)
+            nav(`/recipes/${id}`)
+          }}
+        />
+      )}
     </div>
   )
 }

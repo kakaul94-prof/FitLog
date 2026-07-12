@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { ingredientServings, recipePerServing } from '@/lib/nutrients'
+import type { ImportedRecipe } from '@/lib/importRecipe'
 import type { Food, RecipeIngredient } from '@/lib/database.types'
 
 /** Recompute a recipe food's per-serving nutrients from its ingredients. */
@@ -107,6 +108,77 @@ export function useCreateRecipe() {
       return data as Food
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['recipes'] }),
+  })
+}
+
+/**
+ * Build a recipe from a parsed recipe link: the recipe food + one food per
+ * ingredient + the join rows, then recompute per-serving nutrients. Returns the
+ * new recipe so the caller can open the editor to review.
+ *
+ * Each ingredient food is ARCHIVED so it stays out of the food library/search
+ * (the recipe still references it by id). It's stored as a single "serving"
+ * weighing its gram amount, and attached at that many grams (unit 'g') — so the
+ * editor shows an editable gram amount and the nutrition scales correctly.
+ */
+export function useImportRecipe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (parsed: ImportedRecipe): Promise<Food> => {
+      const { data: recipeData, error: recipeErr } = await supabase
+        .from('foods')
+        .insert({
+          name: parsed.name,
+          source: 'recipe',
+          recipe_servings: parsed.servings,
+          serving_qty: 1,
+          serving_unit: 'serving',
+          nutrients: {},
+        })
+        .select('*')
+        .single()
+      if (recipeErr) throw recipeErr
+      const recipe = recipeData as Food
+
+      const { data: foodRows, error: foodErr } = await supabase
+        .from('foods')
+        .insert(
+          parsed.ingredients.map((ing) => ({
+            name: ing.name,
+            source: 'manual' as const,
+            serving_qty: 1,
+            serving_unit: 'serving',
+            serving_grams: ing.grams,
+            nutrients: ing.nutrients,
+            archived: true,
+          })),
+        )
+        .select('id')
+      if (foodErr) throw foodErr
+      // Bulk insert returns rows in input order; zip them back by index.
+      const ids = (foodRows ?? []) as { id: string }[]
+      if (ids.length !== parsed.ingredients.length)
+        throw new Error('Import failed while saving ingredients.')
+
+      const { error: riErr } = await supabase.from('recipe_ingredients').insert(
+        parsed.ingredients.map((ing, idx) => ({
+          recipe_food_id: recipe.id,
+          ingredient_food_id: ids[idx].id,
+          amount: ing.grams,
+          unit: 'g',
+          servings: 1, // one base serving = the ingredient's gram weight
+          position: idx,
+        })),
+      )
+      if (riErr) throw riErr
+
+      await recompute(recipe.id)
+      return recipe
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recipes'] })
+      qc.invalidateQueries({ queryKey: ['foods'] })
+    },
   })
 }
 

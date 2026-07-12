@@ -11,7 +11,7 @@ the old MyFitnessPal.
   tested on the deployed app.
 - Confirm scope before large or multi-step exploration/refactors.
 - When I ask for an enhancement (especially at the start of a new session), read `EnhancementsPlanning.txt` first — it's the running backlog (items marked `[DONE]` are shipped). Confirm which item to build before coding.
-- Commit subjects are user-facing — More → Patch Notes auto-lists the last 5 commit titles (`scripts/gen-patchnotes.mjs`, runs on build); write clean one-line subjects.
+- Commit subjects are user-facing — More → Patch Notes auto-lists the last 5 **pushes**, each grouping its commit titles (`scripts/gen-patchnotes.mjs`, runs on build; commits within 2h of each other = one push); write clean one-line subjects.
 
 ## Stack
 

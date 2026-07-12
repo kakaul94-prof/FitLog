@@ -170,8 +170,16 @@ create table if not exists public.exercise_entries (
   duration_min numeric,
   distance_mi numeric,
   calories integer not null default 0,
+  avg_hr smallint,
+  zone smallint check (zone is null or zone between 1 and 5),
   created_at timestamptz not null default now()
 );
+-- Cardio HR zones (added later; idempotent for existing DBs).
+alter table public.exercise_entries add column if not exists avg_hr smallint;
+alter table public.exercise_entries add column if not exists zone smallint;
+alter table public.exercise_entries drop constraint if exists exercise_entries_zone_check;
+alter table public.exercise_entries add constraint exercise_entries_zone_check
+  check (zone is null or zone between 1 and 5);
 create index if not exists exercise_user_date_idx on public.exercise_entries(user_id, entry_date);
 alter table public.exercise_entries enable row level security;
 drop policy if exists exercise_rw_own on public.exercise_entries;

@@ -17,6 +17,7 @@ import {
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ActionSheet } from '@/components/ActionSheet'
 import { CalorieRing, RING_GREEN } from '@/components/CalorieRing'
+import { ZoneBadge } from '@/components/ZoneBadge'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -720,6 +721,7 @@ function ExerciseEntryRow({
           {entry.distance_mi ? ` · ${entry.distance_mi} mi` : ''} ·{' '}
           {entry.calories} calories
         </div>
+        <ZoneBadge zone={entry.zone} avgHr={entry.avg_hr} className="mt-1" />
       </div>
     </button>
   )

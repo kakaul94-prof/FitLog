@@ -188,6 +188,9 @@ export interface ExerciseEntry {
   duration_min: number | null
   distance_mi: number | null
   calories: number
+  // Cardio HR zone (1–5) + the avg heart rate it was derived from; both optional.
+  avg_hr: number | null
+  zone: number | null
   created_at: string
 }
 

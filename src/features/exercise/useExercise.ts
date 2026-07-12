@@ -41,6 +41,8 @@ export interface NewExercise {
   duration_min: number | null
   distance_mi: number | null
   calories: number
+  avg_hr: number | null
+  zone: number | null
 }
 
 export function useLogExercise() {

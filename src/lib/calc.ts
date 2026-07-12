@@ -34,6 +34,56 @@ export function ageFromBirthDate(birthDate: string | null): number | null {
   return age
 }
 
+// ---------- heart-rate training zones ----------
+// Max HR via Tanaka (2001): 208 − 0.7·age — more accurate than 220−age, age-only.
+export function hrMax(age: number): number {
+  return Math.round(208 - 0.7 * age)
+}
+
+export interface HrZoneBand {
+  zone: number
+  name: string
+  /** Fraction-of-max-HR bounds: [pctLo, pctHi). */
+  pctLo: number
+  pctHi: number
+}
+
+/** The 5 classic %HRmax training zones (low → high intensity). */
+export const HR_ZONE_BANDS: HrZoneBand[] = [
+  { zone: 1, name: 'Recovery', pctLo: 0.5, pctHi: 0.6 },
+  { zone: 2, name: 'Aerobic base', pctLo: 0.6, pctHi: 0.7 },
+  { zone: 3, name: 'Tempo', pctLo: 0.7, pctHi: 0.8 },
+  { zone: 4, name: 'Threshold', pctLo: 0.8, pctHi: 0.9 },
+  { zone: 5, name: 'VO₂ max', pctLo: 0.9, pctHi: 1.0 },
+]
+
+export interface HrZone extends HrZoneBand {
+  loBpm: number
+  hiBpm: number
+}
+
+/** The zone bands as bpm ranges for a given age. */
+export function hrZones(age: number): HrZone[] {
+  const max = hrMax(age)
+  return HR_ZONE_BANDS.map((b) => ({
+    ...b,
+    loBpm: Math.round(max * b.pctLo),
+    hiBpm: Math.round(max * b.pctHi),
+  }))
+}
+
+/** Zone (1–5) for an average HR at a given age; null below Zone 1 (<50% max). */
+export function zoneForHr(hr: number, age: number): number | null {
+  if (!hr || hr <= 0) return null
+  const pct = hr / hrMax(age)
+  if (pct < 0.5) return null
+  if (pct < 0.6) return 1
+  if (pct < 0.7) return 2
+  if (pct < 0.8) return 3
+  if (pct < 0.9) return 4
+  return 5
+}
+
 // ---------- energy expenditure ----------
 const ACTIVITY_FACTORS: Record<ActivityLevel, number> = {
   sedentary: 1.2,

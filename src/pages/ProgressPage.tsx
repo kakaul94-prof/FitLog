@@ -22,6 +22,8 @@ import {
   useMicronutrientTrends,
   type MicroStat,
 } from '@/features/insights/useMicronutrientTrends'
+import { useCardioZoneTrends } from '@/features/insights/useCardioZoneTrends'
+import { ZoneBars } from '@/components/ZoneBars'
 import {
   movingAverage,
   bmi,
@@ -41,7 +43,7 @@ const GREEN = '#16a34a'
 const GRAY = '#9ca3af'
 
 export function ProgressPage() {
-  const [view, setView] = useState<'body' | 'nutrition'>('body')
+  const [view, setView] = useState<'body' | 'nutrition' | 'cardio'>('body')
   return (
     <div>
       <PageHeader title="Progress" />
@@ -52,10 +54,58 @@ export function ProgressPage() {
           options={[
             { value: 'body', label: 'Body' },
             { value: 'nutrition', label: 'Nutrition' },
+            { value: 'cardio', label: 'Cardio' },
           ]}
         />
-        {view === 'body' ? <BodyView /> : <NutritionView />}
+        {view === 'body' ? (
+          <BodyView />
+        ) : view === 'nutrition' ? (
+          <NutritionView />
+        ) : (
+          <CardioView />
+        )}
       </div>
+    </div>
+  )
+}
+
+function CardioView() {
+  const [range, setRange] = useState<'7' | '30'>('7')
+  const { data, isLoading } = useCardioZoneTrends(Number(range))
+  return (
+    <div className="space-y-4">
+      <Segmented
+        value={range}
+        onChange={setRange}
+        options={[
+          { value: '7', label: '7 days' },
+          { value: '30', label: '30 days' },
+        ]}
+      />
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Time in zone</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isLoading ? (
+            <Skeleton className="h-40 w-full" />
+          ) : !data || data.sessions === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No zoned cardio in this range. Add an average HR or tap a zone when
+              you log cardio to see your weekly split here.
+            </p>
+          ) : (
+            <>
+              <ZoneBars data={data.zones} />
+              <p className="text-xs text-muted-foreground">
+                {data.totalMinutes} min across {data.sessions}{' '}
+                {data.sessions === 1 ? 'session' : 'sessions'}. Only sessions with
+                a logged zone and duration are counted.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

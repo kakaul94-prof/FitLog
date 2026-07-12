@@ -9,6 +9,8 @@ import {
   estimateAdaptiveTDEE,
   estimated1RM,
   ftInToCm,
+  hrMax,
+  hrZones,
   kgToLb,
   lbToKg,
   metCalories,
@@ -17,6 +19,7 @@ import {
   resolveMacroTargets,
   roundHalf,
   tdee,
+  zoneForHr,
 } from './calc'
 import type { MacroTargets } from './database.types'
 
@@ -34,6 +37,27 @@ describe('unit conversions', () => {
   })
   it('converts feet/inches back to cm', () => {
     expect(ftInToCm(5, 11)).toBeCloseTo(180.34, 2)
+  })
+})
+
+describe('heart-rate zones', () => {
+  it('estimates max HR via Tanaka', () => {
+    expect(hrMax(30)).toBe(187) // 208 − 0.7·30 = 187
+    expect(hrMax(40)).toBe(180)
+  })
+  it('derives 5 bpm zone ranges from age', () => {
+    const z = hrZones(30) // max 187
+    expect(z).toHaveLength(5)
+    expect(z[0]).toMatchObject({ zone: 1, loBpm: 94, hiBpm: 112 })
+    expect(z[4]).toMatchObject({ zone: 5, loBpm: 168, hiBpm: 187 })
+  })
+  it('maps an average HR to its zone', () => {
+    const age = 30 // max 187
+    expect(zoneForHr(90, age)).toBeNull() // <50% max
+    expect(zoneForHr(100, age)).toBe(1)
+    expect(zoneForHr(138, age)).toBe(3)
+    expect(zoneForHr(180, age)).toBe(5)
+    expect(zoneForHr(0, age)).toBeNull()
   })
 })
 

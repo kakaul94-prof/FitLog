@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Dumbbell, Flame } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { ZoneBadge } from '@/components/ZoneBadge'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useWorkoutsRange } from '@/features/strength/useStrength'
@@ -208,6 +209,11 @@ export function WorkoutCalendarPage() {
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium">{e.name}</div>
                       <div className="text-xs text-muted-foreground">{meta}</div>
+                      <ZoneBadge
+                        zone={e.zone}
+                        avgHr={e.avg_hr}
+                        className="mt-1"
+                      />
                     </div>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </Link>

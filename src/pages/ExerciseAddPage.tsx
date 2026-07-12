@@ -19,7 +19,16 @@ import {
   useUpdateCustomActivity,
   useDeleteCustomActivity,
 } from '@/features/exercise/useCustomActivities'
-import { metCalories, distanceCalories } from '@/lib/calc'
+import {
+  metCalories,
+  distanceCalories,
+  ageFromBirthDate,
+  hrZones,
+  zoneForHr,
+  HR_ZONE_BANDS,
+} from '@/lib/calc'
+import { zoneColor } from '@/data/zones'
+import { useProfile } from '@/features/profile/useProfile'
 import { todayISO } from '@/lib/date'
 
 interface PickActivity {
@@ -37,6 +46,7 @@ export function ExerciseAddPage() {
   const { data: weight, isPending: weightPending } = useLatestWeight()
   const { data: entry } = useExerciseEntry(id)
   const { data: custom } = useCustomActivities()
+  const { data: profile } = useProfile()
   const log = useLogExercise()
   const update = useUpdateExercise()
   const createCustom = useCreateCustomActivity()
@@ -51,6 +61,8 @@ export function ExerciseAddPage() {
   const [duration, setDuration] = useState('')
   const [distance, setDistance] = useState('')
   const [override, setOverride] = useState('')
+  const [avgHr, setAvgHr] = useState('')
+  const [zone, setZone] = useState<number | null>(null)
 
   // Activity search / custom-create UI
   const [search, setSearch] = useState('')
@@ -81,6 +93,8 @@ export function ExerciseAddPage() {
     : allActivities
 
   const w = weight ?? null
+  const age = ageFromBirthDate(profile?.birth_date ?? null)
+  const zones = age != null ? hrZones(age) : null
   const dur = parseFloat(duration) || 0
   const dist = parseFloat(distance) || 0
   const est =
@@ -117,6 +131,8 @@ export function ExerciseAddPage() {
     setName(entry.name)
     setDuration(entry.duration_min != null ? String(entry.duration_min) : '')
     setDistance(entry.distance_mi != null ? String(entry.distance_mi) : '')
+    setAvgHr(entry.avg_hr != null ? String(entry.avg_hr) : '')
+    setZone(entry.zone ?? null)
     // Preserve a manual override (e.g. from a watch): if the stored calories
     // don't match the formula estimate, keep them as an override.
     const di = entry.distance_mi ?? 0
@@ -201,6 +217,8 @@ export function ExerciseAddPage() {
       duration_min: dur || null,
       distance_mi: distanceBased && dist ? dist : null,
       calories,
+      avg_hr: avgHr.trim() ? parseInt(avgHr) || null : null,
+      zone,
     }
     if (editing && id) await update.mutateAsync({ id, ...payload })
     else await log.mutateAsync(payload)
@@ -389,6 +407,78 @@ export function ExerciseAddPage() {
                     onChange={(e) => setDistance(e.target.value)}
                   />
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-3 p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Intensity zone</span>
+                <span className="text-xs text-muted-foreground">optional</span>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="avghr">Avg HR (bpm)</Label>
+                <Input
+                  id="avghr"
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="e.g. 138"
+                  value={avgHr}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setAvgHr(v)
+                    const hr = parseInt(v)
+                    if (age != null && hr > 0) setZone(zoneForHr(hr, age))
+                  }}
+                />
+              </div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {HR_ZONE_BANDS.map((b) => {
+                  const sel = zone === b.zone
+                  const c = zoneColor(b.zone)
+                  return (
+                    <button
+                      key={b.zone}
+                      type="button"
+                      onClick={() => setZone(sel ? null : b.zone)}
+                      className="rounded-md border py-2 text-sm font-medium transition-colors"
+                      style={{
+                        color: c,
+                        borderColor: sel ? c : 'transparent',
+                        background: `color-mix(in srgb, ${c} ${
+                          sel ? 16 : 8
+                        }%, transparent)`,
+                      }}
+                    >
+                      Z{b.zone}
+                    </button>
+                  )
+                })}
+              </div>
+              {zone != null ? (
+                <p className="text-xs text-muted-foreground">
+                  <span
+                    className="font-medium"
+                    style={{ color: zoneColor(zone) }}
+                  >
+                    Zone {zone}
+                  </span>{' '}
+                  {zones
+                    ? `· ${zones[zone - 1].loBpm}–${zones[zone - 1].hiBpm} bpm `
+                    : `· ${Math.round(
+                        HR_ZONE_BANDS[zone - 1].pctLo * 100,
+                      )}–${Math.round(
+                        HR_ZONE_BANDS[zone - 1].pctHi * 100,
+                      )}% max `}
+                  · {HR_ZONE_BANDS[zone - 1].name}
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {age == null
+                    ? 'Set your birth date in Profile to match a heart rate to a zone.'
+                    : 'Enter your average HR, or tap a zone.'}
+                </p>
               )}
             </CardContent>
           </Card>

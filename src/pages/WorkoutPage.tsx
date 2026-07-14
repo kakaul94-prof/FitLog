@@ -28,6 +28,7 @@ import {
   useLastExerciseNote,
   useUpdateWorkout,
   useRestoreWorkout,
+  useDeleteWorkout,
   useExerciseBests,
   type WorkoutSnapshot,
 } from '@/features/strength/useStrength'
@@ -76,6 +77,19 @@ const serializeWorkout = (ex: WorkoutExercise[], st: WorkoutSet[]) =>
     })),
   })
 
+// Whether a set carries any logged value — weight / reps, or a cardio-style
+// duration / distance. Empty set boxes read as null.
+const setHasData = (s: WorkoutSet) =>
+  s.reps != null ||
+  s.weight_lb != null ||
+  s.duration_sec != null ||
+  s.distance != null
+
+// True when a workout has anything worth keeping this session: a set with data,
+// or a typed exercise note. An untouched empty/template workout has neither.
+const hasLoggedContent = (ex: WorkoutExercise[], st: WorkoutSet[]) =>
+  st.some(setHasData) || ex.some((e) => (e.notes ?? '').trim() !== '')
+
 export function WorkoutPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -121,6 +135,9 @@ export function WorkoutPage() {
   // anything was edited this visit (an untouched workout skips the exit prompt),
   // and the full snapshot lets "Discard changes" revert this session's edits.
   const loadedRef = useRef(false)
+  // Was the workout blank the moment it opened? Gates the auto-discard so we
+  // never silently delete a previously-saved workout that gets cleared out.
+  const openedBlankRef = useRef(false)
   const [original, setOriginal] = useState<string | null>(null)
   const snapshotRef = useRef<WorkoutSnapshot | null>(null)
   const signature = useMemo(() => serializeWorkout(exercises, sets), [exercises, sets])
@@ -128,6 +145,7 @@ export function WorkoutPage() {
     if (loadedRef.current || !data?.workout) return
     loadedRef.current = true
     setOriginal(signature)
+    openedBlankRef.current = !hasLoggedContent(data.exercises, data.sets)
     snapshotRef.current = {
       exercises: data.exercises,
       sets: data.sets,
@@ -135,6 +153,13 @@ export function WorkoutPage() {
     }
   }, [data, signature])
   const dirty = original != null && signature !== original
+  // "Blank" = an in-progress workout with nothing logged this session. When it
+  // also opened blank, leaving discards it instead of saving an empty workout —
+  // covers an empty start, a blank added exercise, or a template whose sets were
+  // never filled in.
+  const isBlank =
+    !!workout && !workout.completed && !hasLoggedContent(exercises, sets)
+  const discardBlank = isBlank && openedBlankRef.current
 
   // Pressing back (arrow or Android system gesture) on a changed, in-progress
   // workout asks how to leave: "Save & exit" keeps the live-saved edits (resume
@@ -144,15 +169,34 @@ export function WorkoutPage() {
   // in (add exercise, an exercise's stats) pass through; leavingRef lets Done /
   // Save / Discard exit cleanly.
   const restore = useRestoreWorkout()
+  const del = useDeleteWorkout()
   const leavingRef = useRef(false)
   const blocker = useBlocker(({ nextLocation }) => {
-    if (leavingRef.current || workout?.completed || !dirty) return false
+    if (leavingRef.current || workout?.completed) return false
     const p = nextLocation.pathname
     const internal =
       p.startsWith(`/workout/${id}`) || p.startsWith('/lift/exercise/')
-    return !internal
+    if (internal) return false
+    return dirty || discardBlank
   })
-  const showExit = blocker.state === 'blocked'
+  // Leaving a blank session (see discardBlank): delete the row so it never lands
+  // in history, then continue — no exit sheet. Best-effort; leave even if the
+  // delete fails so the user isn't trapped on the page.
+  useEffect(() => {
+    if (blocker.state !== 'blocked' || !discardBlank || leavingRef.current) return
+    leavingRef.current = true
+    ;(async () => {
+      try {
+        await del.mutateAsync(id!)
+      } catch {
+        /* ignore — proceed regardless */
+      }
+      blocker.proceed?.()
+    })()
+  }, [blocker.state, discardBlank])
+  // The exit sheet is only for a workout with real content; a blank session is
+  // handled silently by the effect above.
+  const showExit = blocker.state === 'blocked' && !discardBlank
   // Leave, keeping everything logged this session (already saved live).
   const saveExit = () => {
     leavingRef.current = true
@@ -181,6 +225,16 @@ export function WorkoutPage() {
   // before the cache reflects completed=true (so the blocker can't re-fire).
   const finish = async () => {
     leavingRef.current = true
+    // Nothing logged → discard rather than save a completed empty workout.
+    if (discardBlank) {
+      try {
+        await del.mutateAsync(id!)
+      } catch {
+        /* ignore — leave regardless */
+      }
+      nav('/strength')
+      return
+    }
     if (workoutId && !workout?.completed)
       await updateWorkout.mutateAsync({ id: workoutId, completed: true })
     nav('/strength')

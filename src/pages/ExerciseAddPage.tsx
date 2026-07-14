@@ -22,9 +22,9 @@ import {
 import {
   metCalories,
   distanceCalories,
-  ageFromBirthDate,
-  hrZones,
-  zoneForHr,
+  resolveMaxHr,
+  resolveHrZones,
+  resolveZoneForHr,
   HR_ZONE_BANDS,
 } from '@/lib/calc'
 import { zoneColor } from '@/data/zones'
@@ -93,8 +93,8 @@ export function ExerciseAddPage() {
     : allActivities
 
   const w = weight ?? null
-  const age = ageFromBirthDate(profile?.birth_date ?? null)
-  const zones = age != null ? hrZones(age) : null
+  const maxHr = resolveMaxHr(profile)
+  const zones = resolveHrZones(profile)
   const dur = parseFloat(duration) || 0
   const dist = parseFloat(distance) || 0
   const est =
@@ -429,7 +429,8 @@ export function ExerciseAddPage() {
                     const v = e.target.value
                     setAvgHr(v)
                     const hr = parseInt(v)
-                    if (age != null && hr > 0) setZone(zoneForHr(hr, age))
+                    if (maxHr != null && hr > 0)
+                      setZone(resolveZoneForHr(hr, profile))
                   }}
                 />
               </div>
@@ -475,8 +476,8 @@ export function ExerciseAddPage() {
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  {age == null
-                    ? 'Set your birth date in Profile to match a heart rate to a zone.'
+                  {maxHr == null
+                    ? 'Set your birth date or max HR in Profile to match a heart rate to a zone.'
                     : 'Enter your average HR, or tap a zone.'}
                 </p>
               )}

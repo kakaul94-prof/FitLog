@@ -62,26 +62,73 @@ export interface HrZone extends HrZoneBand {
   hiBpm: number
 }
 
-/** The zone bands as bpm ranges for a given age. */
-export function hrZones(age: number): HrZone[] {
-  const max = hrMax(age)
+/** A usable resting HR for Karvonen (positive and below max), else null. */
+function usableRest(maxHr: number, restingHr?: number | null): number | null {
+  return restingHr != null && restingHr > 0 && restingHr < maxHr ? restingHr : null
+}
+
+/** The bpm at an intensity fraction — Karvonen (heart-rate reserve) when a valid
+ * resting HR is supplied, else plain %HRmax. */
+function bpmAt(pct: number, maxHr: number, restingHr?: number | null): number {
+  const rest = usableRest(maxHr, restingHr)
+  return Math.round(rest != null ? rest + pct * (maxHr - rest) : maxHr * pct)
+}
+
+/**
+ * The 5 zone bands as bpm ranges. With a valid resting HR the bounds use
+ * heart-rate reserve (Karvonen); otherwise plain %HRmax.
+ */
+export function hrZones(maxHr: number, restingHr?: number | null): HrZone[] {
   return HR_ZONE_BANDS.map((b) => ({
     ...b,
-    loBpm: Math.round(max * b.pctLo),
-    hiBpm: Math.round(max * b.pctHi),
+    loBpm: bpmAt(b.pctLo, maxHr, restingHr),
+    hiBpm: bpmAt(b.pctHi, maxHr, restingHr),
   }))
 }
 
-/** Zone (1–5) for an average HR at a given age; null below Zone 1 (<50% max). */
-export function zoneForHr(hr: number, age: number): number | null {
+/**
+ * Zone (1–5) for an average HR; null below Zone 1 (<50% intensity). Uses the
+ * Karvonen reserve when a valid resting HR is supplied, else %HRmax.
+ */
+export function zoneForHr(
+  hr: number,
+  maxHr: number,
+  restingHr?: number | null,
+): number | null {
   if (!hr || hr <= 0) return null
-  const pct = hr / hrMax(age)
+  const rest = usableRest(maxHr, restingHr)
+  const pct = rest != null ? (hr - rest) / (maxHr - rest) : hr / maxHr
   if (pct < 0.5) return null
   if (pct < 0.6) return 1
   if (pct < 0.7) return 2
   if (pct < 0.8) return 3
   if (pct < 0.9) return 4
   return 5
+}
+
+/** A profile's effective max HR: their set value, else the age estimate, else null. */
+export function resolveMaxHr(profile: Profile | null | undefined): number | null {
+  if (profile?.max_hr != null) return profile.max_hr
+  const age = ageFromBirthDate(profile?.birth_date ?? null)
+  return age != null ? hrMax(age) : null
+}
+
+/** A profile's zone bpm ranges (Karvonen when resting HR is set), or null when
+ * there's no max HR to work from. */
+export function resolveHrZones(
+  profile: Profile | null | undefined,
+): HrZone[] | null {
+  const max = resolveMaxHr(profile)
+  return max != null ? hrZones(max, profile?.resting_hr ?? null) : null
+}
+
+/** Zone (1–5) for an avg HR under a profile's settings; null when unavailable. */
+export function resolveZoneForHr(
+  hr: number,
+  profile: Profile | null | undefined,
+): number | null {
+  const max = resolveMaxHr(profile)
+  return max != null ? zoneForHr(hr, max, profile?.resting_hr ?? null) : null
 }
 
 // ---------- energy expenditure ----------

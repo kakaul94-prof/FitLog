@@ -40,9 +40,16 @@ create table if not exists public.profiles (
   -- Per-muscle weekly set goals (sets/week), keyed by RegionId (src/data/bodyMap.ts).
   -- Sparse; missing regions use DEFAULT_GOALS in app code. 0 = untracked.
   volume_targets jsonb,
+  -- Heart-rate zones: max HR (null = estimate from age) + optional resting HR
+  -- (enables Karvonen reserve zones when set).
+  max_hr smallint,
+  resting_hr smallint,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- HR settings (added later; idempotent for existing DBs).
+alter table public.profiles add column if not exists max_hr smallint;
+alter table public.profiles add column if not exists resting_hr smallint;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles

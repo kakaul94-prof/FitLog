@@ -17,11 +17,12 @@ import {
   movingAverage,
   resolveCalorieGoal,
   resolveMacroTargets,
+  resolveMaxHr,
   roundHalf,
   tdee,
   zoneForHr,
 } from './calc'
-import type { MacroTargets } from './database.types'
+import type { MacroTargets, Profile } from './database.types'
 
 describe('unit conversions', () => {
   it('converts lb <-> kg', () => {
@@ -45,19 +46,45 @@ describe('heart-rate zones', () => {
     expect(hrMax(30)).toBe(187) // 208 − 0.7·30 = 187
     expect(hrMax(40)).toBe(180)
   })
-  it('derives 5 bpm zone ranges from age', () => {
-    const z = hrZones(30) // max 187
+  it('derives 5 %HRmax bpm ranges from a max HR', () => {
+    const z = hrZones(190)
     expect(z).toHaveLength(5)
-    expect(z[0]).toMatchObject({ zone: 1, loBpm: 94, hiBpm: 112 })
-    expect(z[4]).toMatchObject({ zone: 5, loBpm: 168, hiBpm: 187 })
+    expect(z[0]).toMatchObject({ zone: 1, loBpm: 95, hiBpm: 114 })
+    expect(z[4]).toMatchObject({ zone: 5, loBpm: 171, hiBpm: 190 })
   })
-  it('maps an average HR to its zone', () => {
-    const age = 30 // max 187
-    expect(zoneForHr(90, age)).toBeNull() // <50% max
-    expect(zoneForHr(100, age)).toBe(1)
-    expect(zoneForHr(138, age)).toBe(3)
-    expect(zoneForHr(180, age)).toBe(5)
-    expect(zoneForHr(0, age)).toBeNull()
+  it('maps an average HR to its zone (%HRmax)', () => {
+    const max = 190
+    expect(zoneForHr(90, max)).toBeNull() // <50% max
+    expect(zoneForHr(100, max)).toBe(1)
+    expect(zoneForHr(140, max)).toBe(3)
+    expect(zoneForHr(180, max)).toBe(5)
+    expect(zoneForHr(0, max)).toBeNull()
+  })
+  it('uses Karvonen reserve when a resting HR is given', () => {
+    const max = 190
+    const rest = 55 // reserve 135
+    expect(hrZones(max, rest)[1]).toMatchObject({
+      zone: 2,
+      loBpm: 136, // 55 + 0.6·135
+      hiBpm: 150, // 55 + 0.7·135 = 149.5 → 150
+    })
+    // 136 bpm is Zone 2 by reserve, but Zone 3 by raw %HRmax (~72%).
+    expect(zoneForHr(136, max, rest)).toBe(2)
+    expect(zoneForHr(136, max)).toBe(3)
+  })
+  it('falls back to %HRmax for an unusable resting HR', () => {
+    const max = 190
+    expect(hrZones(max, 0)).toEqual(hrZones(max))
+    expect(hrZones(max, 200)).toEqual(hrZones(max)) // rest ≥ max
+    expect(zoneForHr(140, max, 0)).toBe(zoneForHr(140, max))
+  })
+  it('resolves max HR from a profile (manual overrides age)', () => {
+    const prof = (max_hr: number | null, birth_date: string | null) =>
+      ({ max_hr, birth_date }) as unknown as Profile
+    expect(resolveMaxHr(prof(195, '1990-01-01'))).toBe(195)
+    const age = ageFromBirthDate('1990-01-01')!
+    expect(resolveMaxHr(prof(null, '1990-01-01'))).toBe(hrMax(age))
+    expect(resolveMaxHr(prof(null, null))).toBeNull()
   })
 })
 

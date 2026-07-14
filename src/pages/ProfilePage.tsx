@@ -15,12 +15,16 @@ import {
 } from '@/features/measurements/useMeasurements'
 import {
   ACTIVITY_LABELS,
+  ageFromBirthDate,
   caloriesForRate,
   cmToFtIn,
   ftInToCm,
+  hrMax,
+  hrZones,
   resolveCalorieGoal,
   resolveMacroTargets,
 } from '@/lib/calc'
+import { zoneColor } from '@/data/zones'
 import { useAdaptiveTDEE } from '@/features/insights/useAdaptiveTDEE'
 import { todayISO } from '@/lib/date'
 import type {
@@ -62,6 +66,10 @@ export function ProfilePage() {
   const [ft, setFt] = useState('')
   const [inch, setInch] = useState('')
   const [activity, setActivity] = useState<ActivityLevel>('moderate')
+  const [maxHrMode, setMaxHrMode] = useState<'age' | 'manual'>('age')
+  const [maxHr, setMaxHr] = useState('')
+  const [restingHr, setRestingHr] = useState('')
+  const [showHrTips, setShowHrTips] = useState(false)
   const [weight, setWeight] = useState('')
   const [rate, setRate] = useState('0')
   const [goalWeight, setGoalWeight] = useState('')
@@ -91,6 +99,9 @@ export function ProfilePage() {
       setInch(String(i))
     }
     setActivity(profile.activity_level)
+    setMaxHrMode(profile.max_hr != null ? 'manual' : 'age')
+    setMaxHr(profile.max_hr != null ? String(profile.max_hr) : '')
+    setRestingHr(profile.resting_hr != null ? String(profile.resting_hr) : '')
     setRate(String(profile.goal_rate_lb_per_week))
     setGoalWeight(profile.goal_weight_lb != null ? String(profile.goal_weight_lb) : '')
     setManualMode(profile.calorie_goal_mode === 'manual')
@@ -121,6 +132,18 @@ export function ProfilePage() {
   const weightNum = parseFloat(weight) || null
   const heightCm =
     ft || inch ? ftInToCm(parseInt(ft) || 0, parseInt(inch) || 0) : null
+
+  // Live HR-zone preview from the in-form values (before save).
+  const ageForHr = ageFromBirthDate(birthDate || null)
+  const estMaxHr = ageForHr != null ? hrMax(ageForHr) : null
+  const effMaxHr = maxHrMode === 'manual' ? parseInt(maxHr) || null : estMaxHr
+  const restingHrNum = parseInt(restingHr) || null
+  const hrPreview = effMaxHr != null ? hrZones(effMaxHr, restingHrNum) : null
+  const usingKarvonen =
+    effMaxHr != null &&
+    restingHrNum != null &&
+    restingHrNum > 0 &&
+    restingHrNum < effMaxHr
 
   const goal = resolveCalorieGoal(
     {
@@ -168,6 +191,8 @@ export function ProfilePage() {
       calorie_goal_mode: manualMode ? 'manual' : 'calculated',
       manual_calorie_goal: manualMode ? parseInt(manualCal) || null : null,
       macro_targets: macroTargets,
+      max_hr: maxHrMode === 'manual' ? parseInt(maxHr) || null : null,
+      resting_hr: restingHr.trim() ? parseInt(restingHr) || null : null,
     })
     if (weightNum != null && weightNum !== latestWeight) {
       await logWeight.mutateAsync({
@@ -338,6 +363,126 @@ export function ProfilePage() {
                   </option>
                 ))}
               </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Heart rate */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Heart rate</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Max heart rate</Label>
+              <div className="flex gap-2">
+                <label className="flex flex-1 items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="maxhrmode"
+                    checked={maxHrMode === 'age'}
+                    onChange={() => setMaxHrMode('age')}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  From age{estMaxHr != null ? ` (${estMaxHr})` : ''}
+                </label>
+                <label className="flex flex-1 items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="maxhrmode"
+                    checked={maxHrMode === 'manual'}
+                    onChange={() => setMaxHrMode('manual')}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  Set manually
+                </label>
+              </div>
+              {maxHrMode === 'manual' && (
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="e.g. 190"
+                  value={maxHr}
+                  onChange={(e) => setMaxHr(e.target.value)}
+                />
+              )}
+              {maxHrMode === 'age' && estMaxHr == null && (
+                <p className="text-xs text-muted-foreground">
+                  Add your birth date above to estimate this, or set it manually.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="resthr">Resting HR (optional)</Label>
+              <Input
+                id="resthr"
+                type="number"
+                inputMode="numeric"
+                placeholder="e.g. 55"
+                value={restingHr}
+                onChange={(e) => setRestingHr(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Measure on waking. When set, zones use your reserve (Karvonen)
+                for a more personal fit.
+              </p>
+            </div>
+
+            {hrPreview && (
+              <div className="rounded-lg border border-border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-medium">Your zones</span>
+                  <span className="text-xs text-muted-foreground">
+                    {usingKarvonen ? 'Karvonen (reserve)' : '% of max HR'}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {hrPreview.map((z) => (
+                    <div
+                      key={z.zone}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: zoneColor(z.zone) }}
+                      />
+                      <span className="w-5 font-medium">Z{z.zone}</span>
+                      <span className="text-muted-foreground">{z.name}</span>
+                      <span className="ml-auto tabular-nums">
+                        {z.loBpm}–{z.hiBpm} bpm
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowHrTips((s) => !s)}
+                className="text-xs font-medium text-primary"
+              >
+                {showHrTips ? 'Hide' : 'How to find these'}
+              </button>
+              {showHrTips && (
+                <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+                  <p>
+                    <span className="font-medium text-foreground">Max HR</span> —
+                    age estimate (default), a field test (progressive hard efforts
+                    to all-out, read your peak), the highest your watch has
+                    caught, or a lab test.
+                  </p>
+                  <p>
+                    <span className="font-medium text-foreground">
+                      Resting HR
+                    </span>{' '}
+                    — your watch's resting value, or count your pulse for a full
+                    minute right after waking.
+                  </p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

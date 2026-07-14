@@ -81,6 +81,10 @@ export interface Profile {
   // Sparse/nullable; missing regions fall back to DEFAULT_GOALS. 0 = untracked.
   volume_targets: Record<string, number> | null
   eat_back_exercise: boolean
+  // Heart-rate zones: user's max HR (null = estimate from age) + optional resting
+  // HR (enables Karvonen reserve zones when set).
+  max_hr: number | null
+  resting_hr: number | null
   created_at: string
   updated_at: string
 }

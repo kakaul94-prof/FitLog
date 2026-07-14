@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { NutrientFields } from '@/components/NutrientFields'
 import type { FoodDraft } from '@/lib/foodDraft'
 import { useFood, useSaveFood } from '@/features/foods/useFoods'
-import { useAddIngredient } from '@/features/recipes/useRecipes'
+import { useAddIngredient, useRecomputeRecipe } from '@/features/recipes/useRecipes'
 import { useLogFood } from '@/features/diary/useDiary'
 import {
   scaleNutrients,
@@ -30,8 +30,13 @@ export function FoodFormPage() {
   const [params] = useSearchParams()
   const location = useLocation()
   const addToRecipe = params.get('addToRecipe')
+  const ingredientOf = params.get('ingredientOf')
   const returnTo = params.get('returnTo')
-  const backTo = returnTo || (addToRecipe ? `/recipes/${addToRecipe}` : '/foods')
+  const backTo =
+    returnTo ||
+    (addToRecipe || ingredientOf
+      ? `/recipes/${addToRecipe ?? ingredientOf}`
+      : '/foods')
   // When opened from "Add to {meal}", we can log this food straight to the diary.
   const mealParam = params.get('meal')
   const dateParam = params.get('date')
@@ -40,6 +45,7 @@ export function FoodFormPage() {
   const { data: existing } = useFood(id)
   const saveFood = useSaveFood()
   const addIng = useAddIngredient()
+  const recomputeRecipe = useRecomputeRecipe()
   const log = useLogFood()
 
   const [name, setName] = useState('')
@@ -218,6 +224,8 @@ export function FoodFormPage() {
         unit: 'base',
       })
     }
+    // Edited an ingredient's nutrition from a recipe → refresh that recipe's totals.
+    if (ingredientOf) await recomputeRecipe.mutateAsync(ingredientOf)
     // New food created from "Add to {meal}" → return to that list, pre-selected.
     if (logTo && !id) {
       nav(backTo, { state: { addFood: saved } })

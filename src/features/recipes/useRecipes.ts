@@ -35,6 +35,25 @@ async function recompute(recipeFoodId: string) {
     .eq('id', recipeFoodId)
 }
 
+/**
+ * Recompute a recipe's stored per-serving nutrients after one of its ingredient
+ * foods was edited directly (e.g. from the recipe editor → food editor).
+ */
+export function useRecomputeRecipe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (recipeFoodId: string) => {
+      await recompute(recipeFoodId)
+      return { recipeFoodId }
+    },
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ['recipe', d.recipeFoodId] })
+      qc.invalidateQueries({ queryKey: ['recipes'] })
+      qc.invalidateQueries({ queryKey: ['foods'] })
+    },
+  })
+}
+
 export function useRecipes() {
   return useQuery({
     queryKey: ['recipes'],

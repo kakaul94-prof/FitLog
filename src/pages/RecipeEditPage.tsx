@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Plus, X, Search, Copy } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, X, Search, Copy } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -137,6 +137,9 @@ export function RecipeEditPage() {
                 onRemove={() =>
                   removeIng.mutate({ id: row.ri.id, recipeFoodId: id! })
                 }
+                onEdit={() =>
+                  row.food && nav(`/foods/${row.food.id}?ingredientOf=${id}`)
+                }
               />
             ))}
             {ingredients.length === 0 && (
@@ -225,10 +228,12 @@ function IngredientRow({
   row,
   onChange,
   onRemove,
+  onEdit,
 }: {
   row: RecipeIngredientRow
   onChange: (amount: number, unit: string) => void
   onRemove: () => void
+  onEdit: () => void
 }) {
   const { ri, food } = row
   const units = food ? ingredientUnits(food) : []
@@ -255,14 +260,22 @@ function IngredientRow({
 
   return (
     <div className="flex items-center gap-2 p-3">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">
-          {food?.name ?? 'Unknown'}
+      <button
+        type="button"
+        onClick={onEdit}
+        disabled={!food}
+        className="min-w-0 flex-1 text-left active:opacity-70 disabled:pointer-events-none"
+      >
+        <div className="flex items-center gap-1 text-sm font-medium">
+          <span className="truncate">{food?.name ?? 'Unknown'}</span>
+          {food && (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          )}
         </div>
         <div className="text-xs text-muted-foreground">
           {Math.round(kcal)} calories
         </div>
-      </div>
+      </button>
       <Input
         className="h-9 w-14"
         type="number"

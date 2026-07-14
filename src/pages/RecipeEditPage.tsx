@@ -62,7 +62,7 @@ export function RecipeEditPage() {
   const options = (foods ?? []).filter((f) => f.id !== id)
 
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title="Edit recipe"
         left={

@@ -74,7 +74,7 @@ export function ExercisePickerPage() {
   }
 
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title={supersetWith ? 'Add superset exercise' : 'Add exercise'}
         left={

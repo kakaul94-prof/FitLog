@@ -228,7 +228,7 @@ export function ExerciseAddPage() {
   const pending = log.isPending || update.isPending
 
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title={editing ? 'Edit exercise' : 'Add exercise'}
         left={

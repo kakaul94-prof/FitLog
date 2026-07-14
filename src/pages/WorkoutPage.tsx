@@ -236,7 +236,7 @@ export function WorkoutPage() {
     )
 
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title={workout?.name || 'Workout'}
         subtitle={workout ? dateLabel(workout.workout_date) : ''}

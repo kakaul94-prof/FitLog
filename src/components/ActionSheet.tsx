@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom'
-import { ArrowRightLeft, ListChecks, Pencil, Trash2 } from 'lucide-react'
+import { ArrowRightLeft, ListChecks, Pencil, Star, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
@@ -12,6 +12,9 @@ export function ActionSheet({
   selectLabel = 'Select multiple',
   onMove,
   moveLabel = 'Move to meal',
+  onStar,
+  starLabel = 'Star',
+  starred = false,
   onEdit,
   editLabel = 'Edit entry',
   onDelete,
@@ -23,6 +26,9 @@ export function ActionSheet({
   selectLabel?: string
   onMove?: () => void
   moveLabel?: string
+  onStar?: () => void
+  starLabel?: string
+  starred?: boolean
   onEdit: () => void
   editLabel?: string
   onDelete: () => void
@@ -63,11 +69,30 @@ export function ActionSheet({
               <span className="text-sm font-medium">{moveLabel}</span>
             </button>
           )}
+          {onStar && (
+            <button
+              onClick={onStar}
+              className={cn(
+                'flex w-full items-center gap-3 p-4 text-left active:bg-accent',
+                (onSelect || onMove) && 'border-t border-border',
+              )}
+            >
+              <Star
+                className={cn(
+                  'h-4 w-4',
+                  starred
+                    ? 'fill-amber-400 text-amber-400'
+                    : 'text-muted-foreground',
+                )}
+              />
+              <span className="text-sm font-medium">{starLabel}</span>
+            </button>
+          )}
           <button
             onClick={onEdit}
             className={cn(
               'flex w-full items-center gap-3 p-4 text-left active:bg-accent',
-              (onSelect || onMove) && 'border-t border-border',
+              (onSelect || onMove || onStar) && 'border-t border-border',
             )}
           >
             <Pencil className="h-4 w-4 text-muted-foreground" />

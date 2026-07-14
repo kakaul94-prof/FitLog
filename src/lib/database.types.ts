@@ -217,7 +217,7 @@ export interface ExerciseNote {
   notes: string | null
   // Exact curated-cue strings the user has hidden for this exercise.
   hidden_cues: string[]
-  // Exact curated-cue strings the user has starred as especially helpful.
+  // Exact strings — curated cues or your own notes — starred as helpful.
   starred_cues: string[]
   created_at: string
   updated_at: string

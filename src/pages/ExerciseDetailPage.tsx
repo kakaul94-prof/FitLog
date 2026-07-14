@@ -341,10 +341,15 @@ function FormTab({
 
   const removeNote = (idx: number) => {
     if (!exerciseKey) return
+    const text = noteLines[idx]
     const next = noteLines.filter((_, i) => i !== idx)
     upsert.mutate({
       exercise_key: exerciseKey,
       notes: next.length ? next.join('\n') : null,
+      // Drop the note's star so it can't linger or pre-star a re-added note.
+      ...(starred.includes(text)
+        ? { starred_cues: starred.filter((c) => c !== text) }
+        : {}),
     })
   }
 
@@ -361,8 +366,16 @@ function FormTab({
   const saveEdit = () => {
     const trimmed = editDraft.trim()
     if (!exerciseKey || editIdx === null || !trimmed) return
+    const old = noteLines[editIdx]
     const next = noteLines.map((l, i) => (i === editIdx ? trimmed : l))
-    upsert.mutate({ exercise_key: exerciseKey, notes: next.join('\n') })
+    upsert.mutate({
+      exercise_key: exerciseKey,
+      notes: next.join('\n'),
+      // Move the star onto the edited text so it doesn't fall off.
+      ...(starred.includes(old)
+        ? { starred_cues: starred.map((c) => (c === old ? trimmed : c)) }
+        : {}),
+    })
     cancelEdit()
   }
 
@@ -372,7 +385,7 @@ function FormTab({
     upsert.mutate({ exercise_key: exerciseKey, hidden_cues: [...hidden, text] })
   }
 
-  // Star / unstar a curated cue the user finds especially helpful.
+  // Star / unstar a curated cue or one of your own notes (same store).
   const toggleStar = (text: string) => {
     if (!exerciseKey) return
     const next = starred.includes(text)
@@ -476,6 +489,7 @@ function FormTab({
                     marker="•"
                     markerClass="text-primary"
                     text={line}
+                    starred={starred.includes(line)}
                     onLongPress={() => setMenuIdx(i)}
                   />
                 ),
@@ -510,6 +524,14 @@ function FormTab({
       {menuIdx !== null && noteLines[menuIdx] !== undefined && (
         <ActionSheet
           title={noteLines[menuIdx]}
+          starred={starred.includes(noteLines[menuIdx])}
+          starLabel={
+            starred.includes(noteLines[menuIdx]) ? 'Unstar note' : 'Star note'
+          }
+          onStar={() => {
+            toggleStar(noteLines[menuIdx])
+            setMenuIdx(null)
+          }}
           editLabel="Edit note"
           deleteLabel="Delete note"
           onEdit={() => {

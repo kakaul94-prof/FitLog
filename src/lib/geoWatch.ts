@@ -51,7 +51,7 @@ export async function startGeoWatch({
   if (canBackgroundGeo()) {
     const id = await BackgroundGeolocation.addWatcher(
       {
-        backgroundTitle: 'Recording your walk',
+        backgroundTitle: 'Recording your walk/run',
         backgroundMessage: 'FitLog is tracking your distance.',
         requestPermissions: true,
         stale: false,

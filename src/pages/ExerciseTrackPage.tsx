@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
-import { ACTIVITIES } from '@/data/activities'
+import { RECORDER_ACTIVITIES } from '@/data/activities'
 import { useLatestWeight } from '@/features/measurements/useMeasurements'
 import {
   startGeoWatch,
@@ -24,8 +24,8 @@ import {
 import { paceAwareCalories } from '@/lib/calc'
 import { todayISO } from '@/lib/date'
 
-const DIST_ACTS = ACTIVITIES.filter((a) => a.distanceBased)
-const DEFAULT_ACT = 'walking_brisk'
+const DIST_ACTS = RECORDER_ACTIVITIES
+const DEFAULT_ACT = 'walking'
 
 function fmtClock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -152,7 +152,7 @@ export function ExerciseTrackPage() {
   }
 
   const discard = () => {
-    if (phase === 'recording' && !confirm('Discard this walk?')) return
+    if (phase === 'recording' && !confirm('Discard this walk/run?')) return
     teardown()
     nav(-1)
   }
@@ -162,7 +162,7 @@ export function ExerciseTrackPage() {
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
-        title={phase === 'recording' ? 'Recording' : 'Record a walk'}
+        title={phase === 'recording' ? 'Recording' : 'Record a walk/run'}
         left={
           <Button variant="ghost" size="icon" onClick={discard}>
             <ChevronLeft className="h-5 w-5" />

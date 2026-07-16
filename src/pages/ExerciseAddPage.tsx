@@ -261,7 +261,7 @@ export function ExerciseAddPage() {
               onClick={() => nav('/exercise/track')}
             >
               <MapPin className="mr-2 h-4 w-4" />
-              Record a walk with GPS
+              Record a walk/run with GPS
             </Button>
           )}
           <Card>

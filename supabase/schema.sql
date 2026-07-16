@@ -40,6 +40,9 @@ create table if not exists public.profiles (
   -- Per-muscle weekly set goals (sets/week), keyed by RegionId (src/data/bodyMap.ts).
   -- Sparse; missing regions use DEFAULT_GOALS in app code. 0 = untracked.
   volume_targets jsonb,
+  -- Foods taken daily (e.g. a multivitamin): jsonb array of { food_id, servings }.
+  -- Folded into the weekly micro rollup (not the diary). [] = none.
+  daily_supplements jsonb not null default '[]'::jsonb,
   -- Heart-rate zones: max HR (null = estimate from age) + optional resting HR
   -- (enables Karvonen reserve zones when set).
   max_hr smallint,
@@ -50,6 +53,7 @@ create table if not exists public.profiles (
 -- HR settings (added later; idempotent for existing DBs).
 alter table public.profiles add column if not exists max_hr smallint;
 alter table public.profiles add column if not exists resting_hr smallint;
+alter table public.profiles add column if not exists daily_supplements jsonb not null default '[]'::jsonb;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles

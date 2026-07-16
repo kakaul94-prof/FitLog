@@ -22,6 +22,7 @@ import {
   useMicronutrientTrends,
   type MicroStat,
 } from '@/features/insights/useMicronutrientTrends'
+import { useDailySupplements } from '@/features/profile/useDailySupplements'
 import { useCardioZoneTrends } from '@/features/insights/useCardioZoneTrends'
 import { ZoneBars } from '@/components/ZoneBars'
 import {
@@ -472,7 +473,8 @@ function NutritionView() {
 }
 
 function MicronutrientCard({ days }: { days: number }) {
-  const { data } = useMicronutrientTrends(days)
+  const { dailyMicros, supplements } = useDailySupplements()
+  const { data } = useMicronutrientTrends(days, dailyMicros)
   const [showAll, setShowAll] = useState(false)
   if (!data || data.loggedCount === 0) return null
 
@@ -522,6 +524,14 @@ function MicronutrientCard({ days }: { days: number }) {
         <p className="text-[11px] leading-snug text-muted-foreground">
           Targets are FDA Daily Values, averaged over your logged days. Foods
           without micronutrient data count as 0, so amounts can read low.
+          {supplements.length > 0 && (
+            <>
+              {' '}
+              Includes your daily{' '}
+              {supplements.map((s) => s.food.name).join(', ')} on every logged
+              day.
+            </>
+          )}
         </p>
       </CardContent>
     </Card>

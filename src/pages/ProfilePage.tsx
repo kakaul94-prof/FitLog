@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Plus, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
+import { useDailySupplements } from '@/features/profile/useDailySupplements'
+import { useFoods } from '@/features/foods/useFoods'
 import {
   useLatestWeight,
   useLogMeasurement,
@@ -29,6 +31,7 @@ import { useAdaptiveTDEE } from '@/features/insights/useAdaptiveTDEE'
 import { todayISO } from '@/lib/date'
 import type {
   ActivityLevel,
+  DailySupplement,
   MacroMode,
   MacroTargets,
   Sex,
@@ -685,6 +688,9 @@ export function ProfilePage() {
           {updateProfile.isPending ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
         </Button>
 
+        {/* Daily supplements (self-saving, like the Password card below) */}
+        <SupplementsCard />
+
         {/* Password */}
         <Card>
           <CardHeader>
@@ -787,6 +793,160 @@ function MacroRow({
           />
         )}
       </div>
+    </div>
+  )
+}
+
+// A multivitamin / supplement taken every day. Self-saving (each add/remove/dose
+// change persists immediately); its micros feed the weekly Micronutrients card.
+function SupplementsCard() {
+  const { data: profile } = useProfile()
+  const updateProfile = useUpdateProfile()
+  const { supplements } = useDailySupplements()
+  const [search, setSearch] = useState('')
+  const { data: results } = useFoods(search)
+
+  const raw: DailySupplement[] = profile?.daily_supplements ?? []
+  const persist = (next: DailySupplement[]) =>
+    updateProfile.mutate({ daily_supplements: next })
+
+  const add = (foodId: string) => {
+    if (raw.some((s) => s.food_id === foodId)) return
+    persist([...raw, { food_id: foodId, servings: 1 }])
+    setSearch('')
+  }
+  const remove = (foodId: string) =>
+    persist(raw.filter((s) => s.food_id !== foodId))
+  const setServings = (foodId: string, servings: number) =>
+    persist(raw.map((s) => (s.food_id === foodId ? { ...s, servings } : s)))
+
+  const addedIds = new Set(raw.map((s) => s.food_id))
+  const matches = (results ?? [])
+    .filter((f) => !addedIds.has(f.id))
+    .slice(0, 6)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Daily supplements</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          A multivitamin or supplement you take every day. Its micronutrients are
+          added to every logged day in your weekly Micronutrients summary
+          (Progress → Nutrition). It isn&rsquo;t logged to your diary, and changes
+          here save on their own.
+        </p>
+
+        {supplements.length > 0 && (
+          <ul className="space-y-2">
+            {supplements.map((s) => (
+              <li
+                key={s.food_id}
+                className="flex items-center gap-2 rounded-lg border border-border p-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{s.food.name}</p>
+                  {s.food.brand && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {s.food.brand}
+                    </p>
+                  )}
+                </div>
+                <ServingsInput
+                  value={s.servings}
+                  unit={s.food.serving_unit}
+                  onCommit={(v) => setServings(s.food_id, v)}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove ${s.food.name}`}
+                  onClick={() => remove(s.food_id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="space-y-1.5">
+          <Label htmlFor="supp-search">Add a supplement</Label>
+          <Input
+            id="supp-search"
+            placeholder="Search your foods…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search.trim() &&
+            (matches.length > 0 ? (
+              <ul className="overflow-hidden rounded-lg border border-border">
+                {matches.map((f) => (
+                  <li key={f.id}>
+                    <button
+                      type="button"
+                      onClick={() => add(f.id)}
+                      className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
+                    >
+                      <Plus className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                      {f.brand && (
+                        <span className="shrink-0 truncate text-xs text-muted-foreground">
+                          {f.brand}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No matches. Create the supplement as a food first (add it from the
+                Diary), then search for it here.
+              </p>
+            ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Compact servings field that commits on blur / Enter (not per keystroke, so it
+// doesn't fire a save on every digit).
+function ServingsInput({
+  value,
+  unit,
+  onCommit,
+}: {
+  value: number
+  unit: string
+  onCommit: (v: number) => void
+}) {
+  const [v, setV] = useState(String(value))
+  useEffect(() => setV(String(value)), [value])
+  const commit = () => {
+    const n = parseFloat(v)
+    if (!isNaN(n) && n > 0 && n !== value) onCommit(n)
+    else setV(String(value))
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        className="w-14 text-center"
+        type="number"
+        inputMode="decimal"
+        value={v}
+        aria-label="Servings per day"
+        onChange={(e) => setV(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        }}
+      />
+      <span className="w-10 shrink-0 truncate text-xs text-muted-foreground">
+        {unit}
+      </span>
     </div>
   )
 }

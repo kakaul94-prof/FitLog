@@ -41,9 +41,10 @@ export interface MicroTrends {
  * useNutritionTrends' diary fetch (kept a separate hook so that one's shape is
  * untouched); the extra query is the same small range, deduped by TanStack.
  */
-export function useMicronutrientTrends(days: number) {
+export function useMicronutrientTrends(days: number, dailyMicros: Nutrients = {}) {
   return useQuery({
-    queryKey: ['microTrends', days],
+    // `dailyMicros` is in the key so changing your daily supplements recomputes.
+    queryKey: ['microTrends', days, dailyMicros],
     queryFn: async (): Promise<MicroTrends> => {
       const today = todayISO()
       const since = addDaysISO(today, -(days - 1))
@@ -80,6 +81,21 @@ export function useMicronutrientTrends(days: number) {
         }
       }
       const loggedCount = loggedDates.size
+
+      // Fold in daily supplements (e.g. a multivitamin): taken every logged day,
+      // so add each nutrient to every logged day's total and mark it present on
+      // all of them (so coverage never suppresses it). Averaged over logged days
+      // like the diary, so it lifts each nutrient's per-day average by its amount.
+      if (loggedCount > 0) {
+        for (const def of TRACKED) {
+          const add = dailyMicros[def.key]
+          if (typeof add === 'number' && add > 0) {
+            totals.set(def.key, (totals.get(def.key) ?? 0) + add * loggedCount)
+            daysWith.set(def.key, new Set(loggedDates))
+          }
+        }
+      }
+
       const minDays = Math.ceil(loggedCount * MIN_COVERAGE)
 
       const stats: MicroStat[] = TRACKED.map((def) => {

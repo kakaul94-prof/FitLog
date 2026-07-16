@@ -63,6 +63,14 @@ export interface MacroTargets {
   fat: MacroTarget
 }
 
+// A food taken every day (e.g. a multivitamin). Its per-serving nutrients ×
+// `servings` are folded into the weekly Micronutrients rollup as if logged each
+// day — see useDailySupplements / useMicronutrientTrends. Not written to the diary.
+export interface DailySupplement {
+  food_id: string
+  servings: number
+}
+
 export interface Profile {
   id: string
   sex: Sex | null
@@ -80,6 +88,9 @@ export interface Profile {
   // Per-muscle weekly set goals (sets/week), keyed by RegionId from bodyMap.
   // Sparse/nullable; missing regions fall back to DEFAULT_GOALS. 0 = untracked.
   volume_targets: Record<string, number> | null
+  // Supplements taken daily (multivitamin, etc.). Folded into the weekly micro
+  // rollup, not the diary. Empty array = none.
+  daily_supplements: DailySupplement[]
   eat_back_exercise: boolean
   // Heart-rate zones: user's max HR (null = estimate from age) + optional resting
   // HR (enables Karvonen reserve zones when set).

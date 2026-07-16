@@ -24,7 +24,9 @@ import {
 } from '@/features/insights/useMicronutrientTrends'
 import { useDailySupplements } from '@/features/profile/useDailySupplements'
 import { useCardioZoneTrends } from '@/features/insights/useCardioZoneTrends'
+import { useDistanceTrends } from '@/features/insights/useDistanceTrends'
 import { ZoneBars } from '@/components/ZoneBars'
+import { DistanceBars } from '@/components/DistanceBars'
 import {
   movingAverage,
   bmi,
@@ -70,9 +72,12 @@ export function ProgressPage() {
   )
 }
 
+const fmtMi = (mi: number) => (Math.round(mi * 10) / 10).toString()
+
 function CardioView() {
   const [range, setRange] = useState<'7' | '30'>('7')
   const { data, isLoading } = useCardioZoneTrends(Number(range))
+  const { data: dist, isLoading: distLoading } = useDistanceTrends(Number(range))
   return (
     <div className="space-y-4">
       <Segmented
@@ -83,6 +88,46 @@ function CardioView() {
           { value: '30', label: '30 days' },
         ]}
       />
+
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-baseline justify-between">
+            <CardTitle className="text-base">Distance</CardTitle>
+            <span className="text-xs text-muted-foreground">
+              last {range} days
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {distLoading ? (
+            <Skeleton className="h-40 w-full" />
+          ) : !dist || dist.totalMi === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No distance logged in this range. Add miles when you log a walk,
+              run, or hike to see your total here.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-3xl font-bold tabular-nums">
+                  {fmtMi(dist.totalMi)}
+                </span>
+                <span className="text-sm font-medium text-muted-foreground">
+                  mi
+                </span>
+              </div>
+              <DistanceBars bins={dist.bins} />
+              <p className="text-xs text-muted-foreground">
+                {fmtMi(dist.totalMi)} mi across {dist.walks}{' '}
+                {dist.walks === 1 ? 'walk' : 'walks'}
+                {dist.activeDays > 0 &&
+                  ` · avg ${fmtMi(dist.totalMi / dist.activeDays)} mi/day`}
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Time in zone</CardTitle>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, Search, Plus, Pencil, Trash2 } from 'lucide-react'
+import { ChevronLeft, Search, Plus, Pencil, Trash2, MapPin } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -55,12 +55,23 @@ export function ExerciseAddPage() {
 
   // Selected activity (built-in or custom) — met/distanceBased tracked
   // explicitly so custom & free-typed entries keep working on edit.
-  const [name, setName] = useState(ACTIVITIES[0].name)
-  const [met, setMet] = useState(ACTIVITIES[0].met)
-  const [distanceBased, setDistanceBased] = useState(ACTIVITIES[0].distanceBased)
-  const [duration, setDuration] = useState('')
-  const [distance, setDistance] = useState('')
-  const [override, setOverride] = useState('')
+  // Prefill from the GPS recorder (name/met/dist/dur/kcal in the query string).
+  const pf = {
+    name: params.get('name'),
+    met: params.get('met'),
+    dist: params.get('dist'),
+    dur: params.get('dur'),
+    kcal: params.get('kcal'),
+    distanceBased: params.get('distanceBased') === '1',
+  }
+  const [name, setName] = useState(pf.name ?? ACTIVITIES[0].name)
+  const [met, setMet] = useState(pf.met ? Number(pf.met) : ACTIVITIES[0].met)
+  const [distanceBased, setDistanceBased] = useState(
+    pf.name ? pf.distanceBased : ACTIVITIES[0].distanceBased,
+  )
+  const [duration, setDuration] = useState(pf.dur ?? '')
+  const [distance, setDistance] = useState(pf.dist ?? '')
+  const [override, setOverride] = useState(pf.kcal ?? '')
   const [avgHr, setAvgHr] = useState('')
   const [zone, setZone] = useState<number | null>(null)
 
@@ -243,6 +254,16 @@ export function ExerciseAddPage() {
         </div>
       ) : (
         <div className="space-y-4 p-4">
+          {!editing && !pf.name && (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => nav('/exercise/track')}
+            >
+              <MapPin className="mr-2 h-4 w-4" />
+              Record a walk with GPS
+            </Button>
+          )}
           <Card>
             <CardContent className="space-y-3 p-4">
               <div className="space-y-1.5">

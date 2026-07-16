@@ -43,6 +43,7 @@ const UsdaSearchPage = lazyPage(() => import('@/pages/UsdaSearchPage'), 'UsdaSea
 const DiaryEntryPage = lazyPage(() => import('@/pages/DiaryEntryPage'), 'DiaryEntryPage')
 const DiaryNutrientsPage = lazyPage(() => import('@/pages/DiaryNutrientsPage'), 'DiaryNutrientsPage')
 const ExerciseAddPage = lazyPage(() => import('@/pages/ExerciseAddPage'), 'ExerciseAddPage')
+const ExerciseTrackPage = lazyPage(() => import('@/pages/ExerciseTrackPage'), 'ExerciseTrackPage')
 const WorkoutPage = lazyPage(() => import('@/pages/WorkoutPage'), 'WorkoutPage')
 const ExercisePickerPage = lazyPage(() => import('@/pages/ExercisePickerPage'), 'ExercisePickerPage')
 const ExerciseDetailPage = lazyPage(() => import('@/pages/ExerciseDetailPage'), 'ExerciseDetailPage')
@@ -133,6 +134,7 @@ const router = createBrowserRouter(
       <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />
       <Route path="/diary/nutrients" element={<DiaryNutrientsPage />} />
       <Route path="/exercise/add" element={<ExerciseAddPage />} />
+      <Route path="/exercise/track" element={<ExerciseTrackPage />} />
       <Route path="/exercise/edit/:id" element={<ExerciseAddPage />} />
       <Route path="/workout/:id" element={<WorkoutPage />} />
       <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />

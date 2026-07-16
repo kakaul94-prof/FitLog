@@ -16,6 +16,7 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor-mlkit/barcode-scanning": "^8.1.0",
     "@capacitor/android": "^8.4.1",
     "@capacitor/camera": "^8.2.0",

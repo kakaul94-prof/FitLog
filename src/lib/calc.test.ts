@@ -6,6 +6,8 @@ import {
   caloriesForRate,
   cmToFtIn,
   distanceCalories,
+  distanceCoef,
+  paceAwareCalories,
   estimateAdaptiveTDEE,
   estimated1RM,
   ftInToCm,
@@ -349,6 +351,29 @@ describe('distanceCalories', () => {
   it('returns 0 without distance or weight', () => {
     expect(distanceCalories(0, 154, 8)).toBe(0)
     expect(distanceCalories(5, 0, 8)).toBe(0)
+  })
+})
+
+describe('distanceCoef', () => {
+  it('picks the run coefficient at or above 5 mph', () => {
+    expect(distanceCoef(5)).toBe(1.0)
+    expect(distanceCoef(6)).toBe(1.0)
+  })
+  it('picks the walk coefficient below 5 mph', () => {
+    expect(distanceCoef(4.9)).toBe(0.6)
+    expect(distanceCoef(3)).toBe(0.6)
+  })
+})
+
+describe('paceAwareCalories', () => {
+  it('burns more for the same distance at a faster pace', () => {
+    // 2 mi in 20 min = 6 mph (run coef) vs 2 mi in 30 min = 4 mph (walk coef).
+    expect(paceAwareCalories(2, 20, 154)).toBe(225)
+    expect(paceAwareCalories(2, 30, 154)).toBe(135)
+  })
+  it('returns 0 without distance or weight', () => {
+    expect(paceAwareCalories(0, 20, 154)).toBe(0)
+    expect(paceAwareCalories(2, 20, 0)).toBe(0)
   })
 })
 

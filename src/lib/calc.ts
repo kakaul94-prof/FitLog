@@ -432,6 +432,30 @@ export function distanceCalories(
   return Math.round(coef * lbToKg(weightLb) * km)
 }
 
+/** Distance burn coefficient (kcal per kg per km) from measured speed (mph). */
+export function distanceCoef(speedMph: number): number {
+  return speedMph >= 5 ? 1.0 : 0.6 // ~5 mph is the walk→run transition
+}
+
+/**
+ * Pace-aware distance burn — like distanceCalories, but the walk/run
+ * coefficient comes from the MEASURED speed rather than the activity label.
+ * Used by the GPS recorder, which knows your actual pace, so a fast 2-mile
+ * effort isn't under-counted the way a label-based "Walking" entry would be.
+ * `movingMin` is minutes actually moving (excludes stops), so a long pause
+ * doesn't drag the pace down into the walking bracket.
+ */
+export function paceAwareCalories(
+  distanceMi: number,
+  movingMin: number,
+  weightLb: number,
+): number {
+  if (!distanceMi || !weightLb) return 0
+  const km = distanceMi * 1.60934
+  const speedMph = movingMin > 0 ? distanceMi / (movingMin / 60) : 0
+  return Math.round(distanceCoef(speedMph) * lbToKg(weightLb) * km)
+}
+
 // ---------- body ----------
 /** Body Mass Index from weight (lb) and height (cm). */
 export function bmi(weightLb: number, heightCm: number): number {

@@ -7,6 +7,7 @@ import {
   Plus,
   Trash2,
   Flame,
+  Footprints,
   CheckCircle2,
   Circle,
   X,
@@ -37,6 +38,7 @@ import {
 } from '@/features/exercise/useExercise'
 import { useProfile } from '@/features/profile/useProfile'
 import { useLatestWeight } from '@/features/measurements/useMeasurements'
+import { useSteps, useConnectSteps } from '@/features/steps/useSteps'
 import { resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
@@ -368,6 +370,7 @@ export function DiaryPage() {
               to track calories remaining.
             </div>
           )}
+          <StepsRow date={date} />
           {list.length > 0 && (
             <button
               onClick={() => nav(`/diary/nutrients?date=${date}`)}
@@ -777,6 +780,36 @@ function MacroBar({
       <div className="mt-1 text-xs text-muted-foreground">
         {have}/{target}g
       </div>
+    </div>
+  )
+}
+
+// Passive step count from Health Connect (native Android only). Renders nothing
+// on web / older APKs / when Health Connect is unavailable. Before the READ_STEPS
+// grant it shows a "Connect steps" tap; after, the day's total. Display-only.
+function StepsRow({ date }: { date: string }) {
+  const { data } = useSteps(date)
+  const connect = useConnectSteps(date)
+  if (!data || data.status === 'unavailable') return null
+  if (data.status === 'no_permission') {
+    return (
+      <button
+        onClick={() => connect.mutate()}
+        disabled={connect.isPending}
+        className="mt-3 flex w-full items-center justify-center gap-1.5 border-t border-border pt-3 text-xs font-medium text-primary disabled:opacity-60"
+      >
+        <Footprints className="h-4 w-4" />
+        {connect.isPending ? 'Connecting…' : 'Connect steps'}
+      </button>
+    )
+  }
+  return (
+    <div className="mt-3 flex items-center justify-center gap-1.5 border-t border-border pt-3 text-sm text-muted-foreground">
+      <Footprints className="h-4 w-4" />
+      <span className="font-semibold text-foreground">
+        {(data.steps ?? 0).toLocaleString()}
+      </span>{' '}
+      steps
     </div>
   )
 }

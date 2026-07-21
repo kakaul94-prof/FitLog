@@ -87,13 +87,36 @@ async function saveNative(json: string, name: string): Promise<string> {
   return 'Documents'
 }
 
+/**
+ * Native Save-As: stage the JSON to a cache temp file, then let the FileSaver
+ * plugin stream it into the location the user picks. Staging keeps the whole
+ * export out of the JS↔native bridge and out of native memory.
+ */
+async function saveViaDialog(json: string, name: string): Promise<void> {
+  const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem')
+  const tmp = `export-tmp-${Date.now()}.json`
+  await Filesystem.writeFile({
+    path: tmp,
+    data: json,
+    directory: Directory.Cache,
+    encoding: Encoding.UTF8,
+  })
+  const { uri } = await Filesystem.getUri({ path: tmp, directory: Directory.Cache })
+  try {
+    await saveAsNative(name, 'application/json', uri)
+  } finally {
+    // Best-effort cleanup of the temp file (ignore if it's already gone).
+    void Filesystem.deleteFile({ path: tmp, directory: Directory.Cache }).catch(() => {})
+  }
+}
+
 /** Export all of the user's data as a single JSON file (data ownership/backup). */
 export async function exportData(): Promise<ExportResult> {
   const json = await gatherJson()
   const filename = `fitlog-export-${new Date().toISOString().slice(0, 10)}.json`
   if (canSaveAsNative()) {
     // Let the user choose the folder + name via the system Save-As dialog.
-    await saveAsNative(filename, 'application/json', json)
+    await saveViaDialog(json, filename)
     return { saved: true, filename }
   }
   if (canSaveNative()) {

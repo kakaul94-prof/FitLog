@@ -13,13 +13,15 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 
 /**
  * Save-As via the Storage Access Framework. saveAs() opens the system
  * ACTION_CREATE_DOCUMENT dialog so the user picks the folder + filename, then
- * writes the text into the chosen URI. SAF grants per-URI access, so no storage
+ * the chosen location is written by streaming from a staged temp file
+ * (sourceUri) — the payload never crosses the bridge or sits in native memory,
+ * which avoids OOM on large exports. SAF grants per-URI access, so no storage
  * permission is needed. Backing out of the dialog rejects with "cancelled" so
  * the JS side can treat it as a no-op rather than an error.
  */
@@ -30,8 +32,8 @@ public class FileSaverPlugin extends Plugin {
     public void saveAs(PluginCall call) {
         String filename = call.getString("filename", "export.txt");
         String mimeType = call.getString("mimeType", "application/octet-stream");
-        if (call.getString("data") == null) {
-            call.reject("No data to save.");
+        if (call.getString("sourceUri") == null) {
+            call.reject("No source file to save.");
             return;
         }
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -49,30 +51,35 @@ public class FileSaverPlugin extends Plugin {
             return;
         }
         Intent data = result.getData();
-        final Uri uri = data != null ? data.getData() : null;
-        if (uri == null) {
+        final Uri dest = data != null ? data.getData() : null;
+        if (dest == null) {
             call.reject("No location was chosen.");
             return;
         }
-        // The saved call keeps its original arguments, so the payload is still here.
-        final String content = call.getString("data", "");
-        // Write off the main thread: a large export (or a slow/remote SAF target
-        // such as Drive) would otherwise block the UI thread long enough that
-        // Android shows "FitLog isn't responding" (ANR). resolve/reject are
-        // safe to call from a worker thread.
+        final String sourceUri = call.getString("sourceUri", "");
+        // Copy off the main thread (large export / slow SAF target would ANR),
+        // streaming in chunks so memory stays flat. catch Throwable so even an
+        // OutOfMemoryError rejects the call instead of crashing the app.
         new Thread(() -> {
-            try (OutputStream os = getContext().getContentResolver().openOutputStream(uri)) {
-                if (os == null) {
-                    call.reject("Could not open the chosen location.");
+            try (
+                InputStream in = getContext().getContentResolver().openInputStream(Uri.parse(sourceUri));
+                OutputStream out = getContext().getContentResolver().openOutputStream(dest)
+            ) {
+                if (in == null || out == null) {
+                    call.reject("Could not open the file.");
                     return;
                 }
-                os.write(content.getBytes(StandardCharsets.UTF_8));
-                os.flush();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) != -1) {
+                    out.write(buf, 0, n);
+                }
+                out.flush();
                 JSObject ret = new JSObject();
-                ret.put("uri", uri.toString());
+                ret.put("uri", dest.toString());
                 call.resolve(ret);
-            } catch (Exception e) {
-                call.reject("Save failed: " + e.getMessage());
+            } catch (Throwable t) {
+                call.reject("Save failed: " + t.getMessage());
             }
         }).start();
     }

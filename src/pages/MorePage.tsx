@@ -61,6 +61,7 @@ const RESTORE_LABELS: Record<string, string> = {
 export function MorePage() {
   const { user, signOut } = useAuth()
   const [exporting, setExporting] = useState(false)
+  const [exportErr, setExportErr] = useState<string | null>(null)
   const [theme, setTheme] = useTheme()
   const [chime, setChimeOn] = useState(getChime)
   const [notify, setNotifyOn] = useState(() =>
@@ -102,8 +103,16 @@ export function MorePage() {
 
   const doExport = async () => {
     setExporting(true)
+    setExportErr(null)
     try {
       await exportData()
+    } catch (err) {
+      // Dismissing the native share sheet rejects — that's not a real failure.
+      if (!(err instanceof Error && /cancel/i.test(err.message))) {
+        setExportErr(
+          err instanceof Error ? err.message : 'Export failed. Please try again.',
+        )
+      }
     } finally {
       setExporting(false)
     }
@@ -255,6 +264,11 @@ export function MorePage() {
             onChange={onPickBackup}
           />
         </Card>
+        {exportErr && (
+          <p className="px-1 text-center text-sm text-destructive">
+            {exportErr}
+          </p>
+        )}
 
         <Card className="overflow-hidden">
           <Link

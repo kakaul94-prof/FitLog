@@ -49,25 +49,31 @@ public class FileSaverPlugin extends Plugin {
             return;
         }
         Intent data = result.getData();
-        Uri uri = data != null ? data.getData() : null;
+        final Uri uri = data != null ? data.getData() : null;
         if (uri == null) {
             call.reject("No location was chosen.");
             return;
         }
         // The saved call keeps its original arguments, so the payload is still here.
-        String content = call.getString("data", "");
-        try (OutputStream os = getContext().getContentResolver().openOutputStream(uri)) {
-            if (os == null) {
-                call.reject("Could not open the chosen location.");
-                return;
+        final String content = call.getString("data", "");
+        // Write off the main thread: a large export (or a slow/remote SAF target
+        // such as Drive) would otherwise block the UI thread long enough that
+        // Android shows "FitLog isn't responding" (ANR). resolve/reject are
+        // safe to call from a worker thread.
+        new Thread(() -> {
+            try (OutputStream os = getContext().getContentResolver().openOutputStream(uri)) {
+                if (os == null) {
+                    call.reject("Could not open the chosen location.");
+                    return;
+                }
+                os.write(content.getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                JSObject ret = new JSObject();
+                ret.put("uri", uri.toString());
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Save failed: " + e.getMessage());
             }
-            os.write(content.getBytes(StandardCharsets.UTF_8));
-            os.flush();
-            JSObject ret = new JSObject();
-            ret.put("uri", uri.toString());
-            call.resolve(ret);
-        } catch (Exception e) {
-            call.reject("Save failed: " + e.getMessage());
-        }
+        }).start();
     }
 }

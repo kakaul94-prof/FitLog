@@ -23,7 +23,10 @@ import {
   useMicronutrientTrends,
   type MicroStat,
 } from '@/features/insights/useMicronutrientTrends'
+import { useNutrientSources } from '@/features/insights/useNutrientSources'
 import { useDailySupplements } from '@/features/profile/useDailySupplements'
+import { NUTRIENTS, NUTRIENT_BY_KEY, formatNutrient } from '@/lib/nutrients'
+import type { NutrientKey } from '@/lib/database.types'
 import { useCardioZoneTrends } from '@/features/insights/useCardioZoneTrends'
 import { useDistanceTrends } from '@/features/insights/useDistanceTrends'
 import { ZoneBars } from '@/components/ZoneBars'
@@ -530,6 +533,8 @@ function NutritionView() {
           )}
 
           <MicronutrientCard days={days} />
+
+          <TopSourcesCard days={days} />
         </>
       )}
     </>
@@ -618,6 +623,134 @@ function MicroBar({ stat }: { stat: MicroStat }) {
         <div
           className="h-full rounded-full"
           style={{ width: `${width}%`, background: color }}
+        />
+      </div>
+    </div>
+  )
+}
+
+const ENERGY_MACRO_KEYS: NutrientKey[] = ['kcal', 'protein', 'carb', 'fat']
+const MICRO_KEYS: NutrientKey[] = NUTRIENTS.map((n) => n.key).filter(
+  (k) => !ENERGY_MACRO_KEYS.includes(k),
+)
+const SOURCE_TOP_N = 7
+
+/** Format an average-per-day amount: whole numbers (with thousands separators
+ *  for large values like calories), keeping sub-1 traces non-zero. */
+function fmtAmount(n: number, unit: string): string {
+  const s = formatNutrient(n)
+  const num = Number(s)
+  return `${num >= 1000 ? num.toLocaleString() : s}${unit}`
+}
+
+function TopSourcesCard({ days }: { days: number }) {
+  const { data } = useNutrientSources(days)
+  const [key, setKey] = useState<NutrientKey>('protein')
+  if (!data || data.loggedCount === 0) return null
+
+  const def = NUTRIENT_BY_KEY[key]
+  const name = def.label.toLowerCase()
+  const list = data.byNutrient[key] ?? []
+  const shown = list.slice(0, SOURCE_TOP_N)
+  const rest = list.slice(SOURCE_TOP_N)
+  const restAmount = rest.reduce((s, c) => s + c.amount, 0)
+  const restPct = rest.reduce((s, c) => s + c.pct, 0)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Top sources</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Select
+          value={key}
+          onChange={(e) => setKey(e.target.value as NutrientKey)}
+        >
+          <optgroup label="Energy & macros">
+            {ENERGY_MACRO_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {NUTRIENT_BY_KEY[k].label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Micronutrients">
+            {MICRO_KEYS.map((k) => (
+              <option key={k} value={k}>
+                {NUTRIENT_BY_KEY[k].label}
+              </option>
+            ))}
+          </optgroup>
+        </Select>
+
+        {list.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No foods logged with {name} data in this range.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {shown.map((c) => (
+              <SourceBar
+                key={c.id}
+                name={c.name}
+                amount={c.amount}
+                pct={c.pct}
+                unit={def.unit}
+              />
+            ))}
+            {rest.length > 0 && (
+              <SourceBar
+                name="Other foods"
+                amount={restAmount}
+                pct={restPct}
+                unit={def.unit}
+                muted
+              />
+            )}
+          </div>
+        )}
+
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          Average per logged day · share of your {name}. Foods without {name}{' '}
+          data count as 0.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SourceBar({
+  name,
+  amount,
+  pct,
+  unit,
+  muted,
+}: {
+  name: string
+  amount: number
+  pct: number
+  unit: string
+  muted?: boolean
+}) {
+  const width = Math.min(100, Math.round(pct))
+  return (
+    <div>
+      <div className="mb-0.5 flex items-baseline justify-between gap-2 text-xs">
+        <span
+          className={cn(
+            'min-w-0 truncate',
+            muted ? 'text-muted-foreground' : 'text-foreground',
+          )}
+        >
+          {name}
+        </span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">
+          {fmtAmount(amount, unit)} · {Math.round(pct)}%
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full"
+          style={{ width: `${width}%`, background: muted ? GRAY : RING_GREEN }}
         />
       </div>
     </div>

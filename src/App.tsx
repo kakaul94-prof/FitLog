@@ -53,6 +53,7 @@ const MuscleGoalsPage = lazyPage(() => import('@/pages/MuscleGoalsPage'), 'Muscl
 const GoalsOverviewPage = lazyPage(() => import('@/pages/GoalsOverviewPage'), 'GoalsOverviewPage')
 const CustomExercisesPage = lazyPage(() => import('@/pages/CustomExercisesPage'), 'CustomExercisesPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
+const ProgramPage = lazyPage(() => import('@/pages/ProgramPage'), 'ProgramPage')
 const RecipeEditPage = lazyPage(() => import('@/pages/RecipeEditPage'), 'RecipeEditPage')
 
 // Persisted query cache (Phase 1 offline reads): keep entries in memory long
@@ -144,6 +145,7 @@ const router = createBrowserRouter(
       <Route path="/lift/volume/goals" element={<MuscleGoalsPage />} />
       <Route path="/lift/goals" element={<GoalsOverviewPage />} />
       <Route path="/lift/custom-exercises" element={<CustomExercisesPage />} />
+      <Route path="/program" element={<ProgramPage />} />
       <Route path="/routines/:id" element={<RoutineEditPage />} />
       <Route path="/recipes/:id" element={<RecipeEditPage />} />
     </Route>,

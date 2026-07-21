@@ -4,6 +4,7 @@
 //   2. SVG geometry (vendored) — src/data/bodyGeometry.ts
 //   3. mapping (this file): tag/exercise -> our regions, and asset slug -> region
 import { EXERCISES } from '@/data/exercises'
+import { normalizeExerciseName } from '@/data/exerciseAliases'
 
 // Our logical muscle regions. Back is split upper-back (traps folded in) / lats / erector;
 // core is split obliques / rectus / lower abs; delts are front / side / rear.
@@ -360,4 +361,23 @@ export function volumeStatus(sets: number, goal: number): string {
   if (p < 1.0) return 'near goal'
   if (p < 1.3) return 'at goal'
   return 'over goal'
+}
+
+/** Resolve one exercise's fractional muscle-region contribution, in priority
+ *  order: per-key override → normalized-name match → tag (a built-in's muscle,
+ *  or a custom exercise's `muscle`). undefined = unmapped. Shared by logged
+ *  volume (useMuscleVolume) and planned volume (the program). `customTag` maps
+ *  `custom:<id>` → its muscle. */
+export function resolveContrib(
+  exerciseKey: string,
+  exerciseName: string | null,
+  customTag: Map<string, string | null>,
+): Partial<Record<RegionId, number>> | undefined {
+  const tag = exerciseKey.startsWith('custom:')
+    ? customTag.get(exerciseKey) ?? null
+    : BUILTIN_TAG[exerciseKey] ?? null
+  const nameContrib = exerciseName
+    ? NAME_CONTRIB[normalizeExerciseName(exerciseName)]
+    : undefined
+  return EXERCISE_OVERRIDE[exerciseKey] ?? nameContrib ?? contribForTag(tag)
 }

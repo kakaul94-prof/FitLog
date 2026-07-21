@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   currentE1RM,
   formatPace,
+  nextRoutineId,
   projectGoalEta,
   requiredPace,
   suggestNext,
@@ -230,5 +231,34 @@ describe('projectGoalEta', () => {
     )
     expect(r.etaISO).toBeNull()
     expect(r.trendingUp).toBe(false)
+  })
+})
+
+describe('nextRoutineId', () => {
+  const routines = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+  it('returns null when there are no routines', () => {
+    expect(nextRoutineId([], [{ source_routine_id: 'a' }])).toBeNull()
+  })
+  it('starts at the first routine when nothing templated has been done', () => {
+    expect(nextRoutineId(routines, [])).toBe('a')
+    expect(nextRoutineId(routines, [{ source_routine_id: null }])).toBe('a')
+  })
+  it('advances to the next routine after the last one trained', () => {
+    // workouts are newest-first
+    expect(nextRoutineId(routines, [{ source_routine_id: 'a' }])).toBe('b')
+  })
+  it('wraps around after the last routine', () => {
+    expect(nextRoutineId(routines, [{ source_routine_id: 'c' }])).toBe('a')
+  })
+  it('skips empty workouts and deleted templates to the most recent valid one', () => {
+    const workouts = [
+      { source_routine_id: null }, // empty workout (newest)
+      { source_routine_id: 'gone' }, // template since deleted
+      { source_routine_id: 'b' }, // most recent surviving template
+    ]
+    expect(nextRoutineId(routines, workouts)).toBe('c')
+  })
+  it('handles a single-routine rotation', () => {
+    expect(nextRoutineId([{ id: 'a' }], [{ source_routine_id: 'a' }])).toBe('a')
   })
 })

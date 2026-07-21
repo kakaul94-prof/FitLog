@@ -1,15 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import {
-  BUILTIN_TAG,
-  EXERCISE_OVERRIDE,
-  NAME_CONTRIB,
   REGION_IDS,
   REGION_LABEL,
-  contribForTag,
+  resolveContrib,
   type RegionId,
 } from '@/data/bodyMap'
-import { normalizeExerciseName } from '@/data/exerciseAliases'
 
 export interface MuscleBar {
   id: RegionId
@@ -89,14 +85,11 @@ export function useMuscleVolume(start: string, end: string) {
           // that adding an exercise inserts.
           if (s.reps == null && s.weight_lb == null) continue
           totalSets++
-          const tag = s.exercise_key.startsWith('custom:')
-            ? customTag.get(s.exercise_key) ?? null
-            : BUILTIN_TAG[s.exercise_key] ?? null
-          const nameContrib = s.exercise_name
-            ? NAME_CONTRIB[normalizeExerciseName(s.exercise_name)]
-            : undefined
-          const contrib =
-            EXERCISE_OVERRIDE[s.exercise_key] ?? nameContrib ?? contribForTag(tag)
+          const contrib = resolveContrib(
+            s.exercise_key,
+            s.exercise_name,
+            customTag,
+          )
           if (!contrib) {
             unmapped++
             const name = s.exercise_name?.trim() || s.exercise_key

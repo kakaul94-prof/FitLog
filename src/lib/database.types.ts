@@ -71,6 +71,15 @@ export interface DailySupplement {
   servings: number
 }
 
+// A dated calorie-goal change: `goal` applies from `from` (ISO date) until the
+// next entry's date. Lets past diary days keep the goal that was in effect then
+// instead of retroactively adopting the current one — see goalForDate /
+// recordGoalChange in calc.ts. Empty history = fall back to the live goal.
+export interface GoalHistoryEntry {
+  from: string
+  goal: number
+}
+
 export interface Profile {
   id: string
   sex: Sex | null
@@ -84,6 +93,9 @@ export interface Profile {
   goal_weight_lb: number | null
   calorie_goal_mode: 'calculated' | 'manual'
   manual_calorie_goal: number | null
+  // Dated log of calorie-goal changes (see GoalHistoryEntry). Empty = nothing
+  // recorded yet, so every day uses the live goal.
+  calorie_goal_history: GoalHistoryEntry[]
   macro_targets: MacroTargets
   // Per-muscle weekly set goals (sets/week), keyed by RegionId from bodyMap.
   // Sparse/nullable; missing regions fall back to DEFAULT_GOALS. 0 = untracked.
@@ -96,8 +108,24 @@ export interface Profile {
   // HR (enables Karvonen reserve zones when set).
   max_hr: number | null
   resting_hr: number | null
+  // Workout program: ordered rotation of templates + rest days (sequential
+  // model). null / empty sequence = no program set up yet.
+  program: ProgramState | null
   created_at: string
   updated_at: string
+}
+
+// One slot in the program rotation: a template reference or a rest day. `id` is
+// a stable local key for reordering (independent of routineId, which may repeat).
+export type ProgramItem =
+  | { id: string; kind: 'routine'; routineId: string }
+  | { id: string; kind: 'rest' }
+
+export interface ProgramState {
+  sequence: ProgramItem[]
+  // Manually pinned next template (routineId); consumed once a workout is logged
+  // from it, after which "next" resumes deriving from history. null/absent = auto.
+  nextOverride?: string | null
 }
 
 // An alternate serving unit for a food (e.g. "1 cup = 240 g"). Nutrition

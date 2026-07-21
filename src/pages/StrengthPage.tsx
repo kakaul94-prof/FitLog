@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Plus,
   Dumbbell,
   Play,
+  ChevronRight,
   CalendarDays,
   PersonStanding,
   ClipboardList,
@@ -24,6 +25,9 @@ import {
   useUpdateWorkout,
 } from '@/features/strength/useStrength'
 import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
+import { useProfile } from '@/features/profile/useProfile'
+import { nextRoutineId } from '@/lib/progression'
+import { nextProgramRoutineId } from '@/lib/program'
 import { useLongPress } from '@/lib/useLongPress'
 import { todayISO, dateLabel } from '@/lib/date'
 import type { Workout } from '@/lib/database.types'
@@ -32,6 +36,7 @@ export function StrengthPage() {
   const nav = useNavigate()
   const { data: workouts } = useWorkouts()
   const { data: routines } = useRoutines()
+  const { data: profile } = useProfile()
   const create = useCreateWorkout()
   const startFrom = useStartFromRoutine()
   const del = useDeleteWorkout()
@@ -39,6 +44,18 @@ export function StrengthPage() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [actionFor, setActionFor] = useState<Workout | null>(null)
   const [editing, setEditing] = useState<Workout | null>(null)
+
+  // Next template in the rotation: the one after your most recently trained
+  // template (wraps around, skipping rest). Uses your Program if you've set one
+  // up, otherwise falls back to a simple rotation over all templates.
+  const nextRoutine = useMemo(() => {
+    const program = profile?.program
+    const id =
+      program && program.sequence?.length
+        ? nextProgramRoutineId(program.sequence, workouts ?? [], program.nextOverride)
+        : nextRoutineId(routines ?? [], workouts ?? [])
+    return (routines ?? []).find((r) => r.id === id) ?? null
+  }, [profile, routines, workouts])
 
   const startEmpty = async () => {
     const w = await create.mutateAsync({ workout_date: todayISO(), name: 'Workout' })
@@ -76,6 +93,37 @@ export function StrengthPage() {
         }
       />
       <div className="space-y-5 p-4">
+        {nextRoutine && (
+          <div>
+            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
+              Next up
+            </h2>
+            <Card className="flex items-center gap-3 p-3">
+              <button
+                onClick={() => nav('/program')}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">
+                    {nextRoutine.name}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Next in your rotation
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+              <Button
+                size="sm"
+                onClick={() => startTemplate(nextRoutine.id, nextRoutine.name)}
+                disabled={startFrom.isPending}
+              >
+                <Play className="h-3.5 w-3.5" /> Start
+              </Button>
+            </Card>
+          </div>
+        )}
+
         <div>
           <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
             Templates

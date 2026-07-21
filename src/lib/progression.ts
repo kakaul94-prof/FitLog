@@ -340,3 +340,25 @@ export function projectGoalEta(
     reached,
   }
 }
+
+// --- Routine rotation ------------------------------------------------------
+
+/** Pick the next template in a simple rotation. Given the routines in display
+ *  order and workouts newest-first, find the most recent workout that came from
+ *  a routine still in the list and return the *next* routine in order (wrapping
+ *  around). Falls back to the first routine when nothing templated has been done
+ *  yet, or the last one performed was an empty workout / a deleted template.
+ *  Returns null only when there are no routines. */
+export function nextRoutineId(
+  routines: { id: string }[],
+  workouts: { source_routine_id: string | null }[],
+): string | null {
+  if (routines.length === 0) return null
+  const lastId = workouts.find(
+    (w) =>
+      w.source_routine_id && routines.some((r) => r.id === w.source_routine_id),
+  )?.source_routine_id
+  if (!lastId) return routines[0].id
+  const i = routines.findIndex((r) => r.id === lastId)
+  return routines[(i + 1) % routines.length].id
+}

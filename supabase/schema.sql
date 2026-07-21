@@ -54,6 +54,8 @@ create table if not exists public.profiles (
 alter table public.profiles add column if not exists max_hr smallint;
 alter table public.profiles add column if not exists resting_hr smallint;
 alter table public.profiles add column if not exists daily_supplements jsonb not null default '[]'::jsonb;
+-- Workout program (ordered rotation of templates + rest days). See migration_program.sql.
+alter table public.profiles add column if not exists program jsonb;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles

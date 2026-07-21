@@ -633,10 +633,10 @@ const ENERGY_MACRO_KEYS: NutrientKey[] = ['kcal', 'protein', 'carb', 'fat']
 const MICRO_KEYS: NutrientKey[] = NUTRIENTS.map((n) => n.key).filter(
   (k) => !ENERGY_MACRO_KEYS.includes(k),
 )
-const SOURCE_TOP_N = 7
+const SOURCE_TOP_N = 5
 
-/** Format an average-per-day amount: whole numbers (with thousands separators
- *  for large values like calories), keeping sub-1 traces non-zero. */
+/** Format a total amount: whole numbers (with thousands separators for large
+ *  values like calories), keeping sub-1 traces non-zero. */
 function fmtAmount(n: number, unit: string): string {
   const s = formatNutrient(n)
   const num = Number(s)
@@ -710,8 +710,8 @@ function TopSourcesCard({ days }: { days: number }) {
         )}
 
         <p className="text-[11px] leading-snug text-muted-foreground">
-          Average per logged day · share of your {name}. Foods without {name}{' '}
-          data count as 0.
+          Total over the last {days} days · share of your {name}. Foods without{' '}
+          {name} data count as 0.
         </p>
       </CardContent>
     </Card>

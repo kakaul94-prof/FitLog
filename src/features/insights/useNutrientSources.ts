@@ -8,14 +8,14 @@ export interface FoodContributor {
   /** food_id, or `name:<food_name>` for quick-adds with no source food. */
   id: string
   name: string
-  /** Average per logged day (raw; format at display). */
+  /** Total over the window (raw; format at display). */
   amount: number
   /** Share of the nutrient's window total, 0–100 (raw; round at display). */
   pct: number
 }
 
 export interface NutrientSources {
-  /** Distinct days with ≥1 entry — the per-day average denominator. */
+  /** Distinct days with ≥1 entry (0 = nothing logged, so hide the card). */
   loggedCount: number
   /** Ranked high→low per nutrient; foods contributing 0 are omitted. */
   byNutrient: Record<NutrientKey, FoodContributor[]>
@@ -24,8 +24,8 @@ export interface NutrientSources {
 /**
  * Which foods drove each nutrient over the last `days`. Groups the window's
  * diary entries by food (snapshotted `food_name` + `nutrients × servings`) and
- * returns, per nutrient, a ranked contributor list with each food's average per
- * logged day and its share of the nutrient's total. Mirrors the other insight
+ * returns, per nutrient, a ranked contributor list with each food's total over
+ * the window and its share of the nutrient's total. Mirrors the other insight
  * hooks' diary fetch (separate hook, one small range query, TanStack-cached).
  */
 export function useNutrientSources(days: number) {
@@ -94,7 +94,7 @@ export function useNutrientSources(days: number) {
               list.push({
                 id,
                 name: names.get(id) ?? 'Food',
-                amount: v / loggedCount,
+                amount: v,
                 pct: (v / total) * 100,
               })
             }

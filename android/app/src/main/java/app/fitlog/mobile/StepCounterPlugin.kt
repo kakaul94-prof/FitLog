@@ -70,7 +70,7 @@ class StepCounterPlugin : Plugin() {
 
     /** Launch Health Connect's own grant screen for READ_STEPS; resolves { granted }. */
     @PluginMethod
-    fun requestPermissions(call: PluginCall) {
+    override fun requestPermissions(call: PluginCall) {
         if (!available()) {
             call.resolve(JSObject().put("granted", false))
             return

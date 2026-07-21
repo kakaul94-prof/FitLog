@@ -184,7 +184,7 @@ the browser PWA / older APKs fall back gracefully.
 - (15) AI meal-photo logging — snap a plate -> estimate foods/calories (reuses the Workers AI pattern; treat as a confirm-first prefill, accuracy is rough). Effort: medium-high.
 - (16) Keep screen awake during workouts (@capacitor/keep-awake) while a workout / rest timer is active. Effort: low.
 - (17) Quick Settings tile — pull-down tile for Quick add / Log weight. Effort: medium (native).
-- (18) Data export/backup to device — write the existing JSON backup to device storage / share sheet (@capacitor/filesystem + share). Extends the done in-app JSON export/restore. Effort: low.
+- (18) [DONE 2026-07-21 dev] Data export/backup to device — native Save-As dialog: a custom FileSaver plugin (SAF ACTION_CREATE_DOCUMENT) streams the JSON backup to a user-chosen folder/filename; falls back to the Documents folder on older APKs and a browser download on web. Dropped the planned share sheet in favour of a real Save-As so the user picks the location. commits a94b63a + cda8abd (dev).
 - (19) Material You dynamic color + follow system dark mode — wire existing theme tokens to Android system dark + wallpaper colors. Extends the done Light/Dark/System toggle. Effort: low-medium.
 - (20) Wear OS companion — glance calories-remaining, log water/weight, run the rest timer from the wrist. Separate Wear module. Effort: high.
 

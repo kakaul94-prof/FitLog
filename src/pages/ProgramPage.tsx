@@ -511,7 +511,7 @@ export function ProgramPage() {
                     </span>
                     {isCurrent && (
                       <span className="shrink-0 rounded-full border border-primary/50 px-2 py-0.5 text-[10px] font-medium text-primary">
-                        Current
+                        Last done
                       </span>
                     )}
                     {isNext && (

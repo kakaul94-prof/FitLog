@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ActionSheet } from '@/components/ActionSheet'
-import { CalorieRing, RING_GREEN } from '@/components/CalorieRing'
+import { CalorieRing, RING_GREEN, RING_OVER } from '@/components/CalorieRing'
 import { ZoneBadge } from '@/components/ZoneBadge'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -39,6 +39,11 @@ import {
 import { useProfile } from '@/features/profile/useProfile'
 import { useLatestWeight } from '@/features/measurements/useMeasurements'
 import { useSteps, useConnectSteps } from '@/features/steps/useSteps'
+import {
+  useMicronutrientTrends,
+  type MicroStat,
+} from '@/features/insights/useMicronutrientTrends'
+import { useDailySupplements } from '@/features/profile/useDailySupplements'
 import { goalForDate, resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
@@ -375,6 +380,7 @@ export function DiaryPage() {
             </div>
           )}
           <StepsRow date={date} />
+          <WeeklyNudge date={date} />
           {list.length > 0 && (
             <button
               onClick={() => nav(`/diary/nutrients?date=${date}`)}
@@ -814,6 +820,53 @@ function StepsRow({ date }: { date: string }) {
         {(data.steps ?? 0).toLocaleString()}
       </span>{' '}
       steps
+    </div>
+  )
+}
+
+// Weekly micronutrient nudge on the diary hero: a plain-language pointer to
+// what you've been consistently low/high on over the last 7 logged days.
+// Reuses the Progress → Nutrition analysis (useMicronutrientTrends) and folds
+// in a daily supplement. It's a rolling weekly insight, so it shows on TODAY's
+// view only — not when you swipe to a past/future day. Hidden entirely on an
+// on-track week or before anything's logged this week.
+function WeeklyNudge({ date }: { date: string }) {
+  const nav = useNavigate()
+  const { dailyMicros } = useDailySupplements()
+  const { data } = useMicronutrientTrends(7, dailyMicros)
+  if (date !== todayISO() || !data || data.loggedCount === 0) return null
+
+  const low = data.stats.filter((s) => s.direction === 'floor' && s.flagged)
+  // Curated to the two limits worth a daily nudge; Progress shows the rest.
+  const over = data.stats.filter(
+    (s) => s.flagged && (s.key === 'sodium' || s.key === 'added_sugar'),
+  )
+  if (low.length === 0 && over.length === 0) return null
+
+  const names = (arr: MicroStat[]) => {
+    const shown = arr.slice(0, 3).map((s) => s.label).join(', ')
+    return arr.length > 3 ? `${shown} +${arr.length - 3} more` : shown
+  }
+
+  return (
+    <div className="mt-3 space-y-1.5 border-t border-border pt-3">
+      {low.length > 0 && (
+        <button
+          onClick={() => nav('/progress?view=nutrition')}
+          className="block w-full text-center text-xs font-medium text-primary"
+        >
+          Low this week: {names(low)} →
+        </button>
+      )}
+      {over.length > 0 && (
+        <button
+          onClick={() => nav('/progress?view=nutrition')}
+          className="block w-full text-center text-xs font-medium"
+          style={{ color: RING_OVER }}
+        >
+          Over this week: {names(over)} →
+        </button>
+      )}
     </div>
   )
 }

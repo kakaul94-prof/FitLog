@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
 import { RING_GREEN, RING_OVER } from '@/components/CalorieRing'
@@ -47,7 +48,12 @@ const GREEN = '#16a34a'
 const GRAY = '#9ca3af'
 
 export function ProgressPage() {
-  const [view, setView] = useState<'body' | 'nutrition' | 'cardio'>('body')
+  // Allow deep-linking to a segment, e.g. the diary's weekly nudge → Nutrition.
+  const [params] = useSearchParams()
+  const requested = params.get('view')
+  const [view, setView] = useState<'body' | 'nutrition' | 'cardio'>(
+    requested === 'nutrition' || requested === 'cardio' ? requested : 'body',
+  )
   return (
     <div>
       <PageHeader title="Progress" />

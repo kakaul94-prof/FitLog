@@ -25,11 +25,15 @@ export const TABLES = [
   'measurements',
 ]
 
-/** True inside the packaged app AND when this APK bundles the file plugins. */
-const canShareNative = () =>
-  Capacitor.isNativePlatform() &&
-  Capacitor.isPluginAvailable('Filesystem') &&
-  Capacitor.isPluginAvailable('Share')
+export type ExportResult =
+  /** Web/PWA: the browser download was triggered. */
+  | { saved: false }
+  /** Native: the file was written to a device folder the user can browse to. */
+  | { saved: true; location: string; filename: string }
+
+/** True inside the packaged app AND when this APK bundles the Filesystem plugin. */
+const canSaveNative = () =>
+  Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('Filesystem')
 
 /** Pull every owner-scoped table into one JSON string. */
 async function gatherJson(): Promise<string> {
@@ -62,39 +66,38 @@ function downloadWeb(json: string, name: string) {
 
 /**
  * Native (Android WebView): a blob <a download> is a silent no-op there, so
- * write the file to app cache and open the share sheet — the user can then save
- * it to Files/Drive/email. `import()` keeps the plugins out of the web bundle.
+ * write the file into the device's public Documents folder. On Android 11+ the
+ * app can freely create its own files there with no permission prompt, and the
+ * user can open it from the Files app → Documents. `import()` keeps the plugin
+ * out of the web bundle.
  */
-async function shareNative(json: string, name: string) {
+async function saveNative(json: string, name: string): Promise<string> {
   const { Filesystem, Directory, Encoding } = await import('@capacitor/filesystem')
-  const { Share } = await import('@capacitor/share')
-  const { uri } = await Filesystem.writeFile({
+  await Filesystem.writeFile({
     path: name,
     data: json,
-    directory: Directory.Cache,
+    directory: Directory.Documents,
     encoding: Encoding.UTF8,
   })
-  await Share.share({
-    title: 'FitLog data export',
-    url: uri,
-    dialogTitle: 'Save or share your FitLog backup',
-  })
+  return 'Documents'
 }
 
 /** Export all of the user's data as a single JSON file (data ownership/backup). */
-export async function exportData() {
+export async function exportData(): Promise<ExportResult> {
   const json = await gatherJson()
-  const name = `fitlog-export-${new Date().toISOString().slice(0, 10)}.json`
-  if (canShareNative()) {
-    await shareNative(json, name)
-  } else if (Capacitor.isNativePlatform()) {
-    // In the app but on an APK that predates the file plugins: the browser
+  const filename = `fitlog-export-${new Date().toISOString().slice(0, 10)}.json`
+  if (canSaveNative()) {
+    const location = await saveNative(json, filename)
+    return { saved: true, location, filename }
+  }
+  if (Capacitor.isNativePlatform()) {
+    // In the app but on an APK that predates the file plugin: the browser
     // download path can't work inside the WebView, so say so instead of
     // appearing to do nothing.
     throw new Error(
       'Update the FitLog app to the latest version to export your data.',
     )
-  } else {
-    downloadWeb(json, name)
   }
+  downloadWeb(json, filename)
+  return { saved: false }
 }

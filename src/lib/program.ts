@@ -1,4 +1,4 @@
-import type { ProgramItem } from './database.types'
+import type { DeloadState, ProgramItem } from './database.types'
 
 // Sequential-rotation logic for the workout program. Pure + framework-free so
 // it's unit-tested and shared by the Program page and the Exercise "Next up"
@@ -81,4 +81,38 @@ export interface CycleCounts {
 export function cycleCounts(sequence: ProgramItem[]): CycleCounts {
   const rests = sequence.filter((it) => it.kind === 'rest').length
   return { length: sequence.length, lifts: sequence.length - rests, rests }
+}
+
+// --- Deload ---------------------------------------------------------------
+// A deload is a manually-started "lighter" cycle: advisory only (a banner + a
+// reduced planned-volume readout), it never changes what you actually log.
+
+/** Aim for this fraction of normal volume during a deload (display-only guide). */
+export const DELOAD_VOLUME_FACTOR = 0.5
+
+/** How many workouts in `workouts` came from a template in the program. Note:
+ *  reads the loaded (recent) history, so it's approximate for very long logs. */
+export function programWorkoutCount(
+  routineIds: string[],
+  workouts: { source_routine_id: string | null }[],
+): number {
+  const inProgram = new Set(routineIds)
+  return workouts.filter(
+    (w) => w.source_routine_id && inProgram.has(w.source_routine_id),
+  ).length
+}
+
+/** Whether a manually-started deload is still running: it stays active until one
+ *  cycle's worth of program workouts have been logged since it began, then
+ *  auto-ends. `liftsPerCycle` is cycleCounts(sequence).lifts. */
+export function deloadActive(
+  deload: DeloadState | null | undefined,
+  routineIds: string[],
+  workouts: { source_routine_id: string | null }[],
+  liftsPerCycle: number,
+): boolean {
+  if (!deload || liftsPerCycle <= 0) return false
+  const done =
+    programWorkoutCount(routineIds, workouts) - deload.startProgramWorkouts
+  return done < liftsPerCycle
 }

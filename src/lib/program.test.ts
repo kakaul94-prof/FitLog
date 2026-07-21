@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   cycleCounts,
   currentProgramIndex,
+  deloadActive,
   nextProgramRoutineId,
   programRoutineIds,
+  programWorkoutCount,
   upcomingProgramRoutineIds,
 } from './program'
 import type { ProgramItem } from './database.types'
@@ -82,5 +84,37 @@ describe('upcomingProgramRoutineIds', () => {
 describe('cycleCounts', () => {
   it('counts total, template, and rest days', () => {
     expect(cycleCounts(seqRest)).toEqual({ length: 5, lifts: 3, rests: 2 })
+  })
+})
+
+describe('programWorkoutCount', () => {
+  it('counts only workouts from in-program templates', () => {
+    const w = [
+      { source_routine_id: 'a' },
+      { source_routine_id: 'x' }, // not in the program
+      { source_routine_id: 'b' },
+      { source_routine_id: null },
+    ]
+    expect(programWorkoutCount(['a', 'b', 'c'], w)).toBe(2)
+  })
+})
+
+describe('deloadActive', () => {
+  const ids = ['a', 'b', 'c']
+  const done = (n: number) =>
+    Array.from({ length: n }, () => ({ source_routine_id: 'a' }))
+  it('is inactive with no deload', () => {
+    expect(deloadActive(null, ids, done(5), 3)).toBe(false)
+  })
+  it('is inactive when the program has no training days', () => {
+    expect(deloadActive({ startProgramWorkouts: 0 }, ids, done(5), 0)).toBe(false)
+  })
+  it('stays active within one cycle of the start', () => {
+    // started at 2 program workouts, now 4 → 2 of 3 done
+    expect(deloadActive({ startProgramWorkouts: 2 }, ids, done(4), 3)).toBe(true)
+  })
+  it('auto-ends after one cycle of workouts', () => {
+    // started at 2, now 5 → 3 of 3 done
+    expect(deloadActive({ startProgramWorkouts: 2 }, ids, done(5), 3)).toBe(false)
   })
 })

@@ -121,11 +121,20 @@ export type ProgramItem =
   | { id: string; kind: 'routine'; routineId: string }
   | { id: string; kind: 'rest' }
 
+export interface DeloadState {
+  // Count of program workouts logged when the deload was started; it stays
+  // active until one cycle's worth of workouts have been logged since (then it
+  // auto-ends). See deloadActive in lib/program.ts.
+  startProgramWorkouts: number
+}
+
 export interface ProgramState {
   sequence: ProgramItem[]
   // Manually pinned next template (routineId); consumed once a workout is logged
   // from it, after which "next" resumes deriving from history. null/absent = auto.
   nextOverride?: string | null
+  // Manually-started deload (advisory lighter cycle). null/absent = not deloading.
+  deload?: DeloadState | null
 }
 
 // An alternate serving unit for a food (e.g. "1 cup = 240 g"). Nutrition

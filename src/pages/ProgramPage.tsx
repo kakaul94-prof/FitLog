@@ -20,6 +20,7 @@ import {
   SkipForward,
   Target,
   Trash2,
+  TrendingDown,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -31,14 +32,18 @@ import { useProgramPlannedVolume } from '@/features/strength/useProgram'
 import {
   cycleCounts,
   currentProgramIndex,
+  DELOAD_VOLUME_FACTOR,
+  deloadActive,
   nextProgramRoutineId,
   programRoutineIds,
+  programWorkoutCount,
   upcomingProgramRoutineIds,
 } from '@/lib/program'
-import type { ProgramItem } from '@/lib/database.types'
+import type { DeloadState, ProgramItem } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
 const uid = () => Math.random().toString(36).slice(2)
+const round1 = (n: number) => Math.round(n * 10) / 10
 
 // The sequence slot to badge as "Next up": the first template slot at/after the
 // current day (wrapping) whose routine matches the computed next id.
@@ -66,6 +71,7 @@ export function ProgramPage() {
 
   const [seq, setSeq] = useState<ProgramItem[]>([])
   const [override, setOverride] = useState<string | null>(null)
+  const [deload, setDeload] = useState<DeloadState | null>(null)
   const [adding, setAdding] = useState(false)
   const [actionFor, setActionFor] = useState<{ item: ProgramItem; index: number } | null>(null)
   const loadedRef = useRef(false)
@@ -79,10 +85,12 @@ export function ProgramPage() {
       loadedRef.current = true
       setSeq(p.sequence)
       setOverride(p.nextOverride ?? null)
+      setDeload(p.deload ?? null)
     } else if (routines) {
       loadedRef.current = true
       setSeq(routines.map((r) => ({ id: uid(), kind: 'routine', routineId: r.id })))
       setOverride(p?.nextOverride ?? null)
+      setDeload(p?.deload ?? null)
     }
   }, [profile, routines])
 
@@ -99,17 +107,28 @@ export function ProgramPage() {
   const routineIds = programRoutineIds(seq)
   const upcoming = upcomingProgramRoutineIds(seq, history, override, 3)
   const planned = useProgramPlannedVolume(routineIds)
+  const isDeload = deloadActive(deload, routineIds, history, counts.lifts)
 
-  // --- Persist every edit immediately (settings-style, no Save button) --------
-  const commit = (nextSeq: ProgramItem[], nextOverride: string | null) => {
-    setSeq(nextSeq)
-    setOverride(nextOverride)
-    update.mutate({ program: { sequence: nextSeq, nextOverride } })
-  }
   const seqRef = useRef(seq)
   seqRef.current = seq
   const overrideRef = useRef(override)
   overrideRef.current = override
+  const deloadRef = useRef(deload)
+  deloadRef.current = deload
+
+  // --- Persist every edit immediately (settings-style, no Save button) --------
+  const commit = (
+    nextSeq: ProgramItem[],
+    nextOverride: string | null,
+    nextDeload: DeloadState | null = deloadRef.current,
+  ) => {
+    setSeq(nextSeq)
+    setOverride(nextOverride)
+    setDeload(nextDeload)
+    update.mutate({
+      program: { sequence: nextSeq, nextOverride, deload: nextDeload },
+    })
+  }
   const commitRef = useRef(commit)
   commitRef.current = commit
 
@@ -140,6 +159,11 @@ export function ProgramPage() {
     }
     setActionFor(null)
   }
+  const startDeload = () =>
+    commit(seq, override, {
+      startProgramWorkouts: programWorkoutCount(routineIds, history),
+    })
+  const endDeload = () => commit(seq, override, null)
 
   // --- Long-press drag-to-reorder (ported from RoutineEditPage, flat items) ----
   const containerRef = useRef<HTMLDivElement>(null)
@@ -377,17 +401,45 @@ export function ProgramPage() {
         {/* Cycle summary */}
         {seq.length > 0 && (
           <Card className="p-3">
-            <div className="mb-2 flex items-center gap-2">
-              <Target className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold">
-                {counts.length}-day cycle
-              </span>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Target className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">
+                  {counts.length}-day cycle
+                </span>
+              </div>
+              {counts.lifts > 0 &&
+                (isDeload ? (
+                  <button
+                    onClick={endDeload}
+                    className="rounded-lg border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-700 dark:border-amber-800 dark:text-amber-400"
+                  >
+                    End deload
+                  </button>
+                ) : (
+                  <button
+                    onClick={startDeload}
+                    className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground"
+                  >
+                    Start deload
+                  </button>
+                ))}
             </div>
             <div className="flex flex-wrap gap-1.5">
               <Chip>{counts.lifts} lift</Chip>
               {counts.rests > 0 && <Chip muted>{counts.rests} rest</Chip>}
+              {isDeload && (
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                  Deload
+                </span>
+              )}
               {planned.data && planned.data.totalSets > 0 && (
-                <Chip muted>{planned.data.totalSets} sets / cycle</Chip>
+                <Chip muted>
+                  {isDeload
+                    ? Math.round(planned.data.totalSets * DELOAD_VOLUME_FACTOR)
+                    : planned.data.totalSets}{' '}
+                  sets / cycle
+                </Chip>
               )}
             </div>
             <div className="mt-2.5 flex items-center gap-2 border-t border-border pt-2.5">
@@ -395,6 +447,21 @@ export function ProgramPage() {
               <span className="text-sm text-muted-foreground">{summaryText}</span>
             </div>
           </Card>
+        )}
+
+        {/* Deload banner */}
+        {isDeload && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+            <TrendingDown className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div>
+              <div className="text-sm font-medium">Deload cycle</div>
+              <div className="text-xs opacity-90">
+                Aim for about {Math.round(DELOAD_VOLUME_FACTOR * 100)}% of your
+                usual volume — lighter weight, easy effort. Auto-ends after this
+                cycle.
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Rotation */}
@@ -529,6 +596,15 @@ export function ProgramPage() {
               </p>
             ) : (
               <>
+                {isDeload && (
+                  <div className="flex items-center gap-1.5 pb-0.5 text-xs text-amber-700 dark:text-amber-400">
+                    <TrendingDown className="h-3.5 w-3.5" />
+                    <span>
+                      Reduced ~{Math.round(DELOAD_VOLUME_FACTOR * 100)}% for your
+                      deload
+                    </span>
+                  </div>
+                )}
                 {planned.data!.bars.slice(0, 8).map((b) => (
                   <div key={b.id} className="flex items-center gap-2">
                     <span className="w-24 shrink-0 truncate text-xs">
@@ -536,12 +612,15 @@ export function ProgramPage() {
                     </span>
                     <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                       <span
-                        className="block h-full rounded-full bg-primary"
+                        className={cn(
+                          'block h-full rounded-full',
+                          isDeload ? 'bg-amber-500' : 'bg-primary',
+                        )}
                         style={{ width: `${Math.max(6, (b.sets / maxSets) * 100)}%` }}
                       />
                     </span>
                     <span className="w-8 shrink-0 text-right text-xs font-medium">
-                      {b.sets}
+                      {isDeload ? round1(b.sets * DELOAD_VOLUME_FACTOR) : b.sets}
                     </span>
                   </div>
                 ))}

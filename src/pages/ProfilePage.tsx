@@ -23,6 +23,7 @@ import {
   ftInToCm,
   hrMax,
   hrZones,
+  recordGoalChange,
   resolveCalorieGoal,
   resolveMacroTargets,
 } from '@/lib/calc'
@@ -183,6 +184,16 @@ export function ProfilePage() {
   const onSave = async () => {
     setSaved(false)
     const r = parseFloat(rate) || 0
+    // Record the change into the dated goal history so past days keep the goal
+    // that was in effect then. `goal.goal` is the new goal from the form values.
+    const oldGoal = profile
+      ? resolveCalorieGoal(profile, latestWeight ?? null).goal
+      : null
+    const nextGoalHistory = recordGoalChange(profile?.calorie_goal_history, {
+      today: todayISO(),
+      oldGoal,
+      newGoal: goal.goal,
+    })
     await updateProfile.mutateAsync({
       sex: sex || null,
       birth_date: birthDate || null,
@@ -193,6 +204,7 @@ export function ProfilePage() {
       goal_weight_lb: goalWeight ? parseFloat(goalWeight) : null,
       calorie_goal_mode: manualMode ? 'manual' : 'calculated',
       manual_calorie_goal: manualMode ? parseInt(manualCal) || null : null,
+      calorie_goal_history: nextGoalHistory,
       macro_targets: macroTargets,
       max_hr: maxHrMode === 'manual' ? parseInt(maxHr) || null : null,
       resting_hr: restingHr.trim() ? parseInt(restingHr) || null : null,
@@ -214,9 +226,17 @@ export function ProfilePage() {
     if (adaptiveGoal == null) return
     setManualMode(true)
     setManualCal(String(adaptiveGoal))
+    const oldGoal = profile
+      ? resolveCalorieGoal(profile, latestWeight ?? null).goal
+      : null
     await updateProfile.mutateAsync({
       calorie_goal_mode: 'manual',
       manual_calorie_goal: adaptiveGoal,
+      calorie_goal_history: recordGoalChange(profile?.calorie_goal_history, {
+        today: todayISO(),
+        oldGoal,
+        newGoal: adaptiveGoal,
+      }),
     })
     setAdaptiveApplied(true)
     setTimeout(() => setAdaptiveApplied(false), 2500)

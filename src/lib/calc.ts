@@ -1,5 +1,6 @@
 import type {
   ActivityLevel,
+  GoalHistoryEntry,
   MacroTargets,
   Profile,
   Sex,
@@ -228,6 +229,73 @@ export function resolveCalorieGoal(
     mode: profile.calorie_goal_mode,
     missing,
   }
+}
+
+// ---------- dated calorie-goal history ----------
+// Changing your goal shouldn't rewrite past days. We keep a dated log of goal
+// values (GoalHistoryEntry); a past day shows the value in effect then, while
+// today/future always use the live goal (so current settings/weight still show
+// through). The first change seeds a baseline so pre-history days stay put.
+
+// Baseline entries use this sentinel start so they precede any real diary day.
+export const GOAL_HISTORY_BASELINE_DATE = '2000-01-01'
+
+/** The recorded goal in effect on `dateISO` (latest entry with `from` ≤ date),
+ * or null when history has no entry that early. */
+function recordedGoalOnOrBefore(
+  history: GoalHistoryEntry[],
+  dateISO: string,
+): number | null {
+  let best: GoalHistoryEntry | null = null
+  for (const e of history) {
+    if (e.from <= dateISO && (best == null || e.from > best.from)) best = e
+  }
+  return best ? best.goal : null
+}
+
+/**
+ * The calorie goal to display for a given day. Today/future use `liveGoal`
+ * (current profile + weight); a past day uses the value that was in effect then,
+ * falling back to `liveGoal` when nothing was recorded that early (e.g. before
+ * any goal change).
+ */
+export function goalForDate(
+  history: GoalHistoryEntry[] | null | undefined,
+  dateISO: string,
+  liveGoal: number | null,
+  todayISO: string,
+): number | null {
+  if (dateISO >= todayISO) return liveGoal
+  const recorded = recordedGoalOnOrBefore(history ?? [], dateISO)
+  return recorded != null ? recorded : liveGoal
+}
+
+/**
+ * Fold a goal change into the dated history (one entry per day). No-op when the
+ * goal in effect today isn't actually changing. The first-ever change seeds a
+ * baseline holding the OLD goal so every prior day stays frozen at it; then
+ * today's entry holds the new goal. Returns the next history array.
+ */
+export function recordGoalChange(
+  history: GoalHistoryEntry[] | null | undefined,
+  opts: { today: string; oldGoal: number | null; newGoal: number | null },
+): GoalHistoryEntry[] {
+  const { today, oldGoal, newGoal } = opts
+  const hist = [...(history ?? [])]
+  if (newGoal == null) return hist
+  // What the day currently resolves to: a recorded entry if one exists, else the
+  // live/old goal that's been showing via fallback.
+  const recordedToday = recordedGoalOnOrBefore(hist, today)
+  const effectiveBefore = recordedToday != null ? recordedToday : oldGoal
+  if (effectiveBefore === newGoal) return hist // nothing actually changed
+  // First recorded change: freeze all prior days at the old value.
+  if (hist.length === 0 && oldGoal != null) {
+    hist.push({ from: GOAL_HISTORY_BASELINE_DATE, goal: oldGoal })
+  }
+  const next = hist.filter((e) => e.from !== today)
+  next.push({ from: today, goal: newGoal })
+  next.sort((a, b) => a.from.localeCompare(b.from))
+  return next
 }
 
 // ---------- adaptive TDEE (data-driven maintenance) ----------

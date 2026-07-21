@@ -39,7 +39,7 @@ import {
 import { useProfile } from '@/features/profile/useProfile'
 import { useLatestWeight } from '@/features/measurements/useMeasurements'
 import { useSteps, useConnectSteps } from '@/features/steps/useSteps'
-import { resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
+import { goalForDate, resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
 import { useLongPress } from '@/lib/useLongPress'
@@ -176,7 +176,11 @@ export function DiaryPage() {
     list.map((e) => scaleNutrients(e.nutrients, e.servings)),
   )
   const goalRes = profile ? resolveCalorieGoal(profile, weight ?? null) : null
-  const goal = goalRes?.goal ?? null
+  // Show the goal that was in effect on the viewed day (today/future = live),
+  // so changing your goal doesn't rewrite past days.
+  const goal = profile
+    ? goalForDate(profile.calorie_goal_history, date, goalRes?.goal ?? null, todayISO())
+    : null
   const consumedKcal = Math.round(consumed.kcal ?? 0)
   const burned = (exEntries ?? []).reduce((s, e) => s + e.calories, 0)
   const macros =

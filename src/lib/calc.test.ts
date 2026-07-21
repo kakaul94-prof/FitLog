@@ -11,12 +11,15 @@ import {
   estimateAdaptiveTDEE,
   estimated1RM,
   ftInToCm,
+  GOAL_HISTORY_BASELINE_DATE,
+  goalForDate,
   hrMax,
   hrZones,
   kgToLb,
   lbToKg,
   metCalories,
   movingAverage,
+  recordGoalChange,
   resolveCalorieGoal,
   resolveMacroTargets,
   resolveMaxHr,
@@ -220,6 +223,85 @@ describe('resolveCalorieGoal', () => {
     expect(r.calculated).toBeNull()
     expect(r.goal).toBeNull()
     expect(r.bmr).toBeNull()
+  })
+})
+
+describe('goalForDate', () => {
+  const history = [
+    { from: GOAL_HISTORY_BASELINE_DATE, goal: 2000 },
+    { from: '2026-07-10', goal: 1800 },
+  ]
+  const today = '2026-07-19'
+
+  it('uses the live goal for today and future days', () => {
+    expect(goalForDate(history, today, 1700, today)).toBe(1700)
+    expect(goalForDate(history, '2026-08-01', 1700, today)).toBe(1700)
+  })
+
+  it('uses the goal that was in effect on a past day', () => {
+    expect(goalForDate(history, '2026-07-05', 1700, today)).toBe(2000)
+    expect(goalForDate(history, '2026-07-15', 1700, today)).toBe(1800)
+  })
+
+  it('falls back to the live goal when there is no history', () => {
+    expect(goalForDate([], '2026-07-05', 1700, today)).toBe(1700)
+    expect(goalForDate(null, '2026-07-05', 1700, today)).toBe(1700)
+  })
+})
+
+describe('recordGoalChange', () => {
+  const today = '2026-07-19'
+
+  it('seeds a baseline plus today on the first change', () => {
+    expect(recordGoalChange([], { today, oldGoal: 2000, newGoal: 1800 })).toEqual([
+      { from: GOAL_HISTORY_BASELINE_DATE, goal: 2000 },
+      { from: today, goal: 1800 },
+    ])
+  })
+
+  it('is a no-op when the goal is unchanged', () => {
+    expect(recordGoalChange([], { today, oldGoal: 2000, newGoal: 2000 })).toEqual([])
+    const seeded = [
+      { from: GOAL_HISTORY_BASELINE_DATE, goal: 2000 },
+      { from: '2026-07-10', goal: 1800 },
+    ]
+    // Effective goal today is 1800; re-saving 1800 records nothing new.
+    expect(
+      recordGoalChange(seeded, { today, oldGoal: 1800, newGoal: 1800 }),
+    ).toEqual(seeded)
+  })
+
+  it('appends later changes without a new baseline', () => {
+    const first = recordGoalChange([], {
+      today: '2026-07-10',
+      oldGoal: 2000,
+      newGoal: 1800,
+    })
+    const second = recordGoalChange(first, { today, oldGoal: 1800, newGoal: 1700 })
+    expect(second).toEqual([
+      { from: GOAL_HISTORY_BASELINE_DATE, goal: 2000 },
+      { from: '2026-07-10', goal: 1800 },
+      { from: today, goal: 1700 },
+    ])
+  })
+
+  it('upserts a second change on the same day', () => {
+    const first = recordGoalChange([], { today, oldGoal: 2000, newGoal: 1800 })
+    const again = recordGoalChange(first, { today, oldGoal: 1800, newGoal: 1700 })
+    expect(again).toEqual([
+      { from: GOAL_HISTORY_BASELINE_DATE, goal: 2000 },
+      { from: today, goal: 1700 },
+    ])
+  })
+
+  it('records nothing when there is no computable new goal', () => {
+    expect(recordGoalChange([], { today, oldGoal: 2000, newGoal: null })).toEqual([])
+  })
+
+  it('keeps past days put after a change while today stays live', () => {
+    const h = recordGoalChange([], { today, oldGoal: 2000, newGoal: 1800 })
+    expect(goalForDate(h, '2026-07-01', 1800, today)).toBe(2000)
+    expect(goalForDate(h, today, 1800, today)).toBe(1800)
   })
 })
 

@@ -30,6 +30,7 @@ import { DistanceBars } from '@/components/DistanceBars'
 import {
   movingAverage,
   bmi,
+  goalForDate,
   resolveCalorieGoal,
   resolveMacroTargets,
 } from '@/lib/calc'
@@ -395,13 +396,25 @@ function NutritionView() {
       : null
 
   const rows = trends ?? []
-  const logged = rows.filter((d) => d.logged)
+  const today = todayISO()
+  // Pin each day to the goal that was in effect then (today/future = live), so a
+  // range spanning a goal change compares against the right target per day.
+  const barRows = rows.map((d) => ({
+    ...d,
+    goal: goalForDate(profile?.calorie_goal_history, d.date, goal, today),
+  }))
+  const logged = barRows.filter((d) => d.logged)
   const loggedCount = logged.length
   const avgKcal = loggedCount
     ? Math.round(logged.reduce((s, d) => s + d.kcal, 0) / loggedCount)
     : null
-  const avgVsGoal =
-    avgKcal != null && goal != null ? avgKcal - goal : null
+  const loggedGoals = logged
+    .map((d) => d.goal)
+    .filter((g): g is number => g != null)
+  const avgGoal = loggedGoals.length
+    ? Math.round(loggedGoals.reduce((s, g) => s + g, 0) / loggedGoals.length)
+    : null
+  const avgVsGoal = avgKcal != null && avgGoal != null ? avgKcal - avgGoal : null
   const avgMacro = (k: 'protein' | 'carb' | 'fat') =>
     loggedCount
       ? Math.round(logged.reduce((s, d) => s + d[k], 0) / loggedCount)
@@ -465,7 +478,7 @@ function NutritionView() {
               <CardTitle>Calories</CardTitle>
             </CardHeader>
             <CardContent>
-              <CalorieBars data={rows} goal={goal} />
+              <CalorieBars data={barRows} />
               {goal != null ? (
                 <div className="mt-2 flex justify-center gap-3 text-[11px] text-muted-foreground">
                   <span className="inline-flex items-center gap-1">

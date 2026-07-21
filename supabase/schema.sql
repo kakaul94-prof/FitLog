@@ -34,6 +34,9 @@ create table if not exists public.profiles (
   calorie_goal_mode text not null default 'calculated'
     check (calorie_goal_mode in ('calculated','manual')),
   manual_calorie_goal integer,
+  -- Dated log of calorie-goal changes: jsonb array of { from (ISO date), goal }.
+  -- Lets past diary days keep the goal that was in effect then. [] = none.
+  calorie_goal_history jsonb not null default '[]'::jsonb,
   macro_targets jsonb not null default
     '{"protein":{"mode":"g_per_lb","value":0.9},"fat":{"mode":"pct","value":30},"carb":{"mode":"remainder"}}'::jsonb,
   eat_back_exercise boolean not null default false,
@@ -56,6 +59,8 @@ alter table public.profiles add column if not exists resting_hr smallint;
 alter table public.profiles add column if not exists daily_supplements jsonb not null default '[]'::jsonb;
 -- Workout program (ordered rotation of templates + rest days). See migration_program.sql.
 alter table public.profiles add column if not exists program jsonb;
+-- Dated calorie-goal history (see migration_calorie_goal_history.sql).
+alter table public.profiles add column if not exists calorie_goal_history jsonb not null default '[]'::jsonb;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles

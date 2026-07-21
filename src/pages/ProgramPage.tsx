@@ -37,7 +37,6 @@ import {
   nextProgramRoutineId,
   programRoutineIds,
   programWorkoutCount,
-  upcomingProgramRoutineIds,
 } from '@/lib/program'
 import type { DeloadState, ProgramItem } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
@@ -105,7 +104,6 @@ export function ProgramPage() {
   const nextId = nextProgramRoutineId(seq, history, override)
   const nextIdx = nextSequenceIndex(seq, currentIdx, nextId)
   const routineIds = programRoutineIds(seq)
-  const upcoming = upcomingProgramRoutineIds(seq, history, override, 3)
   const planned = useProgramPlannedVolume(routineIds)
   const isDeload = deloadActive(deload, routineIds, history, counts.lifts)
 
@@ -545,37 +543,6 @@ export function ProgramPage() {
             </p>
           )}
         </div>
-
-        {/* Upcoming */}
-        {upcoming.length > 0 && (
-          <div>
-            <div className="mb-2 flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold text-muted-foreground">
-                Upcoming
-              </h2>
-              <span className="text-xs text-muted-foreground">next workouts</span>
-            </div>
-            <Card className="divide-y divide-border overflow-hidden">
-              {upcoming.map((rid, i) => (
-                <div key={i} className="flex items-center gap-3 p-3">
-                  <span
-                    className={cn(
-                      'flex h-5 w-5 items-center justify-center rounded-full text-xs font-medium',
-                      i === 0
-                        ? 'bg-primary/15 text-primary'
-                        : 'bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {i + 1}
-                  </span>
-                  <span className="flex-1 truncate text-sm font-medium">
-                    {routineName(rid)}
-                  </span>
-                </div>
-              ))}
-            </Card>
-          </div>
-        )}
 
         {/* Planned volume */}
         <div>

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { ChevronDown } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
 import { RING_GREEN, RING_OVER } from '@/components/CalorieRing'
@@ -25,6 +26,7 @@ import {
 } from '@/features/insights/useMicronutrientTrends'
 import { useNutrientSources } from '@/features/insights/useNutrientSources'
 import { useDailySupplements } from '@/features/profile/useDailySupplements'
+import { NUTRIENT_SOURCES } from '@/data/nutrientSources'
 import { NUTRIENTS, NUTRIENT_BY_KEY, formatNutrient } from '@/lib/nutrients'
 import type { NutrientKey } from '@/lib/database.types'
 import { useCardioZoneTrends } from '@/features/insights/useCardioZoneTrends'
@@ -545,6 +547,7 @@ function MicronutrientCard({ days }: { days: number }) {
   const { dailyMicros, supplements } = useDailySupplements()
   const { data } = useMicronutrientTrends(days, dailyMicros)
   const [showAll, setShowAll] = useState(false)
+  const [showSources, setShowSources] = useState(false)
   if (!data || data.loggedCount === 0) return null
 
   const low = data.stats.filter((s) => s.direction === 'floor' && s.flagged)
@@ -589,6 +592,41 @@ function MicronutrientCard({ days }: { days: number }) {
         >
           {showAll ? 'Show less' : `Show all ${data.stats.length}`}
         </button>
+
+        {low.length > 0 && (
+          <div className="border-t border-border pt-3">
+            <button
+              onClick={() => setShowSources((v) => !v)}
+              className="flex w-full items-center justify-between text-xs font-medium text-primary"
+            >
+              <span>Food sources for what you’re low on</span>
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 transition-transform',
+                  showSources && 'rotate-180',
+                )}
+              />
+            </button>
+            {showSources && (
+              <ul className="mt-3 space-y-2">
+                {low.map((s) => {
+                  const foods = NUTRIENT_SOURCES[s.key]
+                  if (!foods) return null
+                  return (
+                    <li key={s.key} className="text-xs leading-snug">
+                      <span className="font-medium text-foreground">
+                        {s.label}:{' '}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {foods.join(', ')}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        )}
 
         <p className="text-[11px] leading-snug text-muted-foreground">
           Targets are FDA Daily Values, averaged over your logged days. Foods

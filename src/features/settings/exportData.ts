@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { Capacitor } from '@capacitor/core'
+import { canSaveAsNative, saveAsNative } from '@/lib/fileSaverNative'
 
 // All owner-scoped data tables, ordered PARENTS-FIRST so a restore can reuse
 // this list for FK-safe inserts (export itself is order-independent).
@@ -28,8 +29,12 @@ export const TABLES = [
 export type ExportResult =
   /** Web/PWA: the browser download was triggered. */
   | { saved: false }
-  /** Native: the file was written to a device folder the user can browse to. */
-  | { saved: true; location: string; filename: string }
+  /**
+   * Native save. `location` is set only when the app picked the folder itself
+   * (Documents fallback); with the Save-As dialog the user chose, so it's left
+   * out and the confirmation just names the file.
+   */
+  | { saved: true; filename: string; location?: string }
 
 /** True inside the packaged app AND when this APK bundles the Filesystem plugin. */
 const canSaveNative = () =>
@@ -86,9 +91,16 @@ async function saveNative(json: string, name: string): Promise<string> {
 export async function exportData(): Promise<ExportResult> {
   const json = await gatherJson()
   const filename = `fitlog-export-${new Date().toISOString().slice(0, 10)}.json`
+  if (canSaveAsNative()) {
+    // Let the user choose the folder + name via the system Save-As dialog.
+    await saveAsNative(filename, 'application/json', json)
+    return { saved: true, filename }
+  }
   if (canSaveNative()) {
+    // Older APK (has Filesystem but not the Save-As dialog yet): drop it in the
+    // Documents folder so export still works until the new APK is installed.
     const location = await saveNative(json, filename)
-    return { saved: true, location, filename }
+    return { saved: true, filename, location }
   }
   if (Capacitor.isNativePlatform()) {
     // In the app but on an APK that predates the file plugin: the browser

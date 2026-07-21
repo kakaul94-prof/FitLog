@@ -109,12 +109,19 @@ export function MorePage() {
     try {
       const res = await exportData()
       if (res.saved) {
-        setExportMsg(`Saved ${res.filename} to your ${res.location} folder.`)
+        setExportMsg(
+          res.location
+            ? `Saved ${res.filename} to your ${res.location} folder.`
+            : `Saved ${res.filename}.`,
+        )
       }
     } catch (err) {
-      setExportErr(
-        err instanceof Error ? err.message : 'Export failed. Please try again.',
-      )
+      // Backing out of the Save-As dialog rejects with "cancelled" — not a failure.
+      if (!(err instanceof Error && /cancel/i.test(err.message))) {
+        setExportErr(
+          err instanceof Error ? err.message : 'Export failed. Please try again.',
+        )
+      }
     } finally {
       setExporting(false)
     }

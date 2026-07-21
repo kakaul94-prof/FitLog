@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(RestTimerPlugin.class);
         registerPlugin(StepCounterPlugin.class);
+        registerPlugin(FileSaverPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Hardware back button: navigate back within the webview history (the SPA

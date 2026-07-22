@@ -14,11 +14,13 @@ import {
   Palette,
   Volume2,
   Bell,
+  AlarmClock,
   Sparkles,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { useAuth } from '@/lib/auth'
 import { exportData } from '@/features/settings/exportData'
 import {
@@ -211,6 +213,19 @@ export function MorePage() {
         </Card>
 
         <Card className="divide-y divide-border overflow-hidden">
+          <Link
+            to="/reminders"
+            className="flex items-center gap-3 p-4 active:bg-accent"
+          >
+            <AlarmClock className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Reminders</p>
+              <p className="text-xs text-muted-foreground">
+                Meal logging + streak notifications
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
           <div className="flex items-center gap-3 p-4">
             <Volume2 className="h-5 w-5 shrink-0 text-muted-foreground" />
             <div className="flex-1">
@@ -381,36 +396,5 @@ export function MorePage() {
           document.body,
         )}
     </div>
-  )
-}
-
-function Switch({
-  checked,
-  onClick,
-  label,
-}: {
-  checked: boolean
-  onClick: () => void
-  label: string
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={onClick}
-      className={cn(
-        'relative h-6 w-11 shrink-0 rounded-full transition-colors',
-        checked ? 'bg-primary' : 'bg-input',
-      )}
-    >
-      <span
-        className={cn(
-          'absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform',
-          checked && 'translate-x-5',
-        )}
-      />
-    </button>
   )
 }

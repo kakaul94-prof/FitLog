@@ -14,6 +14,7 @@ import {
 } from '@tanstack/react-query-persist-client'
 import { get, set, del } from 'idb-keyval'
 import { setupOnlineManager } from '@/lib/network'
+import { initReminders } from '@/lib/reminders'
 import { registerDiaryMutationDefaults } from '@/features/diary/useDiary'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { AuthProvider, useAuth } from '@/lib/auth'
@@ -55,6 +56,7 @@ const CustomExercisesPage = lazyPage(() => import('@/pages/CustomExercisesPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
 const ProgramPage = lazyPage(() => import('@/pages/ProgramPage'), 'ProgramPage')
 const RecipeEditPage = lazyPage(() => import('@/pages/RecipeEditPage'), 'RecipeEditPage')
+const RemindersPage = lazyPage(() => import('@/pages/RemindersPage'), 'RemindersPage')
 
 // Persisted query cache (Phase 1 offline reads): keep entries in memory long
 // enough for the IndexedDB persister to restore them on reopen. gcTime must be
@@ -148,9 +150,14 @@ const router = createBrowserRouter(
       <Route path="/program" element={<ProgramPage />} />
       <Route path="/routines/:id" element={<RoutineEditPage />} />
       <Route path="/recipes/:id" element={<RecipeEditPage />} />
+      <Route path="/reminders" element={<RemindersPage />} />
     </Route>,
   ),
 )
+
+// Meal/streak reminder notifications (Android app only): create the channel,
+// re-arm the alarms from saved settings, and deep-link notification taps.
+initReminders((path) => void router.navigate(path))
 
 function Routed() {
   return (

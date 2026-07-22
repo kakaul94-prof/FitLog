@@ -52,6 +52,7 @@ import { useDailySupplements } from '@/features/profile/useDailySupplements'
 import { goalForDate, resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
+import { syncStreakNudge } from '@/lib/reminders'
 import { useLongPress } from '@/lib/useLongPress'
 import { cn } from '@/lib/utils'
 import type { DiaryEntry, ExerciseEntry, Meal } from '@/lib/database.types'
@@ -127,6 +128,16 @@ export function DiaryPage() {
   }, [date, params, setParams])
   const { data: entries, isLoading: diaryLoading } = useDiary(date)
   const { data: profile, isLoading: profileLoading } = useProfile()
+
+  // Keep the native streak nudge honest (Android app only; no-op on web):
+  // logging something today pushes it to tomorrow evening, an empty day pulls
+  // it back to tonight. Only meaningful while viewing today with data loaded.
+  const loggedToday =
+    date === todayISO() && entries ? entries.length > 0 : null
+  useEffect(() => {
+    if (loggedToday !== null) void syncStreakNudge(loggedToday)
+  }, [loggedToday])
+
   const { data: weight } = useLatestWeight()
   const { data: exEntries } = useExerciseEntries(date)
   const { data: streak = 0 } = useStreak()

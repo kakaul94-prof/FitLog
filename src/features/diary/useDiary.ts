@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { todayISO, addDaysISO, computeStreak } from '@/lib/date'
+import { syncStreakNudge } from '@/lib/reminders'
 import type { DiaryEntry, Food, Meal, Nutrients } from '@/lib/database.types'
 
 export function useDiary(date: string) {
@@ -163,6 +164,13 @@ const KEYS = {
   updateEntry: ['diary', 'updateEntry'],
 } as const
 
+// Logging anything for today defers tonight's streak nudge to tomorrow
+// (native app only; no-op on web). Runs in onMutate so it happens at log time
+// even for the picker → kill-the-app flow where DiaryPage never remounts.
+const nudgeIfToday = (entryDate: string) => {
+  if (entryDate === todayISO()) void syncStreakNudge(true)
+}
+
 // Each mutation is defined ONCE as a factory shared by the live hook and the
 // keyed default (so resume after an app-kill uses the exact same logic). The
 // factory closes over the app's queryClient.
@@ -191,6 +199,7 @@ function logFoodMutation(
         ...(old ?? []),
         asCacheRow(row),
       ])
+      nudgeIfToday(v.entry_date)
       return { snap }
     },
     onError: (_e, _v, ctx) => ctx && rollbackDiary(qc, ctx.snap),
@@ -230,6 +239,7 @@ function logFoodsMutation(
         ...(old ?? []),
         ...rows.map(asCacheRow),
       ])
+      nudgeIfToday(v.entry_date)
       return { snap }
     },
     onError: (_e, _v, ctx) => ctx && rollbackDiary(qc, ctx.snap),
@@ -263,6 +273,7 @@ function quickAddMutation(
         ...(old ?? []),
         asCacheRow(row),
       ])
+      nudgeIfToday(v.entry_date)
       return { snap }
     },
     onError: (_e, _v, ctx) => ctx && rollbackDiary(qc, ctx.snap),
@@ -313,6 +324,7 @@ function quickAddFoodsMutation(
         ...(old ?? []),
         ...rows.map(asCacheRow),
       ])
+      nudgeIfToday(v.entry_date)
       return { snap }
     },
     onError: (_e, _v, ctx) => ctx && rollbackDiary(qc, ctx.snap),

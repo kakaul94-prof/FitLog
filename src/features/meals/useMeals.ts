@@ -1,5 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { todayISO } from '@/lib/date'
+import { syncStreakNudge } from '@/lib/reminders'
 import type {
   DiaryEntry,
   Meal,
@@ -115,6 +117,8 @@ export function useLogMeal() {
       return rows.length
     },
     onSuccess: (_n, v) => {
+      // Logging a meal for today defers tonight's streak nudge (native only).
+      if (v.entry_date === todayISO()) void syncStreakNudge(true)
       qc.invalidateQueries({ queryKey: ['diary', v.entry_date] })
       qc.invalidateQueries({ queryKey: ['streak'] })
       qc.invalidateQueries({ queryKey: ['foodHistory'] })

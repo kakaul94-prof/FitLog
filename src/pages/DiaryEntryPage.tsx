@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
@@ -28,6 +28,13 @@ export function DiaryEntryPage() {
     if (entry) setServings(String(entry.servings))
   }, [entry])
 
+  const s = parseFloat(servings) || 0
+  // Unsaved-changes guard: catches the back chevron AND Android hardware/
+  // gesture back. skipGuard bypasses it for save-and-exit and delete.
+  const dirty = !!entry && s > 0 && s !== entry.servings
+  const skipGuard = useRef(false)
+  const blocker = useBlocker(() => dirty && !skipGuard.current)
+
   if (isLoading) {
     return (
       <div className="flex h-svh items-center justify-center">
@@ -43,14 +50,9 @@ export function DiaryEntryPage() {
     )
   }
 
-  const s = parseFloat(servings) || 0
   const scaled = scaleNutrients(entry.nutrients, s)
 
-  const saveServings = () => {
-    if (s > 0 && s !== entry.servings) {
-      updateEntry.mutate({ id: entry.id, servings: s })
-    }
-  }
+  const save = () => updateEntry.mutate({ id: entry.id, servings: s })
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
@@ -75,7 +77,6 @@ export function DiaryEntryPage() {
                   inputMode="decimal"
                   value={servings}
                   onChange={(e) => setServings(e.target.value)}
-                  onBlur={saveServings}
                 />
               </div>
               <div className="flex-1 space-y-1.5">
@@ -104,11 +105,26 @@ export function DiaryEntryPage() {
 
         <NutrientBreakdown nutrients={scaled} />
 
+        {dirty && (
+          <Button
+            className="w-full"
+            disabled={updateEntry.isPending}
+            onClick={() => {
+              skipGuard.current = true
+              save()
+              nav(-1)
+            }}
+          >
+            Save changes
+          </Button>
+        )}
+
         <Button
           variant="outline"
           className="w-full text-destructive"
           onClick={() => {
             if (confirm('Delete this entry?')) {
+              skipGuard.current = true
               del.mutate(entry.id)
               nav(-1)
             }
@@ -117,6 +133,42 @@ export function DiaryEntryPage() {
           <Trash2 className="h-4 w-4" /> Delete entry
         </Button>
       </div>
+
+      {blocker.state === 'blocked' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
+          <Card className="w-full max-w-xs">
+            <CardContent className="space-y-3 p-4">
+              <p className="text-sm font-medium">Save changes?</p>
+              <p className="text-xs text-muted-foreground">
+                You changed the servings for this entry.
+              </p>
+              <Button
+                className="w-full"
+                onClick={() => {
+                  save()
+                  blocker.proceed()
+                }}
+              >
+                Save
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full text-destructive"
+                onClick={() => blocker.proceed()}
+              >
+                Discard changes
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => blocker.reset()}
+              >
+                Keep editing
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

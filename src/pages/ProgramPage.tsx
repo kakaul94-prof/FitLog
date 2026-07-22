@@ -31,6 +31,7 @@ import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
 import { useRoutines } from '@/features/strength/useRoutines'
 import { useWorkouts } from '@/features/strength/useStrength'
 import { useProgramPlannedVolume } from '@/features/strength/useProgram'
+import { REGION_IDS, REGION_LABEL, resolveGoals } from '@/data/bodyMap'
 import {
   cycleCounts,
   currentProgramIndex,
@@ -45,7 +46,6 @@ import type { DeloadState, NextOverride, ProgramItem } from '@/lib/database.type
 import { cn } from '@/lib/utils'
 
 const uid = () => Math.random().toString(36).slice(2)
-const round1 = (n: number) => Math.round(n * 10) / 10
 
 // The sequence slot to badge as "Next up": the first template slot at/after the
 // current day (wrapping) whose routine matches the computed next id.
@@ -110,6 +110,13 @@ export function ProgramPage() {
   const routineIds = programRoutineIds(seq)
   const planned = useProgramPlannedVolume(routineIds)
   const isDeload = deloadActive(deload, routineIds, history, counts.lifts)
+  const goalRows = useMemo(() => {
+    const goals = resolveGoals(profile?.volume_targets)
+    return REGION_IDS.map((id) => ({ id, label: REGION_LABEL[id], sets: goals[id] }))
+      .filter((g) => g.sets > 0)
+      .sort((a, b) => b.sets - a.sets)
+  }, [profile])
+  const totalGoalSets = goalRows.reduce((s, g) => s + g.sets, 0)
 
   const seqRef = useRef(seq)
   seqRef.current = seq
@@ -553,7 +560,7 @@ export function ProgramPage() {
           )}
         </div>
 
-        {/* Planned volume (collapsible) */}
+        {/* Weekly set goals (collapsible) */}
         <div>
           <Card className="overflow-hidden">
             <button
@@ -562,13 +569,10 @@ export function ProgramPage() {
               className="flex w-full items-center gap-2.5 p-3 text-left"
             >
               <BarChart3 className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="flex-1 text-sm font-medium">Planned volume</span>
-              {planned.data && planned.data.totalSets > 0 && (
+              <span className="flex-1 text-sm font-medium">Weekly set goals</span>
+              {totalGoalSets > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  {isDeload
-                    ? Math.round(planned.data.totalSets * DELOAD_VOLUME_FACTOR)
-                    : planned.data.totalSets}{' '}
-                  sets / cycle
+                  {totalGoalSets} sets / week
                 </span>
               )}
               <ChevronDown
@@ -580,60 +584,28 @@ export function ProgramPage() {
             </button>
             {volumeOpen && (
               <div className="border-t border-border p-3 pt-2.5">
-                {planned.isLoading ? (
+                {goalRows.length === 0 ? (
                   <p className="py-2 text-center text-sm text-muted-foreground">
-                    Calculating…
-                  </p>
-                ) : (planned.data?.bars.length ?? 0) === 0 ? (
-                  <p className="py-2 text-center text-sm text-muted-foreground">
-                    Add templates with target sets to see planned volume.
+                    No weekly set goals yet.
                   </p>
                 ) : (
-                  <>
-                    {isDeload && (
-                      <div className="flex items-center gap-1.5 pb-1 text-xs text-amber-700 dark:text-amber-400">
-                        <TrendingDown className="h-3.5 w-3.5" />
-                        <span>
-                          Reduced ~{Math.round(DELOAD_VOLUME_FACTOR * 100)}% for
-                          your deload
-                        </span>
+                  <div className="divide-y divide-border">
+                    {goalRows.map((g) => (
+                      <div
+                        key={g.id}
+                        className="flex items-center justify-between py-1.5"
+                      >
+                        <span className="text-sm">{g.label}</span>
+                        <span className="text-sm font-medium">{g.sets}</span>
                       </div>
-                    )}
-                    <div className="divide-y divide-border">
-                      {planned.data!.bars.map((b) => (
-                        <div
-                          key={b.id}
-                          className="flex items-center justify-between py-1.5"
-                        >
-                          <span className="text-sm">{b.label}</span>
-                          <span className="text-sm font-medium">
-                            {isDeload
-                              ? round1(b.sets * DELOAD_VOLUME_FACTOR)
-                              : b.sets}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    {(planned.data!.needsTarget > 0 ||
-                      planned.data!.unmapped > 0) && (
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {[
-                          planned.data!.needsTarget > 0 &&
-                            `${planned.data!.needsTarget} need a target`,
-                          planned.data!.unmapped > 0 &&
-                            `${planned.data!.unmapped} unmapped`,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </p>
-                    )}
-                  </>
+                    ))}
+                  </div>
                 )}
                 <button
                   onClick={() => nav('/lift/volume/goals')}
                   className="flex w-full items-center justify-end gap-0.5 pt-2 text-xs font-medium text-primary"
                 >
-                  Compare with goals <ChevronRight className="h-3.5 w-3.5" />
+                  Edit goals <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}

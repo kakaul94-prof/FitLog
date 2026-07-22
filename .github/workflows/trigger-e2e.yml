@@ -1,0 +1,31 @@
+# Notifies the fitlog-e2e repo after a dev push so the E2E suite runs against
+# the freshly deployed dev site. Requires an E2E_DISPATCH_TOKEN repo secret —
+# a fine-grained PAT for kakaul94-prof/fitlog-e2e with Contents: read/write
+# (repository_dispatch needs write). Skips quietly until the secret exists.
+name: Trigger E2E suite
+
+on:
+  push:
+    branches: [dev]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Dispatch to fitlog-e2e
+        env:
+          TOKEN: ${{ secrets.E2E_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "E2E_DISPATCH_TOKEN not configured — skipping dispatch."
+            exit 0
+          fi
+          # Give Cloudflare Pages a head start so the suite tests THIS deploy.
+          sleep 150
+          curl -sS -f -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/kakaul94-prof/fitlog-e2e/dispatches" \
+            -d '{"event_type":"fitlog-deploy"}'
+          echo "Dispatched fitlog-deploy."

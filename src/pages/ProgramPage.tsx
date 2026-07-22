@@ -10,6 +10,8 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Activity,
+  BarChart3,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Dumbbell,
@@ -74,6 +76,7 @@ export function ProgramPage() {
   const [deload, setDeload] = useState<DeloadState | null>(null)
   const [adding, setAdding] = useState(false)
   const [actionFor, setActionFor] = useState<{ item: ProgramItem; index: number } | null>(null)
+  const [volumeOpen, setVolumeOpen] = useState(false)
   const loadedRef = useRef(false)
 
   // Seed once: from the saved program, else a starter rotation built from the
@@ -390,7 +393,6 @@ export function ProgramPage() {
       : nextId
         ? `Not started — first up: ${routineName(nextId)}`
         : 'Add templates to build your rotation'
-  const maxSets = planned.data?.bars[0]?.sets ?? 1
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
@@ -551,73 +553,90 @@ export function ProgramPage() {
           )}
         </div>
 
-        {/* Planned volume */}
+        {/* Planned volume (collapsible) */}
         <div>
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold text-muted-foreground">
-              Planned volume
-            </h2>
-            <span className="text-xs text-muted-foreground">sets per cycle</span>
-          </div>
-          <Card className="space-y-2 p-3">
-            {planned.isLoading ? (
-              <p className="py-2 text-center text-sm text-muted-foreground">
-                Calculating…
-              </p>
-            ) : (planned.data?.bars.length ?? 0) === 0 ? (
-              <p className="py-2 text-center text-sm text-muted-foreground">
-                Add templates with target sets to see planned volume.
-              </p>
-            ) : (
-              <>
-                {isDeload && (
-                  <div className="flex items-center gap-1.5 pb-0.5 text-xs text-amber-700 dark:text-amber-400">
-                    <TrendingDown className="h-3.5 w-3.5" />
-                    <span>
-                      Reduced ~{Math.round(DELOAD_VOLUME_FACTOR * 100)}% for your
-                      deload
-                    </span>
-                  </div>
-                )}
-                {planned.data!.bars.slice(0, 8).map((b) => (
-                  <div key={b.id} className="flex items-center gap-2">
-                    <span className="w-24 shrink-0 truncate text-xs">
-                      {b.label}
-                    </span>
-                    <span className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                      <span
-                        className={cn(
-                          'block h-full rounded-full',
-                          isDeload ? 'bg-amber-500' : 'bg-primary',
-                        )}
-                        style={{ width: `${Math.max(6, (b.sets / maxSets) * 100)}%` }}
-                      />
-                    </span>
-                    <span className="w-8 shrink-0 text-right text-xs font-medium">
-                      {isDeload ? round1(b.sets * DELOAD_VOLUME_FACTOR) : b.sets}
-                    </span>
-                  </div>
-                ))}
-                {(planned.data!.needsTarget > 0 || planned.data!.unmapped > 0) && (
-                  <p className="border-t border-border pt-2 text-xs text-muted-foreground">
-                    {[
-                      planned.data!.needsTarget > 0 &&
-                        `${planned.data!.needsTarget} need a target`,
-                      planned.data!.unmapped > 0 &&
-                        `${planned.data!.unmapped} unmapped`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </p>
-                )}
-              </>
-            )}
+          <Card className="overflow-hidden">
             <button
-              onClick={() => nav('/lift/volume/goals')}
-              className="flex w-full items-center justify-end gap-0.5 pt-1 text-xs font-medium text-primary"
+              onClick={() => setVolumeOpen((o) => !o)}
+              aria-expanded={volumeOpen}
+              className="flex w-full items-center gap-2.5 p-3 text-left"
             >
-              Compare with goals <ChevronRight className="h-3.5 w-3.5" />
+              <BarChart3 className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="flex-1 text-sm font-medium">Planned volume</span>
+              {planned.data && planned.data.totalSets > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {isDeload
+                    ? Math.round(planned.data.totalSets * DELOAD_VOLUME_FACTOR)
+                    : planned.data.totalSets}{' '}
+                  sets / cycle
+                </span>
+              )}
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                  volumeOpen && 'rotate-180',
+                )}
+              />
             </button>
+            {volumeOpen && (
+              <div className="border-t border-border p-3 pt-2.5">
+                {planned.isLoading ? (
+                  <p className="py-2 text-center text-sm text-muted-foreground">
+                    Calculating…
+                  </p>
+                ) : (planned.data?.bars.length ?? 0) === 0 ? (
+                  <p className="py-2 text-center text-sm text-muted-foreground">
+                    Add templates with target sets to see planned volume.
+                  </p>
+                ) : (
+                  <>
+                    {isDeload && (
+                      <div className="flex items-center gap-1.5 pb-1 text-xs text-amber-700 dark:text-amber-400">
+                        <TrendingDown className="h-3.5 w-3.5" />
+                        <span>
+                          Reduced ~{Math.round(DELOAD_VOLUME_FACTOR * 100)}% for
+                          your deload
+                        </span>
+                      </div>
+                    )}
+                    <div className="divide-y divide-border">
+                      {planned.data!.bars.map((b) => (
+                        <div
+                          key={b.id}
+                          className="flex items-center justify-between py-1.5"
+                        >
+                          <span className="text-sm">{b.label}</span>
+                          <span className="text-sm font-medium">
+                            {isDeload
+                              ? round1(b.sets * DELOAD_VOLUME_FACTOR)
+                              : b.sets}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {(planned.data!.needsTarget > 0 ||
+                      planned.data!.unmapped > 0) && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {[
+                          planned.data!.needsTarget > 0 &&
+                            `${planned.data!.needsTarget} need a target`,
+                          planned.data!.unmapped > 0 &&
+                            `${planned.data!.unmapped} unmapped`,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                    )}
+                  </>
+                )}
+                <button
+                  onClick={() => nav('/lift/volume/goals')}
+                  className="flex w-full items-center justify-end gap-0.5 pt-2 text-xs font-medium text-primary"
+                >
+                  Compare with goals <ChevronRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
           </Card>
         </div>
 

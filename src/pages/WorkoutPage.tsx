@@ -4,6 +4,8 @@ import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import {
   ChevronLeft,
   ChevronDown,
+  ChevronUp,
+  Flame,
   Plus,
   X,
   Link2,
@@ -33,7 +35,8 @@ import {
   type WorkoutSnapshot,
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
-import { estimated1RM } from '@/lib/calc'
+import { estimated1RM, warmupRamp } from '@/lib/calc'
+import { EXERCISES } from '@/data/exercises'
 import { dateLabel, timeLabel } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
@@ -549,6 +552,15 @@ function ExerciseCard({
   const delEx = useDeleteExercise()
   const lastNote = useLastExerciseNote(ex.exercise_key, workoutId)
   const [notes, setNotes] = useState(ex.notes ?? '')
+  const [warmupOpen, setWarmupOpen] = useState(false)
+
+  // Warm-up ramp to set 1's weight. Built-in bodyweight/timed lifts don't get
+  // one; custom exercises (no meta) are treated as weighted, non-barbell.
+  const meta = EXERCISES.find((e) => e.key === ex.exercise_key)
+  const warmupEligible = meta == null || meta.kind === 'weighted'
+  const workingLb = sets[0]?.weight_lb ?? null
+  const ramp =
+    workingLb != null ? warmupRamp(workingLb, meta?.equipment === 'Barbell') : []
 
   const best = sets.reduce(
     (m, s) => Math.max(m, estimated1RM(s.weight_lb ?? 0, s.reps ?? 0)),
@@ -700,6 +712,48 @@ function ExerciseCard({
               stamp({ ended_at: done ? null : new Date().toISOString() })
             }
           />
+        )}
+        {warmupEligible && (
+          <div className="mb-1.5 rounded-md bg-primary/10 px-2 py-1.5">
+            <button
+              onClick={() => setWarmupOpen((o) => !o)}
+              className="flex w-full items-center gap-1.5 text-xs font-medium text-primary"
+            >
+              <Flame className="h-3.5 w-3.5" />
+              <span className="flex-1 text-left">Warm-up</span>
+              {warmupOpen ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </button>
+            {warmupOpen &&
+              (workingLb == null ? (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Enter a weight for set 1 to get a ramp.
+                </p>
+              ) : ramp.length === 0 ? (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Light working weight — no warm-up needed.
+                </p>
+              ) : (
+                <>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {ramp.map((s) => (
+                      <span
+                        key={s.weightLb}
+                        className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs text-primary"
+                      >
+                        {s.isBar ? 'Bar' : s.weightLb} × {s.reps}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    From set 1 · {workingLb} lb · not logged as sets
+                  </p>
+                </>
+              ))}
+          </div>
         )}
         <div className="grid grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem] gap-2 px-1 pb-1 text-xs text-muted-foreground">
           <span className="text-center">Set</span>

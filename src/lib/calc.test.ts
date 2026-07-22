@@ -25,6 +25,7 @@ import {
   resolveMaxHr,
   roundHalf,
   tdee,
+  warmupRamp,
   zoneForHr,
 } from './calc'
 import type { MacroTargets, Profile } from './database.types'
@@ -485,5 +486,50 @@ describe('movingAverage', () => {
     const out = movingAverage(shuffled, 7)
     expect(out.map((p) => p.date)).toEqual(pts.map((p) => p.date))
     expect(out[4].trend).toBeCloseTo(30, 5) // avg of all 5 within a 7-day window
+  })
+})
+
+describe('warmupRamp', () => {
+  it('ramps a barbell lift: bar, then 50/70/90% rounded to 5', () => {
+    expect(warmupRamp(185, true)).toEqual([
+      { weightLb: 45, reps: 10, isBar: true },
+      { weightLb: 95, reps: 5 },
+      { weightLb: 130, reps: 3 },
+      { weightLb: 165, reps: 1 },
+    ])
+  })
+  it('skips the bar step for non-barbell lifts', () => {
+    expect(warmupRamp(50, false)).toEqual([
+      { weightLb: 25, reps: 5 },
+      { weightLb: 35, reps: 3 },
+      { weightLb: 45, reps: 1 },
+    ])
+  })
+  it('drops percentage steps that fall at or below the bar', () => {
+    expect(warmupRamp(95, true)).toEqual([
+      { weightLb: 45, reps: 10, isBar: true },
+      { weightLb: 50, reps: 5 },
+      { weightLb: 65, reps: 3 },
+      { weightLb: 85, reps: 1 },
+    ])
+    // 50% (30) and 70% (40) land under the bar; only 90% (50) survives.
+    expect(warmupRamp(55, true)).toEqual([
+      { weightLb: 45, reps: 10, isBar: true },
+      { weightLb: 50, reps: 1 },
+    ])
+  })
+  it('drops steps that round into the working weight or each other', () => {
+    // 90% of 20 rounds to 20 = working weight → dropped.
+    expect(warmupRamp(20, false)).toEqual([
+      { weightLb: 10, reps: 5 },
+      { weightLb: 15, reps: 3 },
+    ])
+    // 50% and 70% of 15 both round to 10 → deduped.
+    expect(warmupRamp(15, false)).toEqual([{ weightLb: 10, reps: 5 }])
+  })
+  it('returns no ramp when the working weight is the bar or invalid', () => {
+    expect(warmupRamp(45, true)).toEqual([])
+    expect(warmupRamp(0, true)).toEqual([])
+    expect(warmupRamp(NaN, false)).toEqual([])
   })
 })

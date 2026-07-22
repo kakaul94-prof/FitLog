@@ -477,6 +477,38 @@ export function estimated1RM(weight: number, reps: number): number {
   return weight * (1 + reps / 30)
 }
 
+export const BAR_LB = 45
+
+export interface WarmupStep {
+  weightLb: number
+  reps: number
+  isBar?: boolean
+}
+
+/**
+ * Warm-up ramp to a working weight: 50%×5, 70%×3, 90%×1, rounded to the
+ * nearest 5 lb; barbell lifts start with the empty bar ×10. Steps at or above
+ * the working weight, at or below the bar (barbell), or that round into the
+ * previous step are dropped — a light working weight can yield [] (no ramp).
+ */
+export function warmupRamp(workingLb: number, barbell: boolean): WarmupStep[] {
+  if (!Number.isFinite(workingLb) || workingLb <= 0) return []
+  const steps: WarmupStep[] = []
+  if (barbell && BAR_LB < workingLb) steps.push({ weightLb: BAR_LB, reps: 10, isBar: true })
+  for (const [pct, reps] of [
+    [0.5, 5],
+    [0.7, 3],
+    [0.9, 1],
+  ] as const) {
+    const w = Math.round((workingLb * pct) / 5) * 5
+    if (w <= 0 || w >= workingLb) continue
+    if (barbell && w <= BAR_LB) continue
+    if (steps.some((s) => s.weightLb === w)) continue
+    steps.push({ weightLb: w, reps })
+  }
+  return steps
+}
+
 // ---------- exercise calories ----------
 /** MET estimate: kcal = MET * 3.5 * kg / 200 * minutes. */
 export function metCalories(

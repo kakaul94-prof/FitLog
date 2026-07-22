@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, Search, Plus, Pencil, Trash2, MapPin } from 'lucide-react'
+import {
+  ChevronLeft,
+  Search,
+  Plus,
+  Pencil,
+  Trash2,
+  MapPin,
+  Watch,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -77,12 +86,19 @@ export function ExerciseAddPage() {
 
   // Activity search / custom-create UI
   const [search, setSearch] = useState('')
-  const [picking, setPicking] = useState(false)
+  const [changing, setChanging] = useState(false)
   const [adding, setAdding] = useState(false)
   const [cname, setCname] = useState('')
   const [cmet, setCmet] = useState('5')
   const [cdist, setCdist] = useState(false)
   const [editId, setEditId] = useState<string | null>(null) // editing a custom activity
+
+  // Summary-card UI: which tile's editor is open, kcal-override + rename modes
+  const [renaming, setRenaming] = useState(false)
+  const [editingKcal, setEditingKcal] = useState(false)
+  const [activeTile, setActiveTile] = useState<
+    'duration' | 'distance' | 'hr' | null
+  >(editing || pf.name ? null : 'duration')
 
   const allActivities: PickActivity[] = [
     ...(custom ?? []).map((c) => ({
@@ -165,7 +181,8 @@ export function ExerciseAddPage() {
     setMet(a.met)
     setDistanceBased(a.distanceBased)
     setSearch('')
-    setPicking(false)
+    setChanging(false)
+    if (!a.distanceBased) setActiveTile((t) => (t === 'distance' ? null : t))
   }
 
   const openCreate = () => {
@@ -174,7 +191,6 @@ export function ExerciseAddPage() {
     setCmet('5')
     setCdist(false)
     setAdding(true)
-    setPicking(false)
   }
 
   const openEdit = (a: PickActivity, customId: string) => {
@@ -183,7 +199,6 @@ export function ExerciseAddPage() {
     setCmet(String(a.met))
     setCdist(a.distanceBased)
     setAdding(true)
-    setPicking(false)
   }
 
   const closeForm = () => {
@@ -247,6 +262,18 @@ export function ExerciseAddPage() {
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }
+        action={
+          !editing && !pf.name ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Record a walk/run with GPS"
+              onClick={() => nav('/exercise/track')}
+            >
+              <MapPin className="h-5 w-5 text-primary" />
+            </Button>
+          ) : undefined
+        }
       />
       {editing && !entry ? (
         <div className="p-8 text-center text-sm text-muted-foreground">
@@ -254,34 +281,60 @@ export function ExerciseAddPage() {
         </div>
       ) : (
         <div className="space-y-4 p-4">
-          {!editing && !pf.name && (
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => nav('/exercise/track')}
-            >
-              <MapPin className="mr-2 h-4 w-4" />
-              Record a walk/run with GPS
-            </Button>
-          )}
           <Card>
             <CardContent className="space-y-3 p-4">
+              <div className="flex items-center justify-between gap-2">
+                {renaming ? (
+                  <Input
+                    autoFocus
+                    aria-label="Exercise name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onBlur={() => setRenaming(false)}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="flex min-w-0 items-center gap-1.5 text-left"
+                    onClick={() => setRenaming(true)}
+                  >
+                    <span className="truncate font-semibold">
+                      {name || 'Exercise'}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      · {met} MET
+                    </span>
+                    <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  </button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-primary"
+                  onClick={() => {
+                    setChanging((c) => !c)
+                    setAdding(false)
+                    setSearch('')
+                  }}
+                >
+                  {changing ? 'Cancel' : 'Change'}
+                </Button>
+              </div>
+              {changing && (
               <div className="space-y-1.5">
-                <Label htmlFor="actsearch">Activity</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="actsearch"
+                    autoFocus
                     className="pl-9"
                     placeholder="Search activities (e.g. mowing)"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    onFocus={() => setPicking(true)}
-                    onBlur={() => setTimeout(() => setPicking(false), 150)}
                   />
                 </div>
 
-                {(picking || q) && !adding && (
+                {!adding && (
                   <Card className="max-h-60 divide-y divide-border overflow-y-auto">
                     <button
                       type="button"
@@ -398,46 +451,199 @@ export function ExerciseAddPage() {
                   </Card>
                 )}
               </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="exname">Name</Label>
-                <Input
-                  id="exname"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="dur">Duration (min)</Label>
-                <Input
-                  id="dur"
-                  type="number"
-                  inputMode="numeric"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                />
-              </div>
-              {distanceBased && (
-                <div className="space-y-1.5">
-                  <Label htmlFor="dist">Distance (mi, optional)</Label>
-                  <Input
-                    id="dist"
-                    type="number"
-                    inputMode="decimal"
-                    value={distance}
-                    onChange={(e) => setDistance(e.target.value)}
-                  />
-                </div>
               )}
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="space-y-3 p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Intensity zone</span>
-                <span className="text-xs text-muted-foreground">optional</span>
+              <div className="text-center">
+                {editingKcal ? (
+                  <div className="flex items-center justify-center gap-1.5">
+                    <Input
+                      autoFocus
+                      type="number"
+                      inputMode="numeric"
+                      aria-label="Calories"
+                      placeholder={String(est)}
+                      value={override}
+                      onChange={(e) => setOverride(e.target.value)}
+                      onBlur={() => setEditingKcal(false)}
+                      className="h-11 w-28 text-center text-xl font-bold"
+                    />
+                    <span className="text-sm text-muted-foreground">cal</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="inline-flex items-baseline gap-1.5"
+                    onClick={() => setEditingKcal(true)}
+                  >
+                    <span
+                      className={cn(
+                        'text-4xl font-bold',
+                        calories <= 0 && 'text-muted-foreground',
+                      )}
+                    >
+                      {calories}
+                    </span>
+                    <span className="text-sm font-medium text-muted-foreground">
+                      cal
+                    </span>
+                    <Pencil className="h-3.5 w-3.5 self-center text-muted-foreground" />
+                  </button>
+                )}
+                {override ? (
+                  <div className="mt-1 flex items-center justify-center gap-2 text-xs">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
+                      <Watch className="h-3 w-3" /> Your number
+                    </span>
+                    <button
+                      type="button"
+                      className="font-medium text-primary"
+                      onClick={() => {
+                        setOverride('')
+                        setEditingKcal(false)
+                      }}
+                    >
+                      Use auto ({est})
+                    </button>
+                  </div>
+                ) : w != null ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {editingKcal
+                      ? "Enter your watch's number"
+                      : 'Auto-estimate · tap to override'}
+                  </p>
+                ) : null}
+                {w == null && (
+                  <p className="mt-1 text-xs text-warning">
+                    Log your weight in Profile for an estimate.
+                  </p>
+                )}
               </div>
+
+              <div
+                className={cn(
+                  'grid gap-2',
+                  distanceBased ? 'grid-cols-3' : 'grid-cols-2',
+                )}
+              >
+                {[
+                  {
+                    key: 'duration' as const,
+                    value: dur ? `${dur} min` : null,
+                    label: 'Duration',
+                  },
+                  ...(distanceBased
+                    ? [
+                        {
+                          key: 'distance' as const,
+                          value: dist ? `${dist} mi` : null,
+                          label: 'Distance',
+                        },
+                      ]
+                    : []),
+                  {
+                    key: 'hr' as const,
+                    value:
+                      zone != null && avgHr
+                        ? `Z${zone} · ${avgHr}`
+                        : zone != null
+                          ? `Zone ${zone}`
+                          : avgHr
+                            ? `${avgHr} bpm`
+                            : null,
+                    label: 'Heart rate',
+                  },
+                ].map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() =>
+                      setActiveTile(activeTile === t.key ? null : t.key)
+                    }
+                    className={cn(
+                      'rounded-lg border p-2 text-center transition-colors',
+                      activeTile === t.key
+                        ? 'border-primary bg-primary/10'
+                        : 'border-transparent bg-muted',
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'truncate text-sm font-semibold',
+                        !t.value && 'text-muted-foreground',
+                      )}
+                      style={
+                        t.key === 'hr' && zone != null
+                          ? { color: zoneColor(zone) }
+                          : undefined
+                      }
+                    >
+                      {t.value ?? 'Add'}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {t.label}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {activeTile === 'duration' && (
+            <Card>
+              <CardContent className="space-y-2 p-4">
+                <Label htmlFor="dur">Duration (min)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="dur"
+                    type="number"
+                    inputMode="numeric"
+                    className="w-20 text-center"
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                  />
+                  {[15, 30, 45, 60].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setDuration(String(v))}
+                      className={cn(
+                        'flex-1 rounded-full border py-1.5 text-sm transition-colors',
+                        dur === v
+                          ? 'border-primary bg-primary/10 font-medium text-primary'
+                          : 'border-border',
+                      )}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTile === 'distance' && distanceBased && (
+            <Card>
+              <CardContent className="space-y-2 p-4">
+                <Label htmlFor="dist">Distance (mi, optional)</Label>
+                <Input
+                  id="dist"
+                  type="number"
+                  inputMode="decimal"
+                  value={distance}
+                  onChange={(e) => setDistance(e.target.value)}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTile === 'hr' && (
+
+          <Card>
+            <CardContent className="space-y-3 p-4">
               <div className="space-y-1.5">
                 <Label htmlFor="avghr">Avg HR (bpm)</Label>
                 <Input
@@ -504,43 +710,7 @@ export function ExerciseAddPage() {
               )}
             </CardContent>
           </Card>
-
-          <Card>
-            <CardContent className="space-y-3 p-4">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  Estimated burn
-                  <div className="text-xs">
-                    {name || 'Activity'} · {met} MET
-                  </div>
-                </div>
-                <span className="text-2xl font-bold">
-                  {calories}{' '}
-                  <span className="text-sm font-medium text-muted-foreground">
-                    calories
-                  </span>
-                </span>
-              </div>
-              {w == null && (
-                <p className="text-xs text-warning">
-                  Log your weight in Profile for an estimate.
-                </p>
-              )}
-              <div className="space-y-1.5">
-                <Label htmlFor="ov">
-                  Override (optional — from your watch)
-                </Label>
-                <Input
-                  id="ov"
-                  type="number"
-                  inputMode="numeric"
-                  placeholder={String(est)}
-                  value={override}
-                  onChange={(e) => setOverride(e.target.value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          )}
 
           <Button
             className="w-full"

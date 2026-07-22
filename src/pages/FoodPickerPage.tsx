@@ -225,7 +225,11 @@ export function FoodPickerPage() {
       <PageHeader
         title={`Add to ${meal}`}
         left={
-          <Button variant="ghost" size="icon" onClick={() => nav(`/?date=${date}`)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => nav(`/?date=${date}`, { replace: true })}
+          >
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }
@@ -442,7 +446,10 @@ export function FoodPickerPage() {
             <span className="font-semibold text-foreground">{tally.count}</span>{' '}
             added · {Math.round(tally.kcal)} cal
           </span>
-          <Button size="sm" onClick={() => nav(`/?date=${date}`)}>
+          <Button
+            size="sm"
+            onClick={() => nav(`/?date=${date}`, { replace: true })}
+          >
             Done
           </Button>
         </div>
@@ -505,7 +512,7 @@ export function FoodPickerPage() {
                         to: date,
                         meal,
                       })
-                      if (n > 0) nav(`/?date=${date}`)
+                      if (n > 0) nav(`/?date=${date}`, { replace: true })
                     }}
                   >
                     {copyMeal.isPending

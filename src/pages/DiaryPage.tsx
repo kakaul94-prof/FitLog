@@ -1,4 +1,9 @@
-import { useRef, useState, type TouchEvent as ReactTouchEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type TouchEvent as ReactTouchEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -102,8 +107,24 @@ export function DiaryPage() {
   const nav = useNavigate()
   // Seed from ?date= so returning here from add-food keeps the day you were on;
   // a fresh Diary-tab tap (no param) still opens today.
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   const [date, setDate] = useState(() => params.get('date') || todayISO())
+  // Mirror the viewed day back into the URL (replace, so day-stepping doesn't
+  // grow history) — otherwise back-navigation resurrects a stale ?date=.
+  // Today is kept as plain "/" so restored sessions never pin an old day.
+  useEffect(() => {
+    const want = date === todayISO() ? null : date
+    if ((params.get('date') || null) === want) return
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        if (want) next.set('date', want)
+        else next.delete('date')
+        return next
+      },
+      { replace: true },
+    )
+  }, [date, params, setParams])
   const { data: entries, isLoading: diaryLoading } = useDiary(date)
   const { data: profile, isLoading: profileLoading } = useProfile()
   const { data: weight } = useLatestWeight()

@@ -110,7 +110,7 @@ export function ScanMealPage() {
       .filter((it) => (it.nutrients.kcal ?? 0) > 0)
     if (payload.length === 0) return
     quickAdd.mutate({ entry_date: date, meal, items: payload })
-    nav(`/?date=${date}`)
+    nav(`/?date=${date}`, { replace: true })
   }
 
   return (
@@ -118,7 +118,11 @@ export function ScanMealPage() {
       <PageHeader
         title="Snap a meal"
         left={
-          <Button variant="ghost" size="icon" onClick={() => nav(back)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => nav(back, { replace: true })}
+          >
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }

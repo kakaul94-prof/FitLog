@@ -222,12 +222,35 @@ export function ingredientUnits(food: Food): IngredientUnit[] {
   if (pg) {
     const baseUnit = food.serving_unit.trim().toLowerCase()
     for (const u of INGREDIENT_MASS_UNITS) {
-      if (u === baseUnit) continue // base serving already is this mass unit
+      // Skip only when the base serving IS one of this unit (e.g. "1 g");
+      // a "100 g" base still needs a per-gram option to weigh against.
+      if (u === baseUnit && food.serving_qty === 1) continue
       const grams = MASS_UNIT_GRAMS[u]
       units.push({ unit: u, label: u, nutrients: scaleNutrients(pg, grams), grams })
     }
   }
   return units
+}
+
+/**
+ * Resolve a diary snapshot's serving (qty + unit label) back to a selectable
+ * `ingredientUnits` id: 'base' when it matches the food's current base serving,
+ * else the per-1 unit (portion / mass) whose label matches. Null when nothing
+ * matches (food redefined since, or snapshot fields absent).
+ */
+export function matchServingUnit(
+  food: Food,
+  serving_qty: number | null,
+  serving_unit: string | null,
+): string | null {
+  if (serving_qty == null || !serving_unit) return null
+  if (serving_qty === food.serving_qty && serving_unit === food.serving_unit)
+    return 'base'
+  if (serving_qty !== 1) return null
+  const u = ingredientUnits(food).find(
+    (x) => x.unit !== 'base' && x.label === serving_unit,
+  )
+  return u ? u.unit : null
 }
 
 /** The chosen measure for an ingredient, falling back to the base serving. */

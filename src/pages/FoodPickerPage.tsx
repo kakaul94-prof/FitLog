@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Search,
   Plus,
   Minus,
@@ -13,6 +15,7 @@ import {
   Trash2,
   Loader2,
   Database,
+  X,
   Zap,
   Camera,
 } from 'lucide-react'
@@ -21,12 +24,14 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { StartFromSourceSheet } from '@/components/StartFromSourceSheet'
 import {
   useFoods,
   useDeleteFood,
   useFoodHistory,
   useSaveFood,
+  type LastServing,
 } from '@/features/foods/useFoods'
 import {
   useDiary,
@@ -34,6 +39,9 @@ import {
   useLogFoods,
   useCopyMeal,
   useQuickAddFood,
+  useUpdateDiaryServings,
+  useDeleteDiaryEntry,
+  type ServingOverride,
 } from '@/features/diary/useDiary'
 import { useMeals, useLogMeal, type MealWithItems } from '@/features/meals/useMeals'
 import {
@@ -43,12 +51,27 @@ import {
   type UsdaSearchItem,
 } from '@/lib/usda'
 import { todayISO, addDaysISO } from '@/lib/date'
-import { scaleNutrients } from '@/lib/nutrients'
+import {
+  ingredientUnits,
+  matchServingUnit,
+  scaleNutrients,
+} from '@/lib/nutrients'
 import { cn } from '@/lib/utils'
 import { useLongPress } from '@/lib/useLongPress'
 import type { Food, Meal, Nutrients } from '@/lib/database.types'
 
 type Pick = { food: Food; servings: string }
+
+// A diary entry created in this picker session — shown in the "added" tray so
+// its servings can be edited (or the entry removed) right after logging.
+type AddedEntry = {
+  id: string
+  name: string
+  servings: number
+  serving_qty: number | null
+  serving_unit: string | null
+  nutrients: Nutrients
+}
 
 export function FoodPickerPage() {
   const nav = useNavigate()
@@ -87,18 +110,35 @@ export function FoodPickerPage() {
   const [quickOpen, setQuickOpen] = useState(false)
   const [sourceOpen, setSourceOpen] = useState(false)
   const quickAdd = useQuickAddFood()
-  // Item (2): stay in the picker after adding; show a running tally + a toast.
-  const [tally, setTally] = useState({ count: 0, kcal: 0 })
+  // Items (2)+(9): stay in the picker after adding, with a toast. The tally
+  // footer expands into a tray of this session's entries (they're already in
+  // the diary — edits/removals write straight through to those rows).
+  const [added, setAdded] = useState<AddedEntry[]>([])
+  const [trayOpen, setTrayOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const updServings = useUpdateDiaryServings()
+  const delEntry = useDeleteDiaryEntry()
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 1800)
     return () => clearTimeout(t)
   }, [toast])
-  const noteAdded = (count: number, kcal: number, label: string) => {
-    setTally((p) => ({ count: p.count + count, kcal: p.kcal + kcal }))
+  const recordAdded = (items: AddedEntry[], label: string) => {
+    setAdded((p) => [...p, ...items])
     setToast(label)
   }
+  const editAdded = (id: string, servings: number) => {
+    updServings.mutate({ id, servings })
+    setAdded((p) => p.map((a) => (a.id === id ? { ...a, servings } : a)))
+  }
+  const removeAdded = (id: string) => {
+    delEntry.mutate(id)
+    setAdded((p) => p.filter((a) => a.id !== id))
+  }
+  const addedKcal = added.reduce(
+    (s, a) => s + (a.nutrients.kcal ?? 0) * a.servings,
+    0,
+  )
 
   const isPicked = (id: string) => picks.some((p) => p.food.id === id)
 
@@ -133,17 +173,21 @@ export function FoodPickerPage() {
 
   const addMany = async () => {
     if (picks.length === 0) return
-    logMany.mutate({
-      entry_date: date,
-      meal,
-      items: picks.map((p) => ({
-        food: p.food,
-        servings: parseFloat(p.servings) || 1,
+    const items = picks.map((p) => ({
+      food: p.food,
+      servings: parseFloat(p.servings) || 1,
+      id: crypto.randomUUID(),
+    }))
+    logMany.mutate({ entry_date: date, meal, items })
+    recordAdded(
+      items.map((it) => ({
+        id: it.id,
+        name: it.food.name,
+        servings: it.servings,
+        serving_qty: it.food.serving_qty,
+        serving_unit: it.food.serving_unit,
+        nutrients: it.food.nutrients,
       })),
-    })
-    noteAdded(
-      picks.length,
-      multiKcal,
       `Added ${picks.length} ${picks.length === 1 ? 'item' : 'items'}`,
     )
     setPicks([])
@@ -440,18 +484,46 @@ export function FoodPickerPage() {
         </div>
       )}
 
-      {tally.count > 0 && !(multi && picks.length > 0) && (
-        <div className="fixed bottom-0 left-1/2 flex w-full max-w-md -translate-x-1/2 items-center justify-between gap-3 border-t border-border bg-card p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <span className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">{tally.count}</span>{' '}
-            added · {Math.round(tally.kcal)} cal
-          </span>
-          <Button
-            size="sm"
-            onClick={() => nav(`/?date=${date}`, { replace: true })}
-          >
-            Done
-          </Button>
+      {added.length > 0 && !(multi && picks.length > 0) && (
+        <div className="fixed bottom-0 left-1/2 w-full max-w-md -translate-x-1/2 border-t border-border bg-card">
+          {trayOpen && (
+            <div className="max-h-60 divide-y divide-border overflow-y-auto border-b border-border">
+              {added.map((a) => (
+                <TrayRow
+                  key={a.id}
+                  item={a}
+                  onServings={(s) => editAdded(a.id, s)}
+                  onRemove={() => removeAdded(a.id)}
+                />
+              ))}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <button
+              type="button"
+              onClick={() => setTrayOpen((o) => !o)}
+              aria-expanded={trayOpen}
+              className="flex items-center gap-1.5 text-sm text-muted-foreground active:opacity-70"
+            >
+              <span>
+                <span className="font-semibold text-foreground">
+                  {added.length}
+                </span>{' '}
+                added · {Math.round(addedKcal)} cal
+              </span>
+              {trayOpen ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronUp className="h-4 w-4" />
+              )}
+            </button>
+            <Button
+              size="sm"
+              onClick={() => nav(`/?date=${date}`, { replace: true })}
+            >
+              Done
+            </Button>
+          </div>
         </div>
       )}
 
@@ -569,19 +641,21 @@ export function FoodPickerPage() {
                       mealToLog.items.length === 0 || logMeal.isPending
                     }
                     onClick={async () => {
-                      const n = await logMeal.mutateAsync({
+                      const rows = await logMeal.mutateAsync({
                         meal_id: mealToLog.id,
                         entry_date: date,
                         meal,
                       })
-                      if (n > 0)
-                        noteAdded(
-                          n,
-                          mealToLog.items.reduce(
-                            (s, it) =>
-                              s + (it.nutrients.kcal ?? 0) * it.servings,
-                            0,
-                          ),
+                      if (rows.length > 0)
+                        recordAdded(
+                          rows.map((r) => ({
+                            id: r.id,
+                            name: r.food_name,
+                            servings: r.servings,
+                            serving_qty: r.serving_qty,
+                            serving_unit: r.serving_unit,
+                            nutrients: r.nutrients,
+                          })),
                           `Added ${mealToLog.name}`,
                         )
                       setMealToLog(null)
@@ -645,18 +719,29 @@ export function FoodPickerPage() {
           food={servingFood}
           meal={meal}
           pending={logOne.isPending}
-          defaultServings={history?.lastServings.get(servingFood.id) ?? 1}
+          last={history?.lastServings.get(servingFood.id)}
           onClose={() => setServingFood(null)}
-          onAdd={async (s) => {
+          onAdd={async (s, unit) => {
+            const id = crypto.randomUUID()
             logOne.mutate({
               entry_date: date,
               meal,
               food: servingFood,
               servings: s,
+              unit,
+              id,
             })
-            noteAdded(
-              1,
-              (servingFood.nutrients.kcal ?? 0) * s,
+            recordAdded(
+              [
+                {
+                  id,
+                  name: servingFood.name,
+                  servings: s,
+                  serving_qty: unit?.serving_qty ?? servingFood.serving_qty,
+                  serving_unit: unit?.serving_unit ?? servingFood.serving_unit,
+                  nutrients: unit?.nutrients ?? servingFood.nutrients,
+                },
+              ],
               `Added ${servingFood.name}`,
             )
             setServingFood(null)
@@ -671,8 +756,21 @@ export function FoodPickerPage() {
           pending={quickAdd.isPending}
           onClose={() => setQuickOpen(false)}
           onAdd={async ({ name, nutrients }) => {
-            quickAdd.mutate({ entry_date: date, meal, name, nutrients })
-            noteAdded(1, nutrients.kcal ?? 0, `Added ${name.trim() || 'Quick add'}`)
+            const id = crypto.randomUUID()
+            quickAdd.mutate({ entry_date: date, meal, name, nutrients, id })
+            recordAdded(
+              [
+                {
+                  id,
+                  name: name.trim() || 'Quick add',
+                  servings: 1,
+                  serving_qty: null,
+                  serving_unit: null,
+                  nutrients,
+                },
+              ],
+              `Added ${name.trim() || 'Quick add'}`,
+            )
             setQuickOpen(false)
           }}
         />
@@ -737,13 +835,96 @@ function FoodRow({
   )
 }
 
-// Quick-log sheet: set how many servings, preview the scaled nutrition, log it.
-// Keeps the common "just log it" path off the full FoodFormPage editor.
+// A row in the "added this session" tray: steppers/typing edit the just-logged
+// diary row's servings in place; × removes the entry from the diary.
+function TrayRow({
+  item,
+  onServings,
+  onRemove,
+}: {
+  item: AddedEntry
+  onServings: (servings: number) => void
+  onRemove: () => void
+}) {
+  const [val, setVal] = useState(String(item.servings))
+  useEffect(() => setVal(String(item.servings)), [item.servings])
+  const v = parseFloat(val) || 0
+  const kcal = Math.round(
+    (item.nutrients.kcal ?? 0) * (v > 0 ? v : item.servings),
+  )
+  const commit = () => {
+    if (v > 0 && v !== item.servings) onServings(v)
+    else setVal(String(item.servings))
+  }
+  const step = (delta: number) => {
+    const next = Math.max(
+      0,
+      Math.round((item.servings + delta) * 100) / 100,
+    )
+    if (next > 0) onServings(next)
+  }
+  const caption =
+    item.serving_qty != null && item.serving_unit
+      ? `× ${item.serving_qty === 1 ? '' : `${item.serving_qty} `}${item.serving_unit} · `
+      : ''
+  return (
+    <div className="flex items-center gap-2 p-3">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium">{item.name}</div>
+        <div className="text-xs text-muted-foreground">
+          {caption}
+          {kcal} cal
+        </div>
+      </div>
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-8 w-8"
+        onClick={() => step(-1)}
+        disabled={item.servings <= 1}
+        aria-label="Decrease servings"
+      >
+        <Minus className="h-3.5 w-3.5" />
+      </Button>
+      <Input
+        type="number"
+        inputMode="decimal"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={commit}
+        onFocus={(e) => e.target.select()}
+        className="h-8 w-14 px-1 text-center text-sm font-semibold"
+        aria-label="Servings"
+      />
+      <Button
+        variant="outline"
+        size="icon"
+        className="h-8 w-8"
+        onClick={() => step(1)}
+        aria-label="Increase servings"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </Button>
+      <button
+        type="button"
+        onClick={onRemove}
+        className="p-1 text-muted-foreground active:text-destructive"
+        aria-label="Remove entry"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
+// Quick-log sheet: set the amount and its unit (base serving, saved portions,
+// g/oz/lb), preview the scaled nutrition, log it. Keeps the common "just log
+// it" path off the full FoodFormPage editor.
 function ServingSheet({
   food,
   meal,
   pending,
-  defaultServings,
+  last,
   onClose,
   onAdd,
   onEditDetails,
@@ -751,15 +932,24 @@ function ServingSheet({
   food: Food
   meal: Meal
   pending: boolean
-  defaultServings: number
+  last?: LastServing
   onClose: () => void
-  onAdd: (servings: number) => void
+  onAdd: (servings: number, unit?: ServingOverride) => void
   onEditDetails: () => void
 }) {
-  // Remounts per food (conditional render), so the last-used default sticks.
-  const [servings, setServings] = useState(String(defaultServings))
+  const units = ingredientUnits(food)
+  // Remounts per food (conditional render). Restore the last log's amount AND
+  // unit when it still maps to this food; else start from 1 × base serving.
+  const lastUnit = last
+    ? matchServingUnit(food, last.serving_qty, last.serving_unit)
+    : null
+  const [servings, setServings] = useState(
+    String(last && lastUnit ? last.servings : 1),
+  )
+  const [unitId, setUnitId] = useState(lastUnit ?? 'base')
+  const selected = units.find((u) => u.unit === unitId) ?? units[0]
   const s = parseFloat(servings) || 0
-  const scaled = scaleNutrients(food.nutrients, s)
+  const scaled = scaleNutrients(selected.nutrients, s)
   const step = (delta: number) =>
     setServings((prev) => {
       const next = Math.max(
@@ -817,9 +1007,26 @@ function ServingSheet({
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
-            <p className="text-center text-xs text-muted-foreground">
-              × {food.serving_qty} {food.serving_unit}
-            </p>
+            {units.length > 1 ? (
+              <div className="flex justify-center">
+                <Select
+                  className="h-9 w-44"
+                  value={selected.unit}
+                  onChange={(e) => setUnitId(e.target.value)}
+                  aria-label="Serving unit"
+                >
+                  {units.map((u) => (
+                    <option key={u.unit} value={u.unit}>
+                      × {u.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : (
+              <p className="text-center text-xs text-muted-foreground">
+                × {food.serving_qty} {food.serving_unit}
+              </p>
+            )}
             <div className="rounded-lg bg-secondary p-3">
               <div className="text-center">
                 <span className="text-2xl font-bold">
@@ -836,7 +1043,18 @@ function ServingSheet({
             <Button
               className="w-full"
               disabled={s <= 0 || pending}
-              onClick={() => onAdd(s)}
+              onClick={() =>
+                onAdd(
+                  s,
+                  selected.unit === 'base'
+                    ? undefined
+                    : {
+                        serving_qty: 1,
+                        serving_unit: selected.label,
+                        nutrients: selected.nutrients,
+                      },
+                )
+              }
             >
               {pending ? 'Adding…' : `Add to ${meal}`}
             </Button>

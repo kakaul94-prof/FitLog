@@ -21,11 +21,19 @@ export function useFoods(search = '') {
   })
 }
 
+/** The latest diary log of a food: servings + its serving snapshot, so the
+ *  serving sheet can restore both the amount and the unit it was logged in. */
+export type LastServing = {
+  servings: number
+  serving_qty: number | null
+  serving_unit: string | null
+}
+
 export type FoodHistory = {
   recent: Food[]
   frequent: Food[]
-  /** Most-recent servings logged per food_id — pre-fills the serving sheet. */
-  lastServings: Map<string, number>
+  /** Most-recent log per food_id — pre-fills the serving sheet. */
+  lastServings: Map<string, LastServing>
 }
 
 /**
@@ -40,18 +48,23 @@ export function useFoodHistory() {
       const since = addDaysISO(todayISO(), -60)
       const { data, error } = await supabase
         .from('diary_entries')
-        .select('food_id, created_at, servings')
+        .select('food_id, created_at, servings, serving_qty, serving_unit')
         .gte('entry_date', since)
         .not('food_id', 'is', null)
         .order('created_at', { ascending: false })
         .limit(500)
       if (error) throw error
-      const rows = (data ?? []) as { food_id: string; servings: number }[]
+      const rows = (data ?? []) as {
+        food_id: string
+        servings: number
+        serving_qty: number | null
+        serving_unit: string | null
+      }[]
 
       const seen = new Set<string>()
       const recencyIds: string[] = []
       const counts = new Map<string, number>()
-      const lastServings = new Map<string, number>()
+      const lastServings = new Map<string, LastServing>()
       for (const r of rows) {
         const id = r.food_id
         if (!id) continue
@@ -60,7 +73,12 @@ export function useFoodHistory() {
           seen.add(id)
           recencyIds.push(id)
           // Rows are newest-first, so the first sighting is the latest log.
-          if (typeof r.servings === 'number') lastServings.set(id, r.servings)
+          if (typeof r.servings === 'number')
+            lastServings.set(id, {
+              servings: r.servings,
+              serving_qty: r.serving_qty,
+              serving_unit: r.serving_unit,
+            })
         }
       }
       if (recencyIds.length === 0)

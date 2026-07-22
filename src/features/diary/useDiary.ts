@@ -69,16 +69,18 @@ function removeDiaryRows(qc: QueryClient, ids: string[]) {
 }
 
 /** A diary_entries insert row from a food + servings (snapshots the food), with
- *  a client id + created_at so the optimistic row == the synced row. */
+ *  a client id + created_at so the optimistic row == the synced row. Callers may
+ *  supply the id up front (the picker's "added" tray edits rows it just made). */
 function newDiaryRow(
   entry_date: string,
   meal: Meal,
   food: Food,
   servings: number,
   unit?: ServingOverride,
+  id?: string,
 ) {
   return {
-    id: crypto.randomUUID(),
+    id: id ?? crypto.randomUUID(),
     created_at: new Date().toISOString(),
     entry_date,
     meal,
@@ -98,9 +100,10 @@ function newQuickRow(
   meal: Meal,
   name: string | undefined,
   nutrients: Nutrients,
+  id?: string,
 ) {
   return {
-    id: crypto.randomUUID(),
+    id: id ?? crypto.randomUUID(),
     created_at: new Date().toISOString(),
     entry_date,
     meal,
@@ -128,13 +131,15 @@ type LogFoodVars = {
   food: Food
   servings: number
   unit?: ServingOverride
+  /** Caller-chosen entry id (lets the picker edit the row right after adding). */
+  id?: string
   _row?: ReturnType<typeof newDiaryRow>
 }
 
 type LogFoodsVars = {
   entry_date: string
   meal: Meal
-  items: { food: Food; servings: number; unit?: ServingOverride }[]
+  items: { food: Food; servings: number; unit?: ServingOverride; id?: string }[]
   _rows?: ReturnType<typeof newDiaryRow>[]
 }
 
@@ -143,6 +148,8 @@ type QuickAddVars = {
   meal: Meal
   name?: string
   nutrients: Nutrients
+  /** Caller-chosen entry id (lets the picker edit the row right after adding). */
+  id?: string
   _row?: ReturnType<typeof newQuickRow>
 }
 
@@ -182,7 +189,7 @@ function logFoodMutation(
     mutationKey: KEYS.logFood,
     mutationFn: async (v) => {
       const row =
-        v._row ?? newDiaryRow(v.entry_date, v.meal, v.food, v.servings, v.unit)
+        v._row ?? newDiaryRow(v.entry_date, v.meal, v.food, v.servings, v.unit, v.id)
       const { error } = await supabase.from('diary_entries').insert(row)
       if (error) throw error
     },
@@ -224,7 +231,7 @@ function logFoodsMutation(
       const rows =
         v._rows ??
         v.items.map((it) =>
-          newDiaryRow(v.entry_date, v.meal, it.food, it.servings, it.unit),
+          newDiaryRow(v.entry_date, v.meal, it.food, it.servings, it.unit, it.id),
         )
       if (rows.length === 0) return
       const { error } = await supabase.from('diary_entries').insert(rows)
@@ -232,7 +239,7 @@ function logFoodsMutation(
     },
     onMutate: async (v) => {
       const rows = (v._rows = v.items.map((it) =>
-        newDiaryRow(v.entry_date, v.meal, it.food, it.servings, it.unit),
+        newDiaryRow(v.entry_date, v.meal, it.food, it.servings, it.unit, it.id),
       ))
       const snap = await snapshotDiary(qc)
       qc.setQueryData<DiaryEntry[]>(['diary', v.entry_date], (old) => [
@@ -262,12 +269,12 @@ function quickAddMutation(
   return {
     mutationKey: KEYS.quickAdd,
     mutationFn: async (v) => {
-      const row = v._row ?? newQuickRow(v.entry_date, v.meal, v.name, v.nutrients)
+      const row = v._row ?? newQuickRow(v.entry_date, v.meal, v.name, v.nutrients, v.id)
       const { error } = await supabase.from('diary_entries').insert(row)
       if (error) throw error
     },
     onMutate: async (v) => {
-      const row = (v._row = newQuickRow(v.entry_date, v.meal, v.name, v.nutrients))
+      const row = (v._row = newQuickRow(v.entry_date, v.meal, v.name, v.nutrients, v.id))
       const snap = await snapshotDiary(qc)
       qc.setQueryData<DiaryEntry[]>(['diary', v.entry_date], (old) => [
         ...(old ?? []),

@@ -11,6 +11,7 @@ import {
   ingredientUnits,
   ingredientNutrients,
   ingredientServings,
+  matchServingUnit,
   recipePerServing,
 } from './nutrients'
 import type { Food, Nutrients } from './database.types'
@@ -183,6 +184,66 @@ describe('ingredientUnits', () => {
   it('scales nutrients per gram for mass units', () => {
     const g = ingredientUnits(food).find((u) => u.unit === 'g')
     expect(g?.nutrients).toEqual({ kcal: 2, protein: 0.1 }) // 200 kcal / 100 g
+  })
+  it('still offers per-gram for a multi-gram base serving (e.g. USDA 100 g)', () => {
+    const usda: Food = {
+      ...food,
+      serving_qty: 100,
+      serving_unit: 'g',
+      portions: [],
+    }
+    const g = ingredientUnits(usda).find((u) => u.unit === 'g')
+    expect(g?.nutrients).toEqual({ kcal: 2, protein: 0.1 })
+  })
+  it('does not double-list the base when it already is one of a mass unit', () => {
+    const perG: Food = {
+      ...food,
+      serving_qty: 1,
+      serving_unit: 'g',
+      serving_grams: 1,
+      portions: [],
+    }
+    expect(ingredientUnits(perG).map((u) => u.unit)).toEqual(['base', 'oz', 'lb'])
+  })
+})
+
+describe('matchServingUnit', () => {
+  // Oats: base = 1 cup = 100 g, plus a half-cup portion.
+  const food: Food = {
+    id: 'f1',
+    user_id: 'u1',
+    name: 'Oats',
+    brand: null,
+    source: 'manual',
+    source_id: null,
+    serving_qty: 1,
+    serving_unit: 'cup',
+    serving_grams: 100,
+    recipe_servings: null,
+    nutrients: { kcal: 200 },
+    portions: [{ id: 'p1', label: 'half cup', grams: 50 }],
+    archived: false,
+    created_at: '',
+    updated_at: '',
+  }
+
+  it('matches the base serving by qty + unit', () => {
+    expect(matchServingUnit(food, 1, 'cup')).toBe('base')
+  })
+  it('matches a portion by its label (snapshots are per 1)', () => {
+    expect(matchServingUnit(food, 1, 'half cup')).toBe('p1')
+  })
+  it('matches a mass unit', () => {
+    expect(matchServingUnit(food, 1, 'g')).toBe('g')
+  })
+  it('returns null when the food was redefined or fields are absent', () => {
+    expect(matchServingUnit(food, 2, 'cup')).toBeNull() // base qty changed
+    expect(matchServingUnit(food, 1, 'scoop')).toBeNull() // unknown label
+    expect(matchServingUnit(food, null, 'cup')).toBeNull()
+    expect(matchServingUnit(food, 1, null)).toBeNull()
+  })
+  it('cannot match mass units when the gram weight is unknown', () => {
+    expect(matchServingUnit({ ...food, serving_grams: null }, 1, 'g')).toBeNull()
   })
 })
 

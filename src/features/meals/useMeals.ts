@@ -82,6 +82,21 @@ export function useCreateMealFromEntries() {
   })
 }
 
+/** A diary row inserted by useLogMeal — client-generated id so the picker's
+ *  "added" tray can edit/delete the rows it just created. */
+export type LoggedMealRow = {
+  id: string
+  entry_date: string
+  meal: Meal
+  food_id: string | null
+  food_name: string
+  brand: string | null
+  servings: number
+  serving_qty: number | null
+  serving_unit: string | null
+  nutrients: SavedMealItem['nutrients']
+}
+
 /** Log every item of a saved meal as a separate diary row in one tap. */
 export function useLogMeal() {
   const qc = useQueryClient()
@@ -90,7 +105,7 @@ export function useLogMeal() {
       meal_id: string
       entry_date: string
       meal: Meal
-    }): Promise<number> => {
+    }): Promise<LoggedMealRow[]> => {
       const { data, error } = await supabase
         .from('meal_items')
         .select('*')
@@ -98,8 +113,9 @@ export function useLogMeal() {
         .order('position')
       if (error) throw error
       const items = (data ?? []) as SavedMealItem[]
-      if (items.length === 0) return 0
-      const rows = items.map((it) => ({
+      if (items.length === 0) return []
+      const rows: LoggedMealRow[] = items.map((it) => ({
+        id: crypto.randomUUID(),
         entry_date: e.entry_date,
         meal: e.meal,
         food_id: it.food_id,
@@ -114,7 +130,7 @@ export function useLogMeal() {
         .from('diary_entries')
         .insert(rows)
       if (insErr) throw insErr
-      return rows.length
+      return rows
     },
     onSuccess: (_n, v) => {
       // Logging a meal for today defers tonight's streak nudge (native only).

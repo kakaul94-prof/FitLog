@@ -1,8 +1,22 @@
 # FitLog — project guide for Claude
 
-Personal, phone-first PWA to track calories/food, macros + micros, cardio,
-strength, and body weight. Single user, cloud-synced via Supabase. Modeled on
-the old MyFitnessPal.
+Personal, phone-first PWA to track calories/food (macros + micros), cardio,
+strength, and body weight — with barcode/photo/label food scanning, GPS + HR-zone
+cardio, per-exercise form videos, and data-driven (adaptive-TDEE) insights.
+Single user, cloud-synced via Supabase. Modeled on the old MyFitnessPal.
+
+## Features (shipped)
+
+Pointers only; the mechanics live in **Domain logic** / **Data model** below.
+
+- **Food & diary:** barcode scan (`barcode.ts` — native BarcodeDetector → Open Food Facts + USDA Branded, names source & flags disagreements), AI meal-photo scan (`scanPlate.ts`/`ScanMealPage`), nutrition-label OCR (`scanLabel.ts`), USDA search import (`usda.ts`/`UsdaSearchPage`), recipes + web-URL import (`importRecipe.ts`), reusable meals, daily supplements (`useDailySupplements`), food streak.
+- **Nutrition insight:** adaptive/data-driven TDEE from logged intake + weigh-ins (`useAdaptiveTDEE` + `estimateAdaptiveTDEE`), 31-micronutrient + macro tracking, non-retroactive calorie-goal history, nutrition/micronutrient trend charts (`features/insights`).
+- **Cardio:** MET / distance / manual logging, GPS distance recorder (`geo.ts`/`geoWatch.ts`/`ExerciseTrackPage`), HR zones 1–5 + time-in-zone (`zones.ts`, `hrZones` in `calc.ts`), distance & zone trends.
+- **Strength:** workouts/sets/supersets, routines + `/program` rotation, est 1RM + progression, per-exercise form-video upload (`useFormVideos`), exercise notes, custom exercises, muscle-volume + body heatmap (`MuscleVolumePage`/`BodyHeatmap`), muscle & strength goals, workout calendar, rest timer (native notification).
+- **Body:** weight + body measurements, BMI.
+- **Platform:** installable PWA, Capacitor Android (native rest-timer + read-only Health Connect passive steps), offline read, data export/import, More → Patch Notes.
+
+**Not built (biggest gaps vs. mainstream apps):** water/hydration logging, sleep tracking, intermittent-fasting timer, meal-logging reminder notifications, two-way wearable / Apple Health / Fitbit sync. Social/community is intentionally out of scope (single-user).
 
 ## Working style
 

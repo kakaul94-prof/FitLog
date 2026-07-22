@@ -561,11 +561,42 @@ function MicronutrientCard({ days }: { days: number }) {
       </CardHeader>
       <CardContent className="space-y-3">
         {low.length > 0 ? (
-          <p className="text-sm">
-            <span className="text-muted-foreground">Low this week: </span>
-            {low.slice(0, 4).map((s) => s.label).join(', ')}
-            {low.length > 4 && ` +${low.length - 4} more`}
-          </p>
+          <div>
+            <button
+              onClick={() => setShowSources((v) => !v)}
+              className="flex w-full items-start justify-between gap-2 text-left text-sm"
+            >
+              <span>
+                <span className="text-muted-foreground">Low this week: </span>
+                {low.slice(0, 4).map((s) => s.label).join(', ')}
+                {low.length > 4 && ` +${low.length - 4} more`}
+              </span>
+              <ChevronDown
+                className={cn(
+                  'mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                  showSources && 'rotate-180',
+                )}
+              />
+            </button>
+            {showSources && (
+              <ul className="mt-2 space-y-2">
+                {low.map((s) => {
+                  const foods = NUTRIENT_SOURCES[s.key]
+                  if (!foods) return null
+                  return (
+                    <li key={s.key} className="text-xs leading-snug">
+                      <span className="font-medium text-foreground">
+                        {s.label}:{' '}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {foods.join(', ')}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground">
             You’re on track with your micronutrient targets this week.
@@ -592,41 +623,6 @@ function MicronutrientCard({ days }: { days: number }) {
         >
           {showAll ? 'Show less' : `Show all ${data.stats.length}`}
         </button>
-
-        {low.length > 0 && (
-          <div className="border-t border-border pt-3">
-            <button
-              onClick={() => setShowSources((v) => !v)}
-              className="flex w-full items-center justify-between text-xs font-medium text-primary"
-            >
-              <span>Food sources for what you’re low on</span>
-              <ChevronDown
-                className={cn(
-                  'h-4 w-4 transition-transform',
-                  showSources && 'rotate-180',
-                )}
-              />
-            </button>
-            {showSources && (
-              <ul className="mt-3 space-y-2">
-                {low.map((s) => {
-                  const foods = NUTRIENT_SOURCES[s.key]
-                  if (!foods) return null
-                  return (
-                    <li key={s.key} className="text-xs leading-snug">
-                      <span className="font-medium text-foreground">
-                        {s.label}:{' '}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {foods.join(', ')}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-        )}
 
         <p className="text-[11px] leading-snug text-muted-foreground">
           Targets are FDA Daily Values, averaged over your logged days. Foods

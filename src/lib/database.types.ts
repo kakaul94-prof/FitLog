@@ -128,11 +128,20 @@ export interface DeloadState {
   startProgramWorkouts: number
 }
 
+// Manually pinned "next up" template. `sinceWorkoutId` marks the most recent
+// in-program workout at the moment the pin was set (null = none yet); the pin
+// stays live until any program workout is logged after it (marker mismatch =
+// consumed for good). See activeOverrideId in lib/program.ts.
+export interface NextOverride {
+  routineId: string
+  sinceWorkoutId: string | null
+}
+
 export interface ProgramState {
   sequence: ProgramItem[]
-  // Manually pinned next template (routineId); consumed once a workout is logged
-  // from it, after which "next" resumes deriving from history. null/absent = auto.
-  nextOverride?: string | null
+  // Pinned next template; bare string = legacy save (pre-marker, active only
+  // while it differs from the last-done routine). null/absent = auto rotation.
+  nextOverride?: NextOverride | string | null
   // Manually-started deload (advisory lighter cycle). null/absent = not deloading.
   deload?: DeloadState | null
 }

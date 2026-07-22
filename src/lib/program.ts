@@ -1,10 +1,16 @@
-import type { DeloadState, ProgramItem } from './database.types'
+import type { DeloadState, NextOverride, ProgramItem } from './database.types'
 
 // Sequential-rotation logic for the workout program. Pure + framework-free so
 // it's unit-tested and shared by the Program page and the Exercise "Next up"
-// card. "History" is the workouts list newest-first ({ source_routine_id }).
+// card. "History" is the workouts list newest-first ({ id, source_routine_id }).
 // Note: a routine appearing twice in one cycle isn't fully supported — indexOf
 // finds the first occurrence, so rotation keys off that (v1 limitation).
+
+/** Workout row shape the rotation reads; the list must be newest-first. */
+export interface ProgramWorkoutRow {
+  id: string
+  source_routine_id: string | null
+}
 
 /** Ordered routine ids in the program, rest slots removed. */
 export function programRoutineIds(sequence: ProgramItem[]): string[] {
@@ -12,32 +18,52 @@ export function programRoutineIds(sequence: ProgramItem[]): string[] {
 }
 
 /** Most recent workout that came from a template still in the program. */
-function lastDoneRoutineId(
+export function latestProgramWorkout(
   routineIds: string[],
-  workouts: { source_routine_id: string | null }[],
-): string | null {
+  workouts: ProgramWorkoutRow[],
+): ProgramWorkoutRow | null {
   const inProgram = new Set(routineIds)
   return (
     workouts.find(
       (w) => w.source_routine_id && inProgram.has(w.source_routine_id),
-    )?.source_routine_id ?? null
+    ) ?? null
   )
 }
 
-/** Next template to train: the routine after your most recently trained one,
- *  wrapping around, skipping rest days. A fresh `nextOverride` wins until it's
- *  actually been trained (then it's "consumed" and we resume from history).
+/** The pinned routineId while the pin is live, else null. An object pin stays
+ *  live exactly until any program workout is logged after it was set (its
+ *  `sinceWorkoutId` marker stops matching the latest program workout) — so
+ *  pinning the day you just did works, and a consumed pin never resurrects.
+ *  A legacy bare-string pin (older saves) keeps the old rule: live only while
+ *  it differs from the last-done routine. */
+export function activeOverrideId(
+  nextOverride: NextOverride | string | null | undefined,
+  latest: ProgramWorkoutRow | null,
+): string | null {
+  if (!nextOverride) return null
+  if (typeof nextOverride === 'string')
+    return nextOverride !== (latest?.source_routine_id ?? null)
+      ? nextOverride
+      : null
+  return nextOverride.sinceWorkoutId === (latest?.id ?? null)
+    ? nextOverride.routineId
+    : null
+}
+
+/** Next template to train: a live pin wins; otherwise the routine after your
+ *  most recently trained one, wrapping around, skipping rest days.
  *  Returns null only when the program has no templates. */
 export function nextProgramRoutineId(
   sequence: ProgramItem[],
-  workouts: { source_routine_id: string | null }[],
-  nextOverride?: string | null,
+  workouts: ProgramWorkoutRow[],
+  nextOverride?: NextOverride | string | null,
 ): string | null {
   const ids = programRoutineIds(sequence)
   if (ids.length === 0) return null
-  const last = lastDoneRoutineId(ids, workouts)
-  if (nextOverride && nextOverride !== last && ids.includes(nextOverride))
-    return nextOverride
+  const latest = latestProgramWorkout(ids, workouts)
+  const pinned = activeOverrideId(nextOverride, latest)
+  if (pinned && ids.includes(pinned)) return pinned
+  const last = latest?.source_routine_id ?? null
   if (!last) return ids[0]
   const i = ids.indexOf(last)
   return ids[(i + 1) % ids.length]
@@ -47,9 +73,10 @@ export function nextProgramRoutineId(
  *  a "day X of N" readout. -1 when nothing in the program has been done. */
 export function currentProgramIndex(
   sequence: ProgramItem[],
-  workouts: { source_routine_id: string | null }[],
+  workouts: ProgramWorkoutRow[],
 ): number {
-  const last = lastDoneRoutineId(programRoutineIds(sequence), workouts)
+  const last = latestProgramWorkout(programRoutineIds(sequence), workouts)
+    ?.source_routine_id
   if (!last) return -1
   return sequence.findIndex(
     (it) => it.kind === 'routine' && it.routineId === last,
@@ -60,8 +87,8 @@ export function currentProgramIndex(
  *  nextProgramRoutineId — for the "upcoming" preview. */
 export function upcomingProgramRoutineIds(
   sequence: ProgramItem[],
-  workouts: { source_routine_id: string | null }[],
-  nextOverride: string | null | undefined,
+  workouts: ProgramWorkoutRow[],
+  nextOverride: NextOverride | string | null | undefined,
   count: number,
 ): string[] {
   const ids = programRoutineIds(sequence)

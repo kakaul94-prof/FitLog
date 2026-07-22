@@ -16,6 +16,9 @@ const R = (routineId: string): ProgramItem => ({
   routineId,
 })
 const REST = (n = 0): ProgramItem => ({ id: `rest-${n}`, kind: 'rest' })
+// Workout row (newest-first lists in tests): W('w2','b') = workout w2 from
+// template b.
+const W = (id: string, rid: string | null) => ({ id, source_routine_id: rid })
 
 const seq = [R('a'), R('b'), R('c')]
 const seqRest = [R('a'), REST(1), R('b'), REST(2), R('c')]
@@ -28,35 +31,79 @@ describe('programRoutineIds', () => {
 
 describe('nextProgramRoutineId', () => {
   it('returns null when the program has no templates', () => {
-    expect(nextProgramRoutineId([], [{ source_routine_id: 'a' }])).toBeNull()
+    expect(nextProgramRoutineId([], [W('w1', 'a')])).toBeNull()
     expect(nextProgramRoutineId([REST(1)], [])).toBeNull()
   })
   it('starts at the first template when nothing has been trained', () => {
     expect(nextProgramRoutineId(seq, [])).toBe('a')
   })
   it('advances past the last trained template', () => {
-    expect(nextProgramRoutineId(seq, [{ source_routine_id: 'a' }])).toBe('b')
+    expect(nextProgramRoutineId(seq, [W('w1', 'a')])).toBe('b')
   })
   it('wraps around after the last template', () => {
-    expect(nextProgramRoutineId(seq, [{ source_routine_id: 'c' }])).toBe('a')
+    expect(nextProgramRoutineId(seq, [W('w1', 'c')])).toBe('a')
   })
   it('skips rest days (rest is never returned)', () => {
-    expect(nextProgramRoutineId(seqRest, [{ source_routine_id: 'a' }])).toBe('b')
+    expect(nextProgramRoutineId(seqRest, [W('w1', 'a')])).toBe('b')
   })
-  it('honors a fresh next override', () => {
+  it('honors a live pin', () => {
     expect(
-      nextProgramRoutineId(seq, [{ source_routine_id: 'a' }], 'c'),
+      nextProgramRoutineId(seq, [W('w1', 'a')], {
+        routineId: 'c',
+        sinceWorkoutId: 'w1',
+      }),
     ).toBe('c')
   })
-  it('ignores the override once it has been trained (consumed)', () => {
+  it('honors pinning the routine you just trained (repeat a day)', () => {
     expect(
-      nextProgramRoutineId(seq, [{ source_routine_id: 'a' }], 'a'),
+      nextProgramRoutineId(seq, [W('w1', 'a')], {
+        routineId: 'a',
+        sinceWorkoutId: 'w1',
+      }),
+    ).toBe('a')
+  })
+  it('consumes the pin once any program workout is logged after it', () => {
+    // pinned a (repeat) at marker w1, but trained b since → pin dead, next = c
+    expect(
+      nextProgramRoutineId(seq, [W('w2', 'b'), W('w1', 'a')], {
+        routineId: 'a',
+        sinceWorkoutId: 'w1',
+      }),
+    ).toBe('c')
+    // pinned c at w1 and then trained it → resume rotation after c
+    expect(
+      nextProgramRoutineId(seq, [W('w3', 'c'), W('w2', 'b'), W('w1', 'a')], {
+        routineId: 'c',
+        sinceWorkoutId: 'w1',
+      }),
+    ).toBe('a')
+  })
+  it('never resurrects a consumed pin later in the rotation', () => {
+    // pinned c at w1, trained c then a — pin must stay dead (old bug: c again)
+    expect(
+      nextProgramRoutineId(seq, [W('w3', 'a'), W('w2', 'c'), W('w1', 'a')], {
+        routineId: 'c',
+        sinceWorkoutId: 'w1',
+      }),
     ).toBe('b')
   })
-  it('ignores an override not in the program', () => {
+  it('supports a pin set before any history, consumed by the first workout', () => {
+    const pin = { routineId: 'b', sinceWorkoutId: null }
+    expect(nextProgramRoutineId(seq, [], pin)).toBe('b')
+    expect(nextProgramRoutineId(seq, [W('w1', 'b')], pin)).toBe('c')
+  })
+  it('ignores a pin not in the program', () => {
     expect(
-      nextProgramRoutineId(seq, [{ source_routine_id: 'a' }], 'zzz'),
+      nextProgramRoutineId(seq, [W('w1', 'a')], {
+        routineId: 'zzz',
+        sinceWorkoutId: 'w1',
+      }),
     ).toBe('b')
+  })
+  it('keeps legacy string pins working (active only while ≠ last done)', () => {
+    expect(nextProgramRoutineId(seq, [W('w1', 'a')], 'c')).toBe('c')
+    expect(nextProgramRoutineId(seq, [W('w1', 'a')], 'a')).toBe('b')
+    expect(nextProgramRoutineId(seq, [W('w1', 'a')], 'zzz')).toBe('b')
   })
 })
 
@@ -66,15 +113,17 @@ describe('currentProgramIndex', () => {
   })
   it('returns the sequence index of the last trained template', () => {
     // 'b' sits at sequence index 2 (after R('a'), REST)
-    expect(currentProgramIndex(seqRest, [{ source_routine_id: 'b' }])).toBe(2)
+    expect(currentProgramIndex(seqRest, [W('w1', 'b')])).toBe(2)
   })
 })
 
 describe('upcomingProgramRoutineIds', () => {
   it('lists the next templates in order, wrapping', () => {
-    expect(
-      upcomingProgramRoutineIds(seq, [{ source_routine_id: 'a' }], null, 3),
-    ).toEqual(['b', 'c', 'a'])
+    expect(upcomingProgramRoutineIds(seq, [W('w1', 'a')], null, 3)).toEqual([
+      'b',
+      'c',
+      'a',
+    ])
   })
   it('starts from the first template with no history', () => {
     expect(upcomingProgramRoutineIds(seqRest, [], null, 2)).toEqual(['a', 'b'])

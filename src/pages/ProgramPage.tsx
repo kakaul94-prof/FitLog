@@ -34,11 +34,12 @@ import {
   currentProgramIndex,
   DELOAD_VOLUME_FACTOR,
   deloadActive,
+  latestProgramWorkout,
   nextProgramRoutineId,
   programRoutineIds,
   programWorkoutCount,
 } from '@/lib/program'
-import type { DeloadState, ProgramItem } from '@/lib/database.types'
+import type { DeloadState, NextOverride, ProgramItem } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
 const uid = () => Math.random().toString(36).slice(2)
@@ -69,7 +70,7 @@ export function ProgramPage() {
   const update = useUpdateProfile()
 
   const [seq, setSeq] = useState<ProgramItem[]>([])
-  const [override, setOverride] = useState<string | null>(null)
+  const [override, setOverride] = useState<NextOverride | string | null>(null)
   const [deload, setDeload] = useState<DeloadState | null>(null)
   const [adding, setAdding] = useState(false)
   const [actionFor, setActionFor] = useState<{ item: ProgramItem; index: number } | null>(null)
@@ -117,7 +118,7 @@ export function ProgramPage() {
   // --- Persist every edit immediately (settings-style, no Save button) --------
   const commit = (
     nextSeq: ProgramItem[],
-    nextOverride: string | null,
+    nextOverride: NextOverride | string | null,
     nextDeload: DeloadState | null = deloadRef.current,
   ) => {
     setSeq(nextSeq)
@@ -141,19 +142,25 @@ export function ProgramPage() {
   const removeItem = (item: ProgramItem) => {
     const next = seq.filter((it) => it.id !== item.id)
     const ids = programRoutineIds(next)
-    const nextOverride = override && ids.includes(override) ? override : null
-    commit(next, nextOverride)
+    const ovId = typeof override === 'string' ? override : override?.routineId
+    commit(next, ovId && ids.includes(ovId) ? override : null)
     setActionFor(null)
   }
+  // Pin carries the current latest program workout's id as its marker; logging
+  // any program workout after this consumes the pin (see activeOverrideId).
+  const pinNext = (routineId: string): NextOverride => ({
+    routineId,
+    sinceWorkoutId: latestProgramWorkout(programRoutineIds(seq), history)?.id ?? null,
+  })
   const setAsNext = (routineId: string) => {
-    commit(seq, routineId)
+    commit(seq, pinNext(routineId))
     setActionFor(null)
   }
   const skipNext = () => {
     const ids = programRoutineIds(seq)
     if (nextId && ids.length) {
       const i = ids.indexOf(nextId)
-      commit(seq, ids[(i + 1) % ids.length])
+      commit(seq, pinNext(ids[(i + 1) % ids.length]))
     }
     setActionFor(null)
   }

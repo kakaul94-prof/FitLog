@@ -15,7 +15,10 @@ export function useWorkouts() {
       const { data, error } = await supabase
         .from('workouts')
         .select('*')
+        // created_at tie-break: same-date workouts otherwise sort arbitrarily,
+        // which can flip the program's "last done" between fetches.
         .order('workout_date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(50)
       if (error) throw error
       return (data ?? []) as Workout[]

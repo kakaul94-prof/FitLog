@@ -366,6 +366,8 @@ export interface Measurement {
   type: string
   value: number
   unit: string
+  /** 'healthconnect' = imported by the weight sync; null/absent = logged manually. */
+  source?: string | null
   created_at: string
 }
 

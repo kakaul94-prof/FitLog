@@ -67,8 +67,9 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- Health Connect: read-only daily step total (StepCounterPlugin) -->
+    <!-- Health Connect: read-only daily step total + weigh-ins (StepCounterPlugin) -->
     <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
 
     <!-- See the Health Connect provider app on Android 13 and below -->
     <queries>

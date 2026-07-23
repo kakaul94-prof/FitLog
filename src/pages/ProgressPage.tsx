@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { ChevronDown } from 'lucide-react'
+import { Activity, ChevronDown } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
 import { RING_GREEN, RING_OVER } from '@/components/CalorieRing'
@@ -17,6 +17,11 @@ import {
   useDeleteMeasurement,
   useLatestWeight,
 } from '@/features/measurements/useMeasurements'
+import {
+  useWeightSyncStatus,
+  useConnectWeightSync,
+  useSyncWeightsNow,
+} from '@/features/measurements/useWeightSync'
 import type { Measurement } from '@/lib/database.types'
 import { useProfile } from '@/features/profile/useProfile'
 import { useNutritionTrends } from '@/features/insights/useNutritionTrends'
@@ -223,6 +228,8 @@ function BodyView() {
         ))}
       </Select>
 
+      {type === 'weight' && <WeightSyncCard />}
+
       <Card>
         <CardContent className="space-y-3 p-4">
           <div className="flex items-end gap-2">
@@ -331,6 +338,51 @@ function BodyView() {
   )
 }
 
+// Health Connect weight sync (Android app only). The status probe returns
+// 'no_permission' → offer Connect; 'ok' → a quiet status line with a manual
+// sync; anything else (web, old APK, no Health Connect app) renders nothing.
+function WeightSyncCard() {
+  const { data: status } = useWeightSyncStatus()
+  const connect = useConnectWeightSync()
+  const syncNow = useSyncWeightsNow()
+
+  if (status === 'no_permission') {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-3 p-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Sync weight from Health Connect</p>
+            <p className="text-xs text-muted-foreground">
+              Weigh-ins your scale app records import automatically.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => connect.mutate()} disabled={connect.isPending}>
+            {connect.isPending ? 'Connecting…' : 'Connect'}
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+  if (status === 'ok') {
+    return (
+      <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <Activity className="h-3 w-3" />
+          Health Connect weight sync is on
+        </span>
+        <button
+          onClick={() => syncNow.mutate()}
+          disabled={syncNow.isPending}
+          className="underline decoration-dotted underline-offset-2 active:text-foreground"
+        >
+          {syncNow.isPending ? 'Syncing…' : 'Sync now'}
+        </button>
+      </div>
+    )
+  }
+  return null
+}
+
 function MeasurementRow({
   row,
   onChangeDate,
@@ -374,7 +426,13 @@ function MeasurementRow({
           aria-hidden="true"
         />
       </span>
-      <span className="flex-1 text-right font-medium">
+      <span className="flex flex-1 items-center justify-end gap-1.5 text-right font-medium">
+        {row.source === 'healthconnect' && (
+          <Activity
+            className="h-3 w-3 shrink-0 text-muted-foreground"
+            aria-label="Synced from Health Connect"
+          />
+        )}
         {row.value} {row.unit}
       </span>
       <button

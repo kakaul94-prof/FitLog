@@ -14,7 +14,7 @@ Pointers only; the mechanics live in **Domain logic** / **Data model** below.
 - **Cardio:** MET / distance / manual logging, GPS distance recorder (`geo.ts`/`geoWatch.ts`/`ExerciseTrackPage`), HR zones 1–5 + time-in-zone (`zones.ts`, `hrZones` in `calc.ts`), distance & zone trends.
 - **Strength:** workouts/sets/supersets, routines + `/program` rotation, est 1RM + progression, per-exercise form-video upload (`useFormVideos`), exercise notes, custom exercises, muscle-volume + body heatmap (`MuscleVolumePage`/`BodyHeatmap`), muscle & strength goals, workout calendar, rest timer (native notification).
 - **Body:** weight + body measurements, BMI.
-- **Platform:** installable PWA, Capacitor Android (native rest-timer, meal-reminder + streak-nudge notifications (`reminders.ts`), read-only Health Connect passive steps, biometric app-lock (`biometric.ts`/`LockGate` + native `BiometricAuthPlugin.kt`), session auto-refresh across backgrounding (`authRefresh.ts`)), offline read, data export/import, More → Patch Notes.
+- **Platform:** installable PWA, Capacitor Android (native rest-timer, meal-reminder + streak-nudge notifications (`reminders.ts`), read-only Health Connect passive steps + smart-scale weight sync (`useWeightSync`/`weightSync.ts`), biometric app-lock (`biometric.ts`/`LockGate` + native `BiometricAuthPlugin.kt`), session auto-refresh across backgrounding (`authRefresh.ts`)), offline read, data export/import, More → Patch Notes.
 
 **Not built (biggest gaps vs. mainstream apps):** water/hydration logging, sleep tracking, intermittent-fasting timer, two-way wearable / Apple Health / Fitbit sync. Social/community is intentionally out of scope (single-user).
 
@@ -57,7 +57,7 @@ Pointers only; the mechanics live in **Domain logic** / **Data model** below.
 - `diary_entries` — logged food; **snapshots** nutrients (per serving) + servings so past days don't change.
 - `exercise_entries` — cardio. Built-in activities: `src/data/activities.ts` (MET); custom: `custom_activities`.
 - Strength: `workouts` → `workout_exercises` (notes, superset_group) → `workout_sets` (reps, weight_lb, effort 1–5). Built-in lifts: `src/data/exercises.ts`; custom: `custom_exercises` (key `custom:<uuid>`). Templates: `routines` + `routine_exercises` (target sets/reps + superset_group).
-- `measurements` — weight + optional body metrics, one row per reading.
+- `measurements` — weight + optional body metrics, one row per reading; `source`='healthconnect' marks synced weigh-ins (null = manual).
 
 ## Domain logic
 

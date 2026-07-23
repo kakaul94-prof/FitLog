@@ -17,6 +17,7 @@ import { setupOnlineManager } from '@/lib/network'
 import { setupAuthRefresh } from '@/lib/authRefresh'
 import { initReminders } from '@/lib/reminders'
 import { registerDiaryMutationDefaults } from '@/features/diary/useDiary'
+import { useWeightSyncOnAppOpen } from '@/features/measurements/useWeightSync'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { LockGate } from '@/components/LockGate'
@@ -166,6 +167,8 @@ const router = createBrowserRouter(
 initReminders((path) => void router.navigate(path))
 
 function Routed() {
+  // Import new Health Connect weigh-ins on open/resume (no-op on web/no grant).
+  useWeightSyncOnAppOpen()
   return (
     <ErrorBoundary>
       <RestTimerProvider>

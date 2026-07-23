@@ -308,6 +308,7 @@ create table if not exists public.measurements (
   type text not null default 'weight',
   value numeric not null,
   unit text not null default 'lb',
+  source text, -- 'healthconnect' = imported by the weight sync; null = manual
   created_at timestamptz not null default now()
 );
 create index if not exists measurements_user_type_idx

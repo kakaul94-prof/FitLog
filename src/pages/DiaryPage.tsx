@@ -7,9 +7,15 @@ import {
 import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
+  Activity,
+  ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Coffee,
+  Cookie,
+  Moon,
   Plus,
+  Salad,
   Trash2,
   Flag,
   Flame,
@@ -55,11 +61,11 @@ import { useLongPress } from '@/lib/useLongPress'
 import { cn } from '@/lib/utils'
 import type { DiaryEntry, ExerciseEntry, Meal } from '@/lib/database.types'
 
-const MEALS: { key: Meal; label: string }[] = [
-  { key: 'breakfast', label: 'Breakfast' },
-  { key: 'lunch', label: 'Lunch' },
-  { key: 'dinner', label: 'Dinner' },
-  { key: 'snacks', label: 'Snacks' },
+const MEALS: { key: Meal; label: string; icon: LucideIcon }[] = [
+  { key: 'breakfast', label: 'Breakfast', icon: Coffee },
+  { key: 'lunch', label: 'Lunch', icon: Salad },
+  { key: 'dinner', label: 'Dinner', icon: Moon },
+  { key: 'snacks', label: 'Snacks', icon: Cookie },
 ]
 
 // Cold-load placeholder that mirrors the hero (ring + macro bars) and the meal
@@ -87,12 +93,12 @@ function DiarySkeleton() {
         </div>
       </Card>
       {MEALS.map((m) => (
-        <Card key={m.key} className="overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border p-3">
-            <Skeleton className="h-3.5 w-24" />
+        <Card key={m.key} className="p-3">
+          <div className="flex items-center justify-between pb-2">
+            <Skeleton className="h-4 w-28" />
             <Skeleton className="h-3 w-12" />
           </div>
-          <div className="space-y-3 p-3">
+          <div className="space-y-3 border-t border-border pt-3">
             <Skeleton className="h-3 w-2/3" />
             <Skeleton className="h-3 w-1/2" />
           </div>
@@ -433,23 +439,50 @@ export function DiaryPage() {
           const mealKcal = Math.round(
             items.reduce((s, e) => s + (e.nutrients.kcal ?? 0) * e.servings, 0),
           )
+          const MealIcon = m.icon
+          // Empty meal collapses to a single tappable "+ Add" row.
+          if (items.length === 0) {
+            return (
+              <Card key={m.key} className="p-3">
+                <button
+                  type="button"
+                  disabled={selectMode}
+                  onClick={() => nav(`/diary/add?date=${date}&meal=${m.key}`)}
+                  className="flex w-full items-center justify-between disabled:opacity-40"
+                >
+                  <span className="flex items-center gap-2.5 text-[15px] font-semibold text-muted-foreground">
+                    <MealIcon className="h-[18px] w-[18px]" />
+                    {m.label}
+                  </span>
+                  <span className="text-sm font-medium text-primary">
+                    + Add
+                  </span>
+                </button>
+              </Card>
+            )
+          }
           return (
-            <Card key={m.key} className="overflow-hidden">
+            <Card key={m.key} className="p-3">
               <button
                 type="button"
-                disabled={items.length === 0}
                 onClick={() =>
                   nav(`/diary/nutrients?date=${date}&meal=${m.key}`)
                 }
-                className="flex w-full items-center justify-between border-b border-border p-3 text-left active:bg-accent"
+                className="flex w-full items-center justify-between pb-2 text-left"
               >
-                <span className="font-semibold">{m.label}</span>
+                <span className="flex items-center gap-2.5 text-[15px] font-semibold">
+                  <MealIcon className="h-[18px] w-[18px] text-primary" />
+                  {m.label}
+                </span>
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  {mealKcal} calories
-                  {items.length > 0 && <ChevronRight className="h-4 w-4" />}
+                  <span className="text-[13px] font-semibold tabular-nums text-foreground">
+                    {mealKcal}
+                  </span>
+                  cal
+                  <ChevronRight className="h-4 w-4" />
                 </span>
               </button>
-              <div className="divide-y divide-border">
+              <div className="border-t border-border pt-1">
                 {items.map((e) => (
                   <FoodEntryRow
                     key={e.id}
@@ -465,39 +498,67 @@ export function DiaryPage() {
               {!selectMode && (
                 <button
                   onClick={() => nav(`/diary/add?date=${date}&meal=${m.key}`)}
-                  className="flex w-full items-center gap-2 p-3 text-sm font-medium text-primary active:bg-accent"
+                  className="mt-1 flex items-center gap-1 py-1 text-[13px] font-medium text-primary active:opacity-60"
                 >
-                  <Plus className="h-4 w-4" /> Add food
+                  <Plus className="h-3.5 w-3.5" /> Add food
                 </button>
               )}
             </Card>
           )
         })}
 
-        <Card className="overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border p-3">
-            <span className="font-semibold">Exercise</span>
-            <span className="text-xs text-muted-foreground">{burned} calories</span>
-          </div>
-          <div className="divide-y divide-border">
-            {(exEntries ?? []).map((e) => (
-              <ExerciseEntryRow
-                key={e.id}
-                entry={e}
-                onEdit={() => nav(`/exercise/edit/${e.id}`)}
-                onMenu={() => setMenuEx(e)}
-              />
-            ))}
-          </div>
-          {!selectMode && (
+        {(exEntries ?? []).length === 0 ? (
+          <Card className="p-3">
             <button
+              type="button"
+              disabled={selectMode}
               onClick={() => nav(`/exercise/add?date=${date}`)}
-              className="flex w-full items-center gap-2 p-3 text-sm font-medium text-primary active:bg-accent"
+              className="flex w-full items-center justify-between disabled:opacity-40"
             >
-              <Plus className="h-4 w-4" /> Add exercise
+              <span className="flex items-center gap-2.5 text-[15px] font-semibold text-muted-foreground">
+                <Activity className="h-[18px] w-[18px]" />
+                Exercise
+              </span>
+              <span className="text-sm font-medium text-primary">+ Add</span>
             </button>
-          )}
-        </Card>
+          </Card>
+        ) : (
+          <Card className="p-3">
+            <div className="flex items-center justify-between pb-2">
+              <span className="flex items-center gap-2.5 text-[15px] font-semibold">
+                <Activity
+                  className="h-[18px] w-[18px]"
+                  style={{ color: MACRO_HUES.carb }}
+                />
+                Exercise
+              </span>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="text-[13px] font-semibold tabular-nums text-foreground">
+                  {burned}
+                </span>
+                cal
+              </span>
+            </div>
+            <div className="border-t border-border pt-1">
+              {(exEntries ?? []).map((e) => (
+                <ExerciseEntryRow
+                  key={e.id}
+                  entry={e}
+                  onEdit={() => nav(`/exercise/edit/${e.id}`)}
+                  onMenu={() => setMenuEx(e)}
+                />
+              ))}
+            </div>
+            {!selectMode && (
+              <button
+                onClick={() => nav(`/exercise/add?date=${date}`)}
+                className="mt-1 flex items-center gap-1 py-1 text-[13px] font-medium text-primary active:opacity-60"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add exercise
+              </button>
+            )}
+          </Card>
+        )}
           </>
         )}
       </div>
@@ -704,7 +765,7 @@ export function DiaryPage() {
 }
 
 const ROW_CLASS =
-  'flex w-full select-none items-center gap-2 p-3 text-left [-webkit-touch-callout:none] active:bg-accent'
+  'flex w-full select-none items-center gap-2 rounded-md py-2 text-left [-webkit-touch-callout:none] active:bg-accent'
 
 function FoodEntryRow({
   entry,
@@ -723,12 +784,14 @@ function FoodEntryRow({
 }) {
   const press = useLongPress(onMenu, onEdit)
   const body = (
-    <div className="min-w-0 flex-1">
-      <div className="truncate text-sm font-medium">{entry.food_name}</div>
-      <div className="text-xs text-muted-foreground">
-        {Math.round((entry.nutrients.kcal ?? 0) * entry.servings)} calories
+    <>
+      <div className="min-w-0 flex-1 truncate text-sm font-medium">
+        {entry.food_name}
       </div>
-    </div>
+      <div className="shrink-0 text-[13px] tabular-nums text-muted-foreground">
+        {Math.round((entry.nutrients.kcal ?? 0) * entry.servings)}
+      </div>
+    </>
   )
   if (selectMode) {
     return (
@@ -762,16 +825,29 @@ function ExerciseEntryRow({
   onMenu: () => void
 }) {
   const press = useLongPress(onMenu, onEdit)
+  const meta = [
+    entry.duration_min ? `${entry.duration_min} min` : null,
+    entry.distance_mi ? `${entry.distance_mi} mi` : null,
+  ].filter(Boolean)
   return (
     <button {...press} className={ROW_CLASS}>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{entry.name}</div>
-        <div className="text-xs text-muted-foreground">
-          {entry.duration_min ? `${entry.duration_min} min` : ''}
-          {entry.distance_mi ? ` · ${entry.distance_mi} mi` : ''} ·{' '}
-          {entry.calories} calories
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{entry.name}</span>
+          <ZoneBadge
+            zone={entry.zone}
+            avgHr={entry.avg_hr}
+            className="shrink-0"
+          />
         </div>
-        <ZoneBadge zone={entry.zone} avgHr={entry.avg_hr} className="mt-1" />
+        {meta.length > 0 && (
+          <div className="text-xs text-muted-foreground">
+            {meta.join(' · ')}
+          </div>
+        )}
+      </div>
+      <div className="shrink-0 text-[13px] tabular-nums text-muted-foreground">
+        {entry.calories}
       </div>
     </button>
   )
@@ -910,9 +986,10 @@ function CardFooter({
       {showNutrients && (
         <button
           onClick={() => nav(`/diary/nutrients?date=${date}`)}
-          className="text-xs font-medium text-primary"
+          aria-label="Day nutrients"
+          className="flex items-center text-primary"
         >
-          Nutrients →
+          <ArrowRight className="h-4 w-4" />
         </button>
       )}
     </div>

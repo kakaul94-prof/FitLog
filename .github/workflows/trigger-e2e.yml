@@ -7,6 +7,9 @@ name: Trigger E2E suite
 on:
   push:
     branches: [dev]
+  # Manual re-fire for testing the dispatch chain or re-running the suite
+  # against the current deploy without a code push.
+  workflow_dispatch:
 
 jobs:
   dispatch:

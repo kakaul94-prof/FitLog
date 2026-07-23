@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import {
@@ -15,6 +15,7 @@ import {
   Volume2,
   Bell,
   AlarmClock,
+  Fingerprint,
   Sparkles,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -41,6 +42,12 @@ import {
   requestNotifyPermission,
 } from '@/lib/restTimer'
 import { isNativeApp, requestNativeRestPermission } from '@/lib/restTimerNative'
+import {
+  getBiometricLock,
+  setBiometricLock,
+  biometricAvailable,
+  biometricAuthenticate,
+} from '@/lib/biometric'
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -72,6 +79,26 @@ export function MorePage() {
       ? getNotify()
       : getNotify() && notifySupported() && Notification.permission === 'granted',
   )
+  // null = still probing; false = web or a device without enrolled biometrics.
+  const [bioAvail, setBioAvail] = useState<boolean | null>(null)
+  const [bioOn, setBioOn] = useState(getBiometricLock)
+  useEffect(() => {
+    void biometricAvailable().then(setBioAvail)
+  }, [])
+
+  // Turning it ON confirms with a scan first, so we never lock the app behind a
+  // scanner the user can't actually pass.
+  const toggleBio = async () => {
+    if (bioOn) {
+      setBioOn(false)
+      setBiometricLock(false)
+      return
+    }
+    if (await biometricAuthenticate()) {
+      setBiometricLock(true)
+      setBioOn(true)
+    }
+  }
 
   const toggleChime = () => {
     const next = !chime
@@ -259,6 +286,25 @@ export function MorePage() {
             </div>
           )}
         </Card>
+
+        {bioAvail && (
+          <Card className="overflow-hidden">
+            <div className="flex items-center gap-3 p-4">
+              <Fingerprint className="h-5 w-5 shrink-0 text-muted-foreground" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">Biometric unlock</p>
+                <p className="text-xs text-muted-foreground">
+                  Require your fingerprint or face to open FitLog
+                </p>
+              </div>
+              <Switch
+                checked={bioOn}
+                onClick={() => void toggleBio()}
+                label="Biometric unlock"
+              />
+            </div>
+          </Card>
+        )}
 
         <Card className="divide-y divide-border overflow-hidden">
           <button

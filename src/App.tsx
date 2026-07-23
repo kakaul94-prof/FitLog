@@ -14,10 +14,12 @@ import {
 } from '@tanstack/react-query-persist-client'
 import { get, set, del } from 'idb-keyval'
 import { setupOnlineManager } from '@/lib/network'
+import { setupAuthRefresh } from '@/lib/authRefresh'
 import { initReminders } from '@/lib/reminders'
 import { registerDiaryMutationDefaults } from '@/features/diary/useDiary'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { AuthProvider, useAuth } from '@/lib/auth'
+import { LockGate } from '@/components/LockGate'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ErrorBoundary, RouteErrorElement } from '@/components/ErrorBoundary'
 import { LoginPage } from '@/pages/LoginPage'
@@ -90,6 +92,10 @@ const persister = createIDBPersister()
 // offline and resume on reconnect (Phase 2). Safe everywhere — the plugin's web
 // impl covers the browser PWA; the native plugin lands with the next APK build.
 setupOnlineManager()
+
+// Keep the Supabase session refreshing across app backgrounding on native, so a
+// reopen doesn't bounce to the login screen with an expired token (no-op on web).
+setupAuthRefresh()
 
 // Register diary mutations as keyed defaults so writes that were paused offline
 // and persisted can be resumed after an app restart (kill-resilience for the
@@ -174,7 +180,12 @@ function Routed() {
 function Gate() {
   const { session, loading } = useAuth()
   if (loading) return <Spinner />
-  return session ? <Routed /> : <LoginPage />
+  if (!session) return <LoginPage />
+  return (
+    <LockGate>
+      <Routed />
+    </LockGate>
+  )
 }
 
 function App() {

@@ -61,6 +61,9 @@ dependencies {
     // Pinned versions; bump if CI can't resolve them.
     implementation "androidx.health.connect:connect-client:1.1.0"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+
+    // Biometric prompt — Level-1 app unlock (BiometricAuthPlugin.kt).
+    implementation "androidx.biometric:biometric:1.1.0"
 }
 
 apply from: 'capacitor.build.gradle'

@@ -194,12 +194,15 @@ function logFoodMutation(
       if (error) throw error
     },
     onMutate: async (v) => {
+      // Forward the caller-chosen id: the picker's "added" tray edits the row
+      // right after logging, so the inserted id must match the one it holds.
       const row = (v._row = newDiaryRow(
         v.entry_date,
         v.meal,
         v.food,
         v.servings,
         v.unit,
+        v.id,
       ))
       const snap = await snapshotDiary(qc)
       qc.setQueryData<DiaryEntry[]>(['diary', v.entry_date], (old) => [

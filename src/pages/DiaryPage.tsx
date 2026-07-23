@@ -11,18 +11,21 @@ import {
   ChevronRight,
   Plus,
   Trash2,
+  Flag,
   Flame,
   Footprints,
+  Utensils,
   CheckCircle2,
   Circle,
   X,
   BookmarkPlus,
   Copy,
   ArrowRightLeft,
+  type LucideIcon,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ActionSheet } from '@/components/ActionSheet'
-import { CalorieRing, RING_GREEN, RING_OVER } from '@/components/CalorieRing'
+import { CalorieRing, RING_OVER } from '@/components/CalorieRing'
 import { ZoneBadge } from '@/components/ZoneBadge'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -375,10 +378,25 @@ export function DiaryPage() {
                   goal={goal}
                   burned={burned}
                 />
-                <div className="flex-1 text-right text-xs text-muted-foreground">
-                  <div>{goal} goal</div>
-                  <div>− {consumedKcal} food</div>
-                  {burned > 0 && <div>+ {burned} exercise</div>}
+                <div className="flex-1 space-y-2.5 pl-1">
+                  <StatRow
+                    icon={Flag}
+                    value={goal.toLocaleString()}
+                    label="goal"
+                  />
+                  <StatRow
+                    icon={Utensils}
+                    value={consumedKcal.toLocaleString()}
+                    label="food"
+                  />
+                  {burned > 0 && (
+                    <StatRow
+                      icon={Flame}
+                      iconColor={MACRO_HUES.carb}
+                      value={`+${burned.toLocaleString()}`}
+                      label="exercise"
+                    />
+                  )}
                 </div>
               </div>
               {macros && (
@@ -391,6 +409,7 @@ export function DiaryPage() {
                       }
                       have={Math.round(consumed[k] ?? 0)}
                       target={macros[k].grams}
+                      color={MACRO_HUES[k]}
                     />
                   ))}
                 </div>
@@ -411,16 +430,8 @@ export function DiaryPage() {
               to track calories remaining.
             </div>
           )}
-          <StepsRow date={date} />
           <WeeklyNudge date={date} />
-          {list.length > 0 && (
-            <button
-              onClick={() => nav(`/diary/nutrients?date=${date}`)}
-              className="mt-3 w-full text-center text-xs font-medium text-primary"
-            >
-              View full nutrient breakdown →
-            </button>
-          )}
+          <CardFooter date={date} showNutrients={list.length > 0} />
         </Card>
 
         {MEALS.map((m) => {
@@ -800,58 +811,119 @@ function SelectAction({
   )
 }
 
+// Muted per-macro hues, same family as the ring's palette (see CalorieRing).
+const MACRO_HUES = {
+  protein: '#6d87b8',
+  carb: '#c9974f',
+  fat: '#a8739c',
+} as const
+
+function StatRow({
+  icon: Icon,
+  iconColor,
+  value,
+  label,
+}: {
+  icon: LucideIcon
+  iconColor?: string
+  value: string
+  label: string
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon
+        className={cn(
+          'h-4 w-4 shrink-0',
+          !iconColor && 'text-muted-foreground',
+        )}
+        style={iconColor ? { color: iconColor } : undefined}
+      />
+      <span className="text-[15px] font-semibold tabular-nums">{value}</span>
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
 function MacroBar({
   label,
   have,
   target,
+  color,
 }: {
   label: string
   have: number
   target: number
+  color: string
 }) {
   const pct = target > 0 ? Math.min(100, Math.round((have / target) * 100)) : 0
+  const over = target > 0 && have > target
   return (
     <div className="text-center">
       <div className="text-xs font-medium">{label}</div>
-      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full"
-          style={{ width: `${pct}%`, background: RING_GREEN }}
+          className="h-full rounded-full"
+          style={{ width: `${pct}%`, background: over ? RING_OVER : color }}
         />
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">
+      <div
+        className={cn('mt-1 text-xs tabular-nums', !over && 'text-muted-foreground')}
+        style={over ? { color: RING_OVER } : undefined}
+      >
         {have}/{target}g
       </div>
     </div>
   )
 }
 
-// Passive step count from Health Connect (native Android only). Renders nothing
-// on web / older APKs / when Health Connect is unavailable. Before the READ_STEPS
-// grant it shows a "Connect steps" tap; after, the day's total. Display-only.
-function StepsRow({ date }: { date: string }) {
+// Card footer: passive Health Connect steps (native Android only — the steps
+// half renders nothing on web / older APKs; before the READ_STEPS grant it
+// shows a "Connect steps" tap) merged with the nutrient-breakdown link into
+// one compact row.
+function CardFooter({
+  date,
+  showNutrients,
+}: {
+  date: string
+  showNutrients: boolean
+}) {
+  const nav = useNavigate()
   const { data } = useSteps(date)
   const connect = useConnectSteps(date)
-  if (!data || data.status === 'unavailable') return null
-  if (data.status === 'no_permission') {
-    return (
-      <button
-        onClick={() => connect.mutate()}
-        disabled={connect.isPending}
-        className="mt-3 flex w-full items-center justify-center gap-1.5 border-t border-border pt-3 text-xs font-medium text-primary disabled:opacity-60"
-      >
-        <Footprints className="h-4 w-4" />
-        {connect.isPending ? 'Connecting…' : 'Connect steps'}
-      </button>
-    )
-  }
+  const steps = data && data.status !== 'unavailable' ? data : null
+  if (!steps && !showNutrients) return null
   return (
-    <div className="mt-3 flex items-center justify-center gap-1.5 border-t border-border pt-3 text-sm text-muted-foreground">
-      <Footprints className="h-4 w-4" />
-      <span className="font-semibold text-foreground">
-        {(data.steps ?? 0).toLocaleString()}
-      </span>{' '}
-      steps
+    <div className="mt-3 flex items-center justify-center gap-2.5 border-t border-border pt-3">
+      {steps &&
+        (steps.status === 'no_permission' ? (
+          <button
+            onClick={() => connect.mutate()}
+            disabled={connect.isPending}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary disabled:opacity-60"
+          >
+            <Footprints className="h-4 w-4" />
+            {connect.isPending ? 'Connecting…' : 'Connect steps'}
+          </button>
+        ) : (
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Footprints className="h-4 w-4" />
+            <span className="font-semibold tabular-nums text-foreground">
+              {(steps.steps ?? 0).toLocaleString()}
+            </span>{' '}
+            steps
+          </span>
+        ))}
+      {steps && showNutrients && (
+        <span className="text-muted-foreground/50">·</span>
+      )}
+      {showNutrients && (
+        <button
+          onClick={() => nav(`/diary/nutrients?date=${date}`)}
+          className="text-xs font-medium text-primary"
+        >
+          Nutrients →
+        </button>
+      )}
     </div>
   )
 }

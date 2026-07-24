@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   currentE1RM,
+  estimateRoutineMinutes,
   formatPace,
   nextRoutineId,
   projectGoalEta,
   requiredPace,
   suggestNext,
   weightForReps,
+  workoutDurationMin,
 } from './progression'
 import type { PriorSet } from './progression'
 import type { StrengthGoal } from './database.types'
@@ -260,5 +262,43 @@ describe('nextRoutineId', () => {
   })
   it('handles a single-routine rotation', () => {
     expect(nextRoutineId([{ id: 'a' }], [{ source_routine_id: 'a' }])).toBe('a')
+  })
+})
+
+describe('workoutDurationMin', () => {
+  it('spans from workout creation to the last set', () => {
+    expect(
+      workoutDurationMin('2026-07-20T10:00:00Z', [
+        '2026-07-20T10:10:00Z',
+        '2026-07-20T10:52:00Z',
+        '2026-07-20T10:30:00Z',
+      ]),
+    ).toBe(52)
+  })
+  it('is null with no sets or a non-positive span', () => {
+    expect(workoutDurationMin('2026-07-20T10:00:00Z', [])).toBeNull()
+    // backfilled workout: sets logged "before" the workout row was created
+    expect(
+      workoutDurationMin('2026-07-20T10:00:00Z', ['2026-07-20T09:59:00Z']),
+    ).toBeNull()
+  })
+})
+
+describe('estimateRoutineMinutes', () => {
+  it('takes the median of plausible durations, rounded to 5', () => {
+    expect(estimateRoutineMinutes([48, 61, 44], [4, 4])).toBe(50)
+  })
+  it('averages the middle pair for an even count', () => {
+    expect(estimateRoutineMinutes([40, 60], [])).toBe(50)
+  })
+  it('ignores implausible durations (backfills, left-open sessions)', () => {
+    expect(estimateRoutineMinutes([2, 400, 52, null], [4])).toBe(50)
+  })
+  it('falls back to ~3 min per target set when no usable history', () => {
+    // 4 + 4 + default 3 = 11 sets → 33 min → rounds to 35
+    expect(estimateRoutineMinutes([2, null], [4, 4, null])).toBe(35)
+  })
+  it('is null with neither history nor template sets', () => {
+    expect(estimateRoutineMinutes([], [])).toBeNull()
   })
 })

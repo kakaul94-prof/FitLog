@@ -362,3 +362,41 @@ export function nextRoutineId(
   const i = routines.findIndex((r) => r.id === lastId)
   return routines[(i + 1) % routines.length].id
 }
+
+// --- Session length ----------------------------------------------------------
+
+/** Minutes from a workout's creation to its last logged set. Null when there
+ *  are no set timestamps or the span is non-positive. */
+export function workoutDurationMin(
+  workoutCreatedAt: string,
+  setTimes: string[],
+): number | null {
+  if (!setTimes.length) return null
+  const start = new Date(workoutCreatedAt).getTime()
+  let end = -Infinity
+  for (const t of setTimes) end = Math.max(end, new Date(t).getTime())
+  const min = (end - start) / 60_000
+  return min > 0 ? min : null
+}
+
+/** Typical session length for a routine, rounded to 5 min (min 5). Median of
+ *  recent real durations, keeping only plausible ones (10 min – 3 h) so
+ *  backfilled sessions and ones left open overnight don't skew it. With no
+ *  usable history, falls back to ~3 min per template set (a missing
+ *  target_sets counts as 3). Null when neither source has data. */
+export function estimateRoutineMinutes(
+  durationsMin: (number | null)[],
+  targetSets: (number | null)[],
+): number | null {
+  const valid = durationsMin
+    .filter((d): d is number => d != null && d >= 10 && d <= 180)
+    .sort((a, b) => a - b)
+  let est: number | null = null
+  if (valid.length) {
+    const mid = Math.floor(valid.length / 2)
+    est = valid.length % 2 ? valid[mid] : (valid[mid - 1] + valid[mid]) / 2
+  } else if (targetSets.length) {
+    est = targetSets.reduce<number>((s, t) => s + (t ?? 3), 0) * 3
+  }
+  return est == null ? null : Math.max(5, Math.round(est / 5) * 5)
+}

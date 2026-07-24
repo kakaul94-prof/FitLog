@@ -1,36 +1,40 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus,
   Dumbbell,
   Play,
-  ChevronRight,
+  Pencil,
   CalendarDays,
   PersonStanding,
   ClipboardList,
   List,
-  Pencil,
   Target,
-  Trash2,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  useWorkouts,
-  useCreateWorkout,
-  useDeleteWorkout,
-  useUpdateWorkout,
-} from '@/features/strength/useStrength'
+import { useWorkouts, useCreateWorkout } from '@/features/strength/useStrength'
 import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
+import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
 import { useProfile } from '@/features/profile/useProfile'
 import { nextRoutineId } from '@/lib/progression'
 import { nextProgramRoutineId } from '@/lib/program'
-import { useLongPress } from '@/lib/useLongPress'
-import { todayISO, dateLabel } from '@/lib/date'
-import type { Workout } from '@/lib/database.types'
+import { todayISO, daysBetweenISO } from '@/lib/date'
+
+/** Compact "last done" label so the hero meta line stays on one row:
+ *  today / yesterday / weekday within the week, else a short date. */
+function lastDoneLabel(iso: string): string {
+  const diff = daysBetweenISO(iso, todayISO())
+  if (diff <= 0) return 'today'
+  if (diff === 1) return 'yesterday'
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString(
+    undefined,
+    diff < 7 ? { weekday: 'short' } : { month: 'short', day: 'numeric' },
+  )
+}
 
 export function StrengthPage() {
   const nav = useNavigate()
@@ -39,11 +43,8 @@ export function StrengthPage() {
   const { data: profile } = useProfile()
   const create = useCreateWorkout()
   const startFrom = useStartFromRoutine()
-  const del = useDeleteWorkout()
-  const updateWorkout = useUpdateWorkout()
   const [menuOpen, setMenuOpen] = useState(false)
-  const [actionFor, setActionFor] = useState<Workout | null>(null)
-  const [editing, setEditing] = useState<Workout | null>(null)
+  const [toolsOpen, setToolsOpen] = useState(false)
 
   // Next template in the rotation: the one after your most recently trained
   // template (wraps around, skipping rest). Uses your Program if you've set one
@@ -57,144 +58,122 @@ export function StrengthPage() {
     return (routines ?? []).find((r) => r.id === id) ?? null
   }, [profile, routines, workouts])
 
+  const { data: meta } = useRoutineMeta(nextRoutine?.id)
+
+  const metaLine = useMemo(() => {
+    if (!meta) return ''
+    const parts: string[] = []
+    if (meta.exerciseCount > 0)
+      parts.push(
+        `${meta.exerciseCount} exercise${meta.exerciseCount === 1 ? '' : 's'}`,
+      )
+    if (meta.estMinutes != null) parts.push(`~${meta.estMinutes} min`)
+    if (meta.lastDone) parts.push(`last done ${lastDoneLabel(meta.lastDone)}`)
+    return parts.join(' · ')
+  }, [meta])
+
   const startEmpty = async () => {
     const w = await create.mutateAsync({ workout_date: todayISO(), name: 'Workout' })
     nav(`/workout/${w.id}`)
   }
-  const startTemplate = async (rid: string, name: string) => {
-    const id = await startFrom.mutateAsync({ routineId: rid, name, date: todayISO() })
+  const startNext = async () => {
+    if (!nextRoutine) return
+    const id = await startFrom.mutateAsync({
+      routineId: nextRoutine.id,
+      name: nextRoutine.name,
+      date: todayISO(),
+    })
     nav(`/workout/${id}`)
   }
 
-  const deleteWorkout = async () => {
-    if (!actionFor) return
-    if (
-      !confirm(
-        `Delete "${actionFor.name || 'Workout'}"? This also deletes its exercises and sets.`,
-      )
-    )
-      return
-    await del.mutateAsync(actionFor.id)
-    setActionFor(null)
-  }
-
   return (
-    <div>
+    <div className="flex min-h-[calc(100svh-4.25rem-env(safe-area-inset-bottom))] flex-col">
       <PageHeader
         title="Exercise"
         action={
-          <Button
-            size="icon"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Add"
-          >
+          <Button size="icon" onClick={() => setMenuOpen(true)} aria-label="Add">
             <Plus className="h-5 w-5" />
           </Button>
         }
       />
-      <div className="space-y-5 p-4">
-        {nextRoutine && (
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-              Next up
-            </h2>
-            <Card className="flex items-center gap-3 p-3">
+      <div className="flex flex-1 flex-col px-4 pb-2">
+        <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
+          {routines === undefined ? null : nextRoutine ? (
+            <>
               <button
+                type="button"
                 onClick={() => nav('/program')}
-                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                aria-label="Edit program"
+                className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">
-                    {nextRoutine.name}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Next in your rotation
-                  </div>
-                </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                Next up
+                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
+              <h2 className="max-w-full truncate px-2 text-3xl font-bold">
+                {nextRoutine.name}
+              </h2>
+              <p className="mt-2 min-h-5 text-sm text-muted-foreground">
+                {metaLine}
+              </p>
               <Button
-                size="sm"
-                onClick={() => startTemplate(nextRoutine.id, nextRoutine.name)}
+                size="lg"
+                className="mt-8 w-full max-w-xs"
+                onClick={startNext}
                 disabled={startFrom.isPending}
               >
-                <Play className="h-3.5 w-3.5" /> Start
+                <Play className="h-4 w-4" />
+                {startFrom.isPending ? 'Starting…' : 'Start workout'}
               </Button>
-            </Card>
-          </div>
-        )}
-
-        <div>
-          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-            Templates
-          </h2>
-          <Card className="divide-y divide-border overflow-hidden">
-            {(routines ?? []).map((r) => (
-              <div key={r.id} className="flex items-center gap-2 p-3">
-                <Link to={`/routines/${r.id}`} className="flex-1">
-                  <span className="text-sm font-medium">{r.name}</span>
-                </Link>
-                <Button
-                  size="sm"
-                  onClick={() => startTemplate(r.id, r.name)}
-                  disabled={startFrom.isPending}
-                >
-                  <Play className="h-3.5 w-3.5" /> Start
-                </Button>
-              </div>
-            ))}
-            {(routines ?? []).length === 0 && (
-              <div className="p-4 text-center text-sm text-muted-foreground">
-                No templates yet. Tap + to add one.
-              </div>
-            )}
-          </Card>
+            </>
+          ) : (
+            <>
+              <h2 className="text-2xl font-bold">No rotation yet</h2>
+              <p className="mt-2 max-w-[16rem] text-sm text-muted-foreground">
+                Create a workout template and your next session will queue up
+                here.
+              </p>
+              <Button
+                size="lg"
+                className="mt-8 w-full max-w-xs"
+                onClick={() => nav('/routines/new')}
+              >
+                <ClipboardList className="h-4 w-4" /> New template
+              </Button>
+              <Button
+                variant="ghost"
+                className="mt-3 text-primary"
+                onClick={startEmpty}
+                disabled={create.isPending}
+              >
+                <Dumbbell className="h-4 w-4" />
+                {create.isPending ? 'Starting…' : 'Start empty workout'}
+              </Button>
+            </>
+          )}
         </div>
 
-        <div>
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-muted-foreground">
-              Recent workouts
-            </h2>
-            <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-              <Link
-                to="/lift/goals"
-                className="flex items-center gap-1 text-sm font-medium text-primary"
-              >
-                <Target className="h-4 w-4" /> Goals
-              </Link>
-              <Link
-                to="/lift/volume"
-                className="flex items-center gap-1 text-sm font-medium text-primary"
-              >
-                <PersonStanding className="h-4 w-4" /> Muscle map
-              </Link>
-              <Link
-                to="/lift/calendar"
-                className="flex items-center gap-1 text-sm font-medium text-primary"
-              >
-                <CalendarDays className="h-4 w-4" /> Calendar
-              </Link>
-            </div>
-          </div>
-          <Card className="divide-y divide-border overflow-hidden">
-            {(workouts ?? []).slice(0, 5).map((w) => (
-              <RecentWorkoutRow
-                key={w.id}
-                w={w}
-                onOpen={() => nav(`/workout/${w.id}`)}
-                onMenu={() => setActionFor(w)}
-              />
-            ))}
-            {(workouts ?? []).length === 0 && (
-              <div className="p-4 text-center text-sm text-muted-foreground">
-                No workouts yet.
-              </div>
-            )}
-          </Card>
-          <p className="mt-2 px-1 text-xs text-muted-foreground">
-            Tap to open · press and hold to edit or delete.
-          </p>
+        <div className="flex items-center justify-center gap-8 pb-3">
+          <button
+            type="button"
+            onClick={() => nav('/lift/templates')}
+            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground active:text-foreground"
+          >
+            Templates
+          </button>
+          <button
+            type="button"
+            onClick={() => nav('/lift/history')}
+            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground active:text-foreground"
+          >
+            History
+          </button>
+          <button
+            type="button"
+            onClick={() => setToolsOpen(true)}
+            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground active:text-foreground"
+          >
+            Tools
+          </button>
         </div>
       </div>
 
@@ -258,181 +237,61 @@ export function StrengthPage() {
           document.body,
         )}
 
-      {actionFor && (
-        <WorkoutActionSheet
-          title={`${actionFor.name || 'Workout'} · ${dateLabel(actionFor.workout_date)}`}
-          deleting={del.isPending}
-          onEdit={() => {
-            setEditing(actionFor)
-            setActionFor(null)
-          }}
-          onDelete={deleteWorkout}
-          onClose={() => setActionFor(null)}
-        />
-      )}
-
-      {editing && (
-        <EditWorkoutSheet
-          workout={editing}
-          saving={updateWorkout.isPending}
-          onClose={() => setEditing(null)}
-          onSave={async (name, date) => {
-            await updateWorkout.mutateAsync({
-              id: editing.id,
-              name: name || null,
-              workout_date: date,
-            })
-            setEditing(null)
-          }}
-        />
-      )}
+      {toolsOpen &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
+            onClick={() => setToolsOpen(false)}
+          >
+            <div
+              className="mx-auto w-full max-w-md p-3"
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <Card className="overflow-hidden">
+                <div className="border-b border-border p-3 text-center text-xs text-muted-foreground">
+                  Tools
+                </div>
+                <button
+                  onClick={() => {
+                    setToolsOpen(false)
+                    nav('/lift/goals')
+                  }}
+                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
+                >
+                  <Target className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Goals</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setToolsOpen(false)
+                    nav('/lift/volume')
+                  }}
+                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left active:bg-accent"
+                >
+                  <PersonStanding className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Muscle map</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setToolsOpen(false)
+                    nav('/lift/calendar')
+                  }}
+                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left active:bg-accent"
+                >
+                  <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Calendar</span>
+                </button>
+              </Card>
+              <button
+                onClick={() => setToolsOpen(false)}
+                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
-  )
-}
-
-// Tap opens the workout; press-and-hold opens the edit / delete menu.
-function RecentWorkoutRow({
-  w,
-  onOpen,
-  onMenu,
-}: {
-  w: Workout
-  onOpen: () => void
-  onMenu: () => void
-}) {
-  const press = useLongPress(onMenu, onOpen)
-  return (
-    <button
-      {...press}
-      className="flex w-full select-none items-center gap-3 p-3 text-left [-webkit-touch-callout:none] active:bg-accent"
-    >
-      <Dumbbell className="h-5 w-5 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{w.name || 'Workout'}</div>
-        <div className="text-xs text-muted-foreground">
-          {dateLabel(w.workout_date)}
-        </div>
-      </div>
-    </button>
-  )
-}
-
-function WorkoutActionSheet({
-  title,
-  deleting,
-  onEdit,
-  onDelete,
-  onClose,
-}: {
-  title: string
-  deleting: boolean
-  onEdit: () => void
-  onDelete: () => void
-  onClose: () => void
-}) {
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
-      onClick={onClose}
-    >
-      <div
-        className="mx-auto w-full max-w-md p-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Card className="overflow-hidden">
-          <div className="truncate border-b border-border p-3 text-center text-xs text-muted-foreground">
-            {title}
-          </div>
-          <button
-            onClick={onEdit}
-            className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
-          >
-            <Pencil className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Edit workout</span>
-          </button>
-          <button
-            onClick={onDelete}
-            disabled={deleting}
-            className="flex w-full items-center gap-3 border-t border-border p-4 text-left text-destructive active:bg-accent disabled:opacity-50"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span className="text-sm font-medium">
-              {deleting ? 'Deleting…' : 'Delete workout'}
-            </span>
-          </button>
-        </Card>
-        <button
-          onClick={onClose}
-          className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
-function EditWorkoutSheet({
-  workout,
-  saving,
-  onClose,
-  onSave,
-}: {
-  workout: Workout
-  saving: boolean
-  onClose: () => void
-  onSave: (name: string, date: string) => void
-}) {
-  const [name, setName] = useState(workout.name ?? '')
-  const [date, setDate] = useState(workout.workout_date)
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
-      onClick={onClose}
-    >
-      <div
-        className="mx-auto w-full max-w-md p-3"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Card className="space-y-3 p-4">
-          <div className="text-sm font-semibold">Edit workout</div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Name
-            </label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Workout"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Date
-            </label>
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-          <Button
-            className="w-full"
-            disabled={saving || !date}
-            onClick={() => onSave(name.trim(), date)}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </Card>
-        <button
-          onClick={onClose}
-          className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>,
-    document.body,
   )
 }

@@ -517,7 +517,7 @@ export function ProgramPage() {
             <p className="mt-1 min-h-5 text-sm text-muted-foreground">
               {metaLine}
             </p>
-            {meta && meta.topRegions.length > 0 && (
+            {!!meta?.topRegions?.length && (
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 {meta.topRegions.map((r) => (
                   <Chip key={r}>{r}</Chip>

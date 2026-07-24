@@ -67,7 +67,7 @@ const RemindersPage = lazyPage(() => import('@/pages/RemindersPage'), 'Reminders
 // enough for the IndexedDB persister to restore them on reopen. gcTime must be
 // >= the persister maxAge or restored queries are garbage-collected on mount.
 const PERSIST_MAX_AGE = 1000 * 60 * 60 * 24 // 24h
-const PERSIST_BUSTER = 'fitlog-cache-v1' // bump to drop the cache on a shape change
+const PERSIST_BUSTER = 'fitlog-cache-v2' // bump to drop the cache on a shape change
 
 const queryClient = new QueryClient({
   defaultOptions: {

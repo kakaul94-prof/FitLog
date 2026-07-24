@@ -18,6 +18,7 @@ import {
   GripVertical,
   Moon,
   MoreVertical,
+  Play,
   Plus,
   SkipForward,
   Target,
@@ -28,9 +29,11 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
-import { useRoutines } from '@/features/strength/useRoutines'
+import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
+import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
 import { useWorkouts } from '@/features/strength/useStrength'
 import { useProgramPlannedVolume } from '@/features/strength/useProgram'
+import { todayISO, daysBetweenISO } from '@/lib/date'
 import { REGION_IDS, REGION_LABEL, resolveGoals } from '@/data/bodyMap'
 import {
   cycleCounts,
@@ -46,6 +49,19 @@ import type { DeloadState, NextOverride, ProgramItem } from '@/lib/database.type
 import { cn } from '@/lib/utils'
 
 const uid = () => Math.random().toString(36).slice(2)
+
+/** Compact "last done" label so the hero meta line stays on one row:
+ *  today / yesterday / weekday within the week, else a short date. */
+function lastDoneLabel(iso: string): string {
+  const diff = daysBetweenISO(iso, todayISO())
+  if (diff <= 0) return 'today'
+  if (diff === 1) return 'yesterday'
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString(
+    undefined,
+    diff < 7 ? { weekday: 'short' } : { month: 'short', day: 'numeric' },
+  )
+}
 
 // The sequence slot to badge as "Next up": the first template slot at/after the
 // current day (wrapping) whose routine matches the computed next id.
@@ -70,6 +86,7 @@ export function ProgramPage() {
   const { data: routines } = useRoutines()
   const { data: workouts } = useWorkouts()
   const update = useUpdateProfile()
+  const startFrom = useStartFromRoutine()
 
   const [seq, setSeq] = useState<ProgramItem[]>([])
   const [override, setOverride] = useState<NextOverride | string | null>(null)
@@ -109,6 +126,7 @@ export function ProgramPage() {
   const nextIdx = nextSequenceIndex(seq, currentIdx, nextId)
   const routineIds = programRoutineIds(seq)
   const planned = useProgramPlannedVolume(routineIds)
+  const { data: meta } = useRoutineMeta(nextId ?? undefined)
   const isDeload = deloadActive(deload, routineIds, history, counts.lifts)
   const goalRows = useMemo(() => {
     const goals = resolveGoals(profile?.volume_targets)
@@ -173,6 +191,15 @@ export function ProgramPage() {
       commit(seq, pinNext(ids[(i + 1) % ids.length]))
     }
     setActionFor(null)
+  }
+  const startNext = async () => {
+    if (!nextId) return
+    const id = await startFrom.mutateAsync({
+      routineId: nextId,
+      name: routineName(nextId),
+      date: todayISO(),
+    })
+    nav(`/workout/${id}`)
   }
   const startDeload = () =>
     commit(seq, override, {
@@ -392,14 +419,30 @@ export function ProgramPage() {
     return () => document.removeEventListener('touchmove', onTouchMove)
   }, [])
 
-  const summaryText =
-    currentIdx >= 0 && seq[currentIdx]?.kind === 'routine'
-      ? `On day ${currentIdx + 1} of ${counts.length} · ${routineName(
-          (seq[currentIdx] as { routineId: string }).routineId,
-        )}`
-      : nextId
-        ? `Not started — first up: ${routineName(nextId)}`
-        : 'Add templates to build your rotation'
+  const metaLine = useMemo(() => {
+    if (!meta) return ''
+    const parts: string[] = []
+    if (meta.exerciseCount > 0)
+      parts.push(
+        `${meta.exerciseCount} exercise${meta.exerciseCount === 1 ? '' : 's'}`,
+      )
+    if (meta.targetSets > 0) parts.push(`${meta.targetSets} sets`)
+    if (meta.lastDone) parts.push(`last done ${lastDoneLabel(meta.lastDone)}`)
+    return parts.join(' · ')
+  }, [meta])
+
+  const setsPerCycle =
+    planned.data && planned.data.totalSets > 0
+      ? isDeload
+        ? Math.round(planned.data.totalSets * DELOAD_VOLUME_FACTOR)
+        : planned.data.totalSets
+      : 0
+  const stripLabel = [
+    currentIdx >= 0
+      ? `Day ${currentIdx + 1} of ${counts.length}`
+      : `${counts.length}-day cycle`,
+    ...(setsPerCycle > 0 ? [`${setsPerCycle} sets this cycle`] : []),
+  ].join(' · ')
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
@@ -410,55 +453,89 @@ export function ProgramPage() {
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }
+        action={
+          counts.lifts > 0 ? (
+            isDeload ? (
+              <button
+                onClick={endDeload}
+                className="rounded-full border border-amber-300 px-3 py-1 text-xs font-medium text-amber-700 dark:border-amber-800 dark:text-amber-400"
+              >
+                End deload
+              </button>
+            ) : (
+              <button
+                onClick={startDeload}
+                className="rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground"
+              >
+                Deload
+              </button>
+            )
+          ) : undefined
+        }
       />
       <div className="space-y-5 p-4">
-        {/* Cycle summary */}
+        {/* Cycle progress strip */}
         {seq.length > 0 && (
-          <Card className="p-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Target className="h-4 w-4 text-primary" />
-                <span className="text-sm font-semibold">
-                  {counts.length}-day cycle
-                </span>
-              </div>
-              {counts.lifts > 0 &&
-                (isDeload ? (
-                  <button
-                    onClick={endDeload}
-                    className="rounded-lg border border-amber-300 px-2.5 py-1 text-xs font-medium text-amber-700 dark:border-amber-800 dark:text-amber-400"
-                  >
-                    End deload
-                  </button>
-                ) : (
-                  <button
-                    onClick={startDeload}
-                    className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground"
-                  >
-                    Start deload
-                  </button>
+          <div>
+            <div className="flex gap-1">
+              {seq.map((item, i) => {
+                const done = currentIdx >= 0 && i <= currentIdx
+                return (
+                  <span
+                    key={item.id}
+                    className={cn(
+                      'h-1.5 flex-1 rounded-full',
+                      i === nextIdx
+                        ? 'bg-primary/30 ring-1 ring-primary'
+                        : done
+                          ? item.kind === 'rest'
+                            ? 'bg-primary/40'
+                            : 'bg-primary'
+                          : item.kind === 'rest'
+                            ? 'bg-muted/70'
+                            : 'bg-muted',
+                    )}
+                  />
+                )
+              })}
+            </div>
+            <div className="mt-1.5 px-0.5 text-xs text-muted-foreground">
+              {stripLabel}
+            </div>
+          </div>
+        )}
+
+        {/* Next-up hero */}
+        {nextId && (
+          <Card className="p-4">
+            <div className="text-xs font-semibold uppercase tracking-wider text-primary">
+              Next up
+            </div>
+            <h2 className="mt-0.5 truncate text-2xl font-bold">
+              {routineName(nextId)}
+            </h2>
+            <p className="mt-1 min-h-5 text-sm text-muted-foreground">
+              {metaLine}
+            </p>
+            {meta && meta.topRegions.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {meta.topRegions.map((r) => (
+                  <Chip key={r}>{r}</Chip>
                 ))}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              <Chip>{counts.lifts} lift</Chip>
-              {counts.rests > 0 && <Chip muted>{counts.rests} rest</Chip>}
-              {isDeload && (
-                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                  Deload
-                </span>
-              )}
-              {planned.data && planned.data.totalSets > 0 && (
-                <Chip muted>
-                  {isDeload
-                    ? Math.round(planned.data.totalSets * DELOAD_VOLUME_FACTOR)
-                    : planned.data.totalSets}{' '}
-                  sets / cycle
-                </Chip>
-              )}
-            </div>
-            <div className="mt-2.5 flex items-center gap-2 border-t border-border pt-2.5">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-primary" />
-              <span className="text-sm text-muted-foreground">{summaryText}</span>
+              </div>
+            )}
+            <div className="mt-4 flex gap-2">
+              <Button
+                className="flex-1"
+                onClick={startNext}
+                disabled={startFrom.isPending}
+              >
+                <Play className="h-4 w-4" />
+                {startFrom.isPending ? 'Starting…' : 'Start workout'}
+              </Button>
+              <Button variant="outline" onClick={skipNext}>
+                Skip
+              </Button>
             </div>
           </Card>
         )}

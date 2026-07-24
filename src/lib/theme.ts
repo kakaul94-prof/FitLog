@@ -5,7 +5,7 @@ export type Theme = 'light' | 'dark' | 'system'
 const STORAGE_KEY = 'fitlog-theme'
 // theme-color meta drives the mobile browser / installed-PWA chrome; keep these
 // roughly in sync with --background in index.css.
-const META_COLOR = { light: '#16a34a', dark: '#15201b' } as const
+const META_COLOR = { light: '#5a5cd6', dark: '#12131d' } as const
 
 export function getStoredTheme(): Theme {
   try {

@@ -58,8 +58,8 @@ const SECTIONS: {
 ]
 
 const MACRO_COLORS: Record<'protein' | 'carb' | 'fat', string> = {
-  protein: '#16a34a',
-  carb: '#3b82f6',
+  protein: 'var(--primary)',
+  carb: '#0d9488',
   fat: '#f59e0b',
 }
 

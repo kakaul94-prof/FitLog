@@ -54,7 +54,7 @@ const TYPES = [
   { type: 'waist', label: 'Waist', unit: 'in' },
 ]
 
-const GREEN = '#16a34a'
+const ACCENT = 'var(--primary)'
 const GRAY = '#9ca3af'
 
 export function ProgressPage() {
@@ -305,7 +305,7 @@ function BodyView() {
                   xKey="date"
                   series={[
                     { key: 'value', color: GRAY, strokeWidth: 1, dotRadius: 2, name: 'Logged' },
-                    { key: 'trend', color: GREEN, strokeWidth: 2.5, name: '7-day trend' },
+                    { key: 'trend', color: ACCENT, strokeWidth: 2.5, name: '7-day trend' },
                   ]}
                 />
               )}

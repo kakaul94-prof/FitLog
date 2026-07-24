@@ -69,8 +69,8 @@ const METRICS = [
 ] as const
 type MetricKey = (typeof METRICS)[number]['key']
 
-const GREEN = '#16a34a'
-const GOAL = '#d97706' // amber-600 — the goal line, distinct from the green trend
+const ACCENT = 'var(--primary)'
+const GOAL = '#d97706' // amber-600 — the goal line, distinct from the accent trend
 const TABS = ['history', 'form', 'videos', 'progress'] as const
 type Tab = (typeof TABS)[number]
 
@@ -791,7 +791,7 @@ function ProgressTab({ exerciseKey }: { exerciseKey: string | undefined }) {
                 series={[
                   {
                     key: 'value',
-                    color: GREEN,
+                    color: ACCENT,
                     strokeWidth: 2.5,
                     dotRadius: 3,
                     name: meta.label,

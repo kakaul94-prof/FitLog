@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { isCardioKey } from '@/lib/cardio'
 import type { Routine, RoutineExercise } from '@/lib/database.types'
 
 export function useRoutines() {
@@ -89,6 +90,10 @@ export function useSaveRoutine() {
         | 'target_sets'
         | 'target_reps'
         | 'superset_group'
+        | 'target_duration_min'
+        | 'target_distance_mi'
+        | 'target_zone'
+        | 'intervals'
       >[]
     }) => {
       const { error: ue } = await supabase
@@ -102,6 +107,10 @@ export function useSaveRoutine() {
         .eq('routine_id', id)
       if (de) throw de
       if (exercises.length) {
+        // Cardio columns are only sent when the template actually has a cardio
+        // item, so lift-only templates keep saving on a DB that predates
+        // migration_routine_cardio.sql (unknown columns error even when null).
+        const hasCardio = exercises.some((e) => isCardioKey(e.exercise_key))
         const rows = exercises.map((e, i) => ({
           routine_id: id,
           exercise_key: e.exercise_key,
@@ -110,6 +119,14 @@ export function useSaveRoutine() {
           target_sets: e.target_sets,
           target_reps: e.target_reps,
           superset_group: e.superset_group,
+          ...(hasCardio
+            ? {
+                target_duration_min: e.target_duration_min ?? null,
+                target_distance_mi: e.target_distance_mi ?? null,
+                target_zone: e.target_zone ?? null,
+                intervals: e.intervals ?? null,
+              }
+            : {}),
         }))
         const { error: ie } = await supabase
           .from('routine_exercises')
@@ -151,7 +168,12 @@ export function useStartFromRoutine() {
         .select('*')
         .eq('routine_id', routineId)
         .order('position')
-      const exs = (rex ?? []) as RoutineExercise[]
+      // Cardio items don't become workout exercises — the workout page shows
+      // them as a checklist from the source routine; logging one writes a
+      // normal exercise_entries row.
+      const exs = ((rex ?? []) as RoutineExercise[]).filter(
+        (re) => !isCardioKey(re.exercise_key),
+      )
       for (const re of exs) {
         const { data: we2 } = await supabase
           .from('workout_exercises')

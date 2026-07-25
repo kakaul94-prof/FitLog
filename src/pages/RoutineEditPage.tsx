@@ -8,7 +8,9 @@ import {
 import { createPortal } from 'react-dom'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import {
+  Activity,
   ChevronLeft,
+  MapPin,
   Plus,
   X,
   Link2,
@@ -34,7 +36,14 @@ import {
   useSaveRoutine,
   useDeleteRoutine,
 } from '@/features/strength/useRoutines'
-import type { ExerciseType } from '@/lib/database.types'
+import { useCustomActivities } from '@/features/exercise/useCustomActivities'
+import {
+  allCardioActivities,
+  cardioActivityKey,
+  findCardioActivity,
+  isCardioKey,
+} from '@/lib/cardio'
+import type { ExerciseType, IntervalsTarget } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
 type DraftEx = {
@@ -44,6 +53,11 @@ type DraftEx = {
   target_sets: number | null
   target_reps: number | null
   superset_group: number | null
+  // Cardio prescription — null on lift rows ('cardio:*' keys only).
+  target_duration_min: number | null
+  target_distance_mi: number | null
+  target_zone: number | null
+  intervals: IntervalsTarget | null
 }
 
 const uid = () => Math.random().toString(36).slice(2)
@@ -58,6 +72,10 @@ const serialize = (name: string, d: DraftEx[]) =>
       target_sets: e.target_sets,
       target_reps: e.target_reps,
       superset_group: e.superset_group,
+      target_duration_min: e.target_duration_min,
+      target_distance_mi: e.target_distance_mi,
+      target_zone: e.target_zone,
+      intervals: e.intervals,
     })),
   })
 
@@ -93,11 +111,13 @@ export function RoutineEditPage() {
   const delRoutine = useDeleteRoutine()
   const { data: custom } = useCustomExercises()
   const createCustom = useCreateCustomExercise()
+  const { data: customActs } = useCustomActivities()
 
   const [name, setName] = useState('')
   const [draft, setDraft] = useState<DraftEx[]>([])
   const [original, setOriginal] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [addingCardio, setAddingCardio] = useState(false)
   const [supersetWith, setSupersetWith] = useState<string | undefined>(undefined)
   const [search, setSearch] = useState('')
   // Inline "new custom exercise" form inside the add panel.
@@ -128,6 +148,12 @@ export function RoutineEditPage() {
         target_sets: e.target_sets,
         target_reps: e.target_reps,
         superset_group: e.superset_group,
+        // ?? null: rows fetched from a DB that predates the cardio migration
+        // simply lack these fields.
+        target_duration_min: e.target_duration_min ?? null,
+        target_distance_mi: e.target_distance_mi ?? null,
+        target_zone: e.target_zone ?? null,
+        intervals: e.intervals ?? null,
       }))
       setName(data.routine.name)
       setDraft(d)
@@ -176,6 +202,7 @@ export function RoutineEditPage() {
   const openAdd = (ssWith?: string) => {
     setSupersetWith(ssWith)
     setAdding(true)
+    setAddingCardio(false)
     setCreating(false)
     setSearch('')
   }
@@ -186,6 +213,11 @@ export function RoutineEditPage() {
     setCmuscle('')
     setCequip('')
     setCtype('weighted')
+  }
+  const openAddCardio = () => {
+    setAddingCardio(true)
+    setAdding(false)
+    setSearch('')
   }
   const addToDraft = (key: string, exName: string) => {
     setDraft((prev) => {
@@ -213,9 +245,32 @@ export function RoutineEditPage() {
           target_sets: null,
           target_reps: null,
           superset_group: group,
+          target_duration_min: null,
+          target_distance_mi: null,
+          target_zone: null,
+          intervals: null,
         },
       ]
     })
+  }
+  // Cardio items are standalone blocks (never superset members).
+  const pickCardio = (activityKey: string, actName: string) => {
+    setDraft((prev) => [
+      ...prev,
+      {
+        localId: uid(),
+        exercise_key: `cardio:${activityKey}`,
+        exercise_name: actName,
+        target_sets: null,
+        target_reps: null,
+        superset_group: null,
+        target_duration_min: null,
+        target_distance_mi: null,
+        target_zone: null,
+        intervals: null,
+      },
+    ])
+    setAddingCardio(false)
   }
   const pick = (key: string, exName: string) => {
     addToDraft(key, exName)
@@ -509,6 +564,10 @@ export function RoutineEditPage() {
   const filtered = allEx.filter(
     (e) => e.name.toLowerCase().includes(q) || e.muscle.toLowerCase().includes(q),
   )
+  const cardioActs = allCardioActivities(customActs ?? [])
+  const cfiltered = q
+    ? cardioActs.filter((a) => a.name.toLowerCase().includes(q))
+    : cardioActs
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
@@ -564,6 +623,18 @@ export function RoutineEditPage() {
                       />
                     ))}
                   </div>
+                ) : isCardioKey(b.exercises[0].exercise_key) ? (
+                  <CardioDraftRow
+                    ex={b.exercises[0]}
+                    distanceBased={
+                      findCardioActivity(
+                        cardioActivityKey(b.exercises[0].exercise_key),
+                        customActs ?? [],
+                      )?.distanceBased ?? b.exercises[0].target_distance_mi != null
+                    }
+                    onRemove={() => removeEx(b.exercises[0].localId)}
+                    onTarget={(patch) => setTarget(b.exercises[0].localId, patch)}
+                  />
                 ) : (
                   <RoutineExRow
                     ex={b.exercises[0]}
@@ -680,14 +751,65 @@ export function RoutineEditPage() {
               </>
             )}
           </Card>
+        ) : addingCardio ? (
+          <Card className="p-2">
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                autoFocus
+                placeholder="Search cardio activities"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <div className="max-h-64 divide-y divide-border overflow-y-auto">
+              {cfiltered.map((a) => (
+                <button
+                  key={a.key}
+                  onClick={() => pickCardio(a.key, a.name)}
+                  className="flex w-full items-center gap-2 p-2 text-left text-sm active:bg-accent"
+                >
+                  <span className="min-w-0 flex-1">
+                    {a.name}{' '}
+                    <span className="text-xs text-muted-foreground">
+                      · {a.met} MET
+                      {a.key.startsWith('custom:') ? ' · custom' : ''}
+                    </span>
+                  </span>
+                  {a.recorder && (
+                    <span className="flex shrink-0 items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-medium text-orange-500">
+                      <MapPin className="h-3 w-3" /> GPS
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              className="mt-1 w-full"
+              onClick={() => setAddingCardio(false)}
+            >
+              Cancel
+            </Button>
+          </Card>
         ) : (
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => openAdd(undefined)}
-          >
-            <Plus className="h-4 w-4" /> Add exercise
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => openAdd(undefined)}
+            >
+              <Plus className="h-4 w-4" /> Exercise
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1 border-orange-500/40 text-orange-600 dark:text-orange-400"
+              onClick={openAddCardio}
+            >
+              <Activity className="h-4 w-4" /> Cardio
+            </Button>
+          </div>
         )}
 
         <div className="flex gap-2 pt-2">
@@ -844,6 +966,179 @@ function RoutineExRow({
           </button>
         )}
       </div>
+    </Card>
+  )
+}
+
+// A cardio template item: activity name + optional targets (minutes, miles for
+// distance-based activities, HR zone, and an interval structure). All optional —
+// an untargeted item just says "do this activity".
+function CardioDraftRow({
+  ex,
+  distanceBased,
+  onRemove,
+  onTarget,
+}: {
+  ex: DraftEx
+  distanceBased: boolean
+  onRemove: () => void
+  onTarget: (patch: Partial<DraftEx>) => void
+}) {
+  const [dur, setDur] = useState(
+    ex.target_duration_min != null ? String(ex.target_duration_min) : '',
+  )
+  const [dist, setDist] = useState(
+    ex.target_distance_mi != null ? String(ex.target_distance_mi) : '',
+  )
+  const [ivOpen, setIvOpen] = useState(ex.intervals != null)
+  const [rounds, setRounds] = useState(
+    ex.intervals ? String(ex.intervals.rounds) : '',
+  )
+  const [workS, setWorkS] = useState(
+    ex.intervals ? String(ex.intervals.workSec) : '',
+  )
+  const [restS, setRestS] = useState(
+    ex.intervals ? String(ex.intervals.restSec) : '',
+  )
+
+  // Intervals commit as one object once rounds + work are real; partial or
+  // cleared inputs store null (no half-prescriptions).
+  const commitIntervals = (r: string, w: string, rs: string) => {
+    const rd = parseInt(r)
+    const wk = parseInt(w)
+    const rt = parseInt(rs) || 0
+    onTarget({
+      intervals:
+        rd > 0 && wk > 0 ? { rounds: rd, workSec: wk, restSec: rt } : null,
+    })
+  }
+  const clearIntervals = () => {
+    setIvOpen(false)
+    setRounds('')
+    setWorkS('')
+    setRestS('')
+    onTarget({ intervals: null })
+  }
+
+  return (
+    <Card className="border-orange-500/30 p-3">
+      <div className="flex items-center gap-2">
+        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+        <Activity className="h-4 w-4 shrink-0 text-orange-500" />
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {ex.exercise_name}
+        </span>
+        <button
+          onClick={onRemove}
+          className="text-muted-foreground active:text-destructive"
+          aria-label="Remove"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+        <Input
+          className="h-9 w-16"
+          type="number"
+          inputMode="numeric"
+          placeholder="min"
+          aria-label="Target minutes"
+          value={dur}
+          onChange={(e) => setDur(e.target.value)}
+          onBlur={() =>
+            onTarget({ target_duration_min: dur ? parseFloat(dur) || null : null })
+          }
+        />
+        <span className="text-xs text-muted-foreground">min</span>
+        {distanceBased && (
+          <>
+            <Input
+              className="h-9 w-16"
+              type="number"
+              inputMode="decimal"
+              placeholder="mi"
+              aria-label="Target miles"
+              value={dist}
+              onChange={(e) => setDist(e.target.value)}
+              onBlur={() =>
+                onTarget({
+                  target_distance_mi: dist ? parseFloat(dist) || null : null,
+                })
+              }
+            />
+            <span className="text-xs text-muted-foreground">mi</span>
+          </>
+        )}
+        <Select
+          className="h-9 w-24"
+          aria-label="Target zone"
+          value={ex.target_zone != null ? String(ex.target_zone) : ''}
+          onChange={(e) =>
+            onTarget({
+              target_zone: e.target.value ? parseInt(e.target.value) : null,
+            })
+          }
+        >
+          <option value="">Zone –</option>
+          {[1, 2, 3, 4, 5].map((z) => (
+            <option key={z} value={z}>
+              Zone {z}
+            </option>
+          ))}
+        </Select>
+        <span className="text-xs text-muted-foreground">target</span>
+      </div>
+      {ivOpen ? (
+        <div className="mt-2 flex items-center gap-1.5 text-sm">
+          <Input
+            className="h-9 w-14"
+            type="number"
+            inputMode="numeric"
+            placeholder="6"
+            aria-label="Interval rounds"
+            value={rounds}
+            onChange={(e) => setRounds(e.target.value)}
+            onBlur={() => commitIntervals(rounds, workS, restS)}
+          />
+          <span className="text-xs text-muted-foreground">×</span>
+          <Input
+            className="h-9 w-16"
+            type="number"
+            inputMode="numeric"
+            placeholder="60"
+            aria-label="Work seconds"
+            value={workS}
+            onChange={(e) => setWorkS(e.target.value)}
+            onBlur={() => commitIntervals(rounds, workS, restS)}
+          />
+          <span className="text-xs text-muted-foreground">s on /</span>
+          <Input
+            className="h-9 w-16"
+            type="number"
+            inputMode="numeric"
+            placeholder="120"
+            aria-label="Rest seconds"
+            value={restS}
+            onChange={(e) => setRestS(e.target.value)}
+            onBlur={() => commitIntervals(rounds, workS, restS)}
+          />
+          <span className="text-xs text-muted-foreground">s off</span>
+          <button
+            onClick={clearIntervals}
+            className="ml-auto p-1 text-muted-foreground active:text-destructive"
+            aria-label="Remove intervals"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setIvOpen(true)}
+          className="mt-1.5 flex items-center gap-1 text-xs font-medium text-muted-foreground"
+        >
+          <Plus className="h-3.5 w-3.5" /> Intervals
+        </button>
+      )}
     </Card>
   )
 }

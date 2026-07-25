@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import {
+  Activity,
   ChevronLeft,
   ChevronDown,
   ChevronUp,
   Flame,
+  MapPin,
   Plus,
   X,
   Link2,
@@ -35,11 +37,27 @@ import {
   type WorkoutSnapshot,
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
+import { useRoutine } from '@/features/strength/useRoutines'
+import { useExerciseEntries } from '@/features/exercise/useExercise'
+import { useCustomActivities } from '@/features/exercise/useCustomActivities'
+import {
+  cardioActivityKey,
+  cardioTargetChips,
+  entryMatchesCardio,
+  findCardioActivity,
+  isCardioKey,
+  isRecorderActivity,
+} from '@/lib/cardio'
+import { zoneColor } from '@/data/zones'
 import { estimated1RM, warmupRamp } from '@/lib/calc'
 import { EXERCISES } from '@/data/exercises'
 import { dateLabel, timeLabel } from '@/lib/date'
 import { cn } from '@/lib/utils'
-import type { WorkoutExercise, WorkoutSet } from '@/lib/database.types'
+import type {
+  RoutineExercise,
+  WorkoutExercise,
+  WorkoutSet,
+} from '@/lib/database.types'
 
 // A personal-record hit, surfaced as a celebration banner. `value` is the new
 // best, `prev` the old one it beat. `weight` (heaviest set) and `volume`
@@ -102,6 +120,16 @@ export function WorkoutPage() {
   const workout = data?.workout
   const exercises = data?.exercises ?? []
   const sets = data?.sets ?? []
+
+  // Cardio items programmed on the source template. They never become workout
+  // exercises — they render as a checklist here, and logging one writes a
+  // normal cardio entry (calories/eat-back/trends all unchanged).
+  const { data: routineData } = useRoutine(
+    workout?.source_routine_id ?? undefined,
+  )
+  const cardioItems = (routineData?.exercises ?? []).filter((e) =>
+    isCardioKey(e.exercise_key),
+  )
 
   // PR celebration queue: exercise cards report hits up here; we show one banner
   // at a time and auto-dismiss it after a few seconds (tap dismisses early).
@@ -328,6 +356,17 @@ export function WorkoutPage() {
           </div>
         )}
 
+        {workout && cardioItems.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-orange-500">
+              <Activity className="h-3.5 w-3.5" /> Cardio
+            </div>
+            {cardioItems.map((it) => (
+              <CardioItemCard key={it.id} item={it} date={workout.workout_date} />
+            ))}
+          </div>
+        )}
+
         <Button
           variant="outline"
           className="w-full"
@@ -455,6 +494,132 @@ function TimingRow({
         <Check className="h-3.5 w-3.5" /> Done
       </button>
     </div>
+  )
+}
+
+// One programmed cardio item from the source template. Pending: prescription
+// chips + a Log button that opens the cardio form prefilled with the targets
+// (GPS activities offer the recorder instead). Done: the matching entry logged
+// on this workout's date (matched by activity name), with a zone-target check.
+function CardioItemCard({
+  item,
+  date,
+}: {
+  item: RoutineExercise
+  date: string
+}) {
+  const nav = useNavigate()
+  const { data: entries } = useExerciseEntries(date)
+  const { data: customActs } = useCustomActivities()
+  const actKey = cardioActivityKey(item.exercise_key)
+  const act = findCardioActivity(actKey, customActs ?? [])
+  const recorder = isRecorderActivity(actKey)
+  const chips = cardioTargetChips({
+    target_duration_min: item.target_duration_min ?? null,
+    target_distance_mi: item.target_distance_mi ?? null,
+    target_zone: item.target_zone ?? null,
+    intervals: item.intervals ?? null,
+  })
+  const entry = (entries ?? []).find((en) =>
+    entryMatchesCardio(item.exercise_name, en.name),
+  )
+
+  const logIt = () => {
+    const p = new URLSearchParams()
+    p.set('name', item.exercise_name)
+    p.set('met', String(act?.met ?? 5))
+    if (act?.distanceBased) p.set('distanceBased', '1')
+    if (item.target_duration_min)
+      p.set('dur', String(item.target_duration_min))
+    if (item.target_distance_mi)
+      p.set('dist', String(item.target_distance_mi))
+    p.set('date', date)
+    nav(`/exercise/add?${p.toString()}`)
+  }
+
+  if (entry) {
+    const zoneTarget = item.target_zone ?? null
+    const zoneHit =
+      zoneTarget != null && entry.zone != null ? entry.zone === zoneTarget : null
+    const parts = [
+      entry.duration_min != null ? `${entry.duration_min} min` : null,
+      entry.distance_mi != null ? `${entry.distance_mi} mi` : null,
+      `${entry.calories} cal`,
+    ].filter(Boolean)
+    return (
+      <Card className="p-3">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 shrink-0 text-orange-500" />
+          <span className="min-w-0 flex-1 truncate font-medium">
+            {item.exercise_name}
+          </span>
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Check className="h-3.5 w-3.5" />
+          </span>
+        </div>
+        <p className="mt-1 pl-6 text-sm text-muted-foreground">
+          {parts.join(' · ')}
+        </p>
+        {entry.zone != null && (
+          <p className="mt-0.5 pl-6 text-xs">
+            <span className="font-medium" style={{ color: zoneColor(entry.zone) }}>
+              Zone {entry.zone}
+            </span>{' '}
+            {zoneHit === true ? (
+              <span className="text-success">· target met</span>
+            ) : zoneHit === false ? (
+              <span className="text-muted-foreground">
+                · target Zone {zoneTarget}
+              </span>
+            ) : null}
+          </p>
+        )}
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="border-orange-500/30 p-3">
+      <div className="flex items-center gap-2">
+        <Activity className="h-4 w-4 shrink-0 text-orange-500" />
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {item.exercise_name}
+        </span>
+      </div>
+      {chips.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5 pl-6">
+          {chips.map((c) => (
+            <span
+              key={c}
+              className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-xs font-medium text-orange-600 dark:text-orange-400"
+            >
+              {c}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-2.5 flex gap-2 pl-6">
+        {recorder ? (
+          <>
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={() => nav(`/exercise/track?activity=${actKey}`)}
+            >
+              <MapPin className="h-4 w-4" /> Record GPS
+            </Button>
+            <Button size="sm" variant="outline" onClick={logIt}>
+              Log
+            </Button>
+          </>
+        ) : (
+          <Button size="sm" className="flex-1" onClick={logIt}>
+            Log
+            {item.target_duration_min ? ` · ${item.target_duration_min} min` : ''}
+          </Button>
+        )}
+      </div>
+    </Card>
   )
 }
 

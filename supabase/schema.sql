@@ -61,6 +61,8 @@ alter table public.profiles add column if not exists daily_supplements jsonb not
 alter table public.profiles add column if not exists program jsonb;
 -- Dated calorie-goal history (see migration_calorie_goal_history.sql).
 alter table public.profiles add column if not exists calorie_goal_history jsonb not null default '[]'::jsonb;
+-- Weekly cardio minutes target (see migration_routine_cardio.sql). null = unset.
+alter table public.profiles add column if not exists weekly_cardio_min_target integer;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles
@@ -360,6 +362,17 @@ alter table public.workout_sets
 
 alter table public.routine_exercises
   add column if not exists superset_group integer;
+
+-- Cardio prescriptions on template items (see migration_routine_cardio.sql).
+-- Rows with exercise_key 'cardio:<activity>' use these; lift rows leave them null.
+alter table public.routine_exercises
+  add column if not exists target_duration_min numeric,
+  add column if not exists target_distance_mi numeric,
+  add column if not exists target_zone smallint,
+  add column if not exists intervals jsonb;
+alter table public.routine_exercises drop constraint if exists routine_ex_target_zone_check;
+alter table public.routine_exercises add constraint routine_ex_target_zone_check
+  check (target_zone is null or (target_zone between 1 and 5));
 
 -- ============================================================
 -- exercise_notes — per-user form notes for an exercise.

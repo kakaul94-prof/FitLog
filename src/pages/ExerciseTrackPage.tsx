@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronLeft, MapPin, Play, Square } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
@@ -49,8 +49,15 @@ export function ExerciseTrackPage() {
   const { data: weight } = useLatestWeight()
   const w = weight ?? null
 
+  // ?activity=<key> preselects the activity (programmed cardio deep-links here).
+  const [params] = useSearchParams()
+  const requestedAct = params.get('activity')
   const [phase, setPhase] = useState<'idle' | 'recording'>('idle')
-  const [actKey, setActKey] = useState(DEFAULT_ACT)
+  const [actKey, setActKey] = useState(
+    requestedAct && DIST_ACTS.some((a) => a.key === requestedAct)
+      ? requestedAct
+      : DEFAULT_ACT,
+  )
   const [meters, setMeters] = useState(0)
   const [movingMs, setMovingMs] = useState(0)
   const [elapsedMs, setElapsedMs] = useState(0)

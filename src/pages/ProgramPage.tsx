@@ -30,7 +30,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
 import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
-import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
+import { useRoutineMeta, useRoutineCardioMap } from '@/features/strength/useRoutineMeta'
 import { useWorkouts } from '@/features/strength/useStrength'
 import { useProgramPlannedVolume } from '@/features/strength/useProgram'
 import { todayISO, daysBetweenISO } from '@/lib/date'
@@ -127,6 +127,12 @@ export function ProgramPage() {
   const routineIds = programRoutineIds(seq)
   const planned = useProgramPlannedVolume(routineIds)
   const { data: meta } = useRoutineMeta(nextId ?? undefined)
+  const { data: cardioMap } = useRoutineCardioMap()
+  // A template that's only cardio items reads as a cardio day in the rotation.
+  const isCardioDay = (routineId: string) => {
+    const c = cardioMap?.get(routineId)
+    return !!c && c.cardio > 0 && c.lifts === 0
+  }
   const isDeload = deloadActive(deload, routineIds, history, counts.lifts)
   const goalRows = useMemo(() => {
     const goals = resolveGoals(profile?.volume_targets)
@@ -427,6 +433,12 @@ export function ProgramPage() {
         `${meta.exerciseCount} exercise${meta.exerciseCount === 1 ? '' : 's'}`,
       )
     if (meta.targetSets > 0) parts.push(`${meta.targetSets} sets`)
+    if (meta.cardioCount > 0)
+      parts.push(
+        meta.cardioMinutes > 0
+          ? `${meta.cardioMinutes} min cardio`
+          : `${meta.cardioCount} cardio`,
+      )
     if (meta.lastDone) parts.push(`last done ${lastDoneLabel(meta.lastDone)}`)
     return parts.join(' · ')
   }, [meta])
@@ -517,11 +529,16 @@ export function ProgramPage() {
             <p className="mt-1 min-h-5 text-sm text-muted-foreground">
               {metaLine}
             </p>
-            {!!meta?.topRegions?.length && (
+            {!!meta && (meta.topRegions.length > 0 || meta.cardioCount > 0) && (
               <div className="mt-2.5 flex flex-wrap gap-1.5">
                 {meta.topRegions.map((r) => (
                   <Chip key={r}>{r}</Chip>
                 ))}
+                {meta.cardioCount > 0 && (
+                  <span className="flex items-center gap-1 rounded-full bg-orange-500/10 px-2.5 py-0.5 text-xs font-medium text-orange-600 dark:text-orange-400">
+                    <Activity className="h-3 w-3" /> Cardio
+                  </span>
+                )}
               </div>
             )}
             <div className="mt-4 flex gap-2">
@@ -588,7 +605,11 @@ export function ProgramPage() {
                   >
                     <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
                     {isRoutine ? (
-                      <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      isCardioDay(item.routineId) ? (
+                        <Activity className="h-4 w-4 shrink-0 text-orange-500" />
+                      ) : (
+                        <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      )
                     ) : (
                       <Moon className="h-4 w-4 shrink-0 text-muted-foreground" />
                     )}
@@ -600,6 +621,14 @@ export function ProgramPage() {
                     >
                       {isRoutine ? routineName(item.routineId) : 'Rest day'}
                     </span>
+                    {isRoutine &&
+                      !isCardioDay(item.routineId) &&
+                      (cardioMap?.get(item.routineId)?.cardio ?? 0) > 0 && (
+                        <Activity
+                          className="h-3.5 w-3.5 shrink-0 text-orange-500/70"
+                          aria-label="Includes cardio"
+                        />
+                      )}
                     {isCurrent && (
                       <span className="shrink-0 rounded-full border border-primary/50 px-2 py-0.5 text-[10px] font-medium text-primary">
                         Last done
@@ -689,21 +718,25 @@ export function ProgramPage() {
           </Card>
         </div>
 
-        {/* Cardio (placeholder) */}
-        <div>
-          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-            Cardio
-          </h2>
-          <Card className="flex items-center gap-3 border-dashed p-4">
-            <Activity className="h-5 w-5 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium">Coming soon</div>
-              <div className="text-xs text-muted-foreground">
-                Schedule cardio into your program.
+        {/* Cardio hint — disappears once any template has a cardio item */}
+        {cardioMap && ![...cardioMap.values()].some((c) => c.cardio > 0) && (
+          <div>
+            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
+              Cardio
+            </h2>
+            <Card className="flex items-center gap-3 border-dashed p-4">
+              <Activity className="h-5 w-5 shrink-0 text-orange-500" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium">Program your cardio</div>
+                <div className="text-xs text-muted-foreground">
+                  Add cardio to any template (Edit template → Cardio). A
+                  template that's only cardio becomes a cardio day in this
+                  rotation.
+                </div>
               </div>
-            </div>
-          </Card>
-        </div>
+            </Card>
+          </div>
+        )}
       </div>
 
       {/* Add-day sheet */}
@@ -728,7 +761,11 @@ export function ProgramPage() {
                       onClick={() => addRoutine(r.id)}
                       className="flex w-full items-center gap-3 p-3 text-left active:bg-accent"
                     >
-                      <Dumbbell className="h-4 w-4 text-muted-foreground" />
+                      {isCardioDay(r.id) ? (
+                        <Activity className="h-4 w-4 text-orange-500" />
+                      ) : (
+                        <Dumbbell className="h-4 w-4 text-muted-foreground" />
+                      )}
                       <span className="text-sm font-medium">{r.name}</span>
                     </button>
                   ))}

@@ -111,6 +111,8 @@ export interface Profile {
   // Workout program: ordered rotation of templates + rest days (sequential
   // model). null / empty sequence = no program set up yet.
   program: ProgramState | null
+  // Weekly cardio minutes target (Progress → Cardio "This week"). null = unset.
+  weekly_cardio_min_target: number | null
   created_at: string
   updated_at: string
 }
@@ -302,16 +304,29 @@ export interface Routine {
   updated_at: string
 }
 
+// Interval prescription on a cardio template item: rounds × (work / rest).
+export interface IntervalsTarget {
+  workSec: number
+  restSec: number
+  rounds: number
+}
+
 export interface RoutineExercise {
   id: string
   user_id: string
   routine_id: string
+  // Lift slug, 'custom:<uuid>', or a cardio item as 'cardio:<activity_key>'.
   exercise_key: string
   exercise_name: string
   position: number
   target_sets: number | null
   target_reps: number | null
   superset_group: number | null
+  // Cardio prescription (cardio rows only; lifts leave all four null).
+  target_duration_min: number | null
+  target_distance_mi: number | null
+  target_zone: number | null
+  intervals: IntervalsTarget | null
 }
 
 export interface Workout {

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Activity, ChevronDown } from 'lucide-react'
+import { Activity, ChevronDown, Pencil } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
 import { RING_GREEN, RING_OVER } from '@/components/CalorieRing'
@@ -23,7 +23,11 @@ import {
   useSyncWeightsNow,
 } from '@/features/measurements/useWeightSync'
 import type { Measurement } from '@/lib/database.types'
-import { useProfile } from '@/features/profile/useProfile'
+import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
+import { useExerciseEntriesRange } from '@/features/exercise/useExercise'
+import { useCardioPaceTrends } from '@/features/insights/useCardioPaceTrends'
+import { fmtClock, sumCardioMinutes, weekStartISO } from '@/lib/cardio'
+import { zoneColor } from '@/data/zones'
 import { useNutritionTrends } from '@/features/insights/useNutritionTrends'
 import {
   useMicronutrientTrends,
@@ -97,6 +101,8 @@ function CardioView() {
   const { data: dist, isLoading: distLoading } = useDistanceTrends(Number(range))
   return (
     <div className="space-y-4">
+      <ThisWeekCard />
+
       <Segmented
         value={range}
         onChange={setRange}
@@ -169,7 +175,188 @@ function CardioView() {
           )}
         </CardContent>
       </Card>
+
+      <PaceTrendCard />
     </div>
+  )
+}
+
+// Weekly cardio volume vs. the profile target (Mon–today). The target is set
+// and cleared right here on the card; no target = just the minutes.
+function ThisWeekCard() {
+  const today = todayISO()
+  const start = weekStartISO(today)
+  const { data: entries } = useExerciseEntriesRange(start, today)
+  const { data: profile } = useProfile()
+  const update = useUpdateProfile()
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState('')
+
+  const rows = entries ?? []
+  const minutes = sumCardioMinutes(rows)
+  const sessions = rows.filter((r) => (r.duration_min ?? 0) > 0).length
+  const z2 = sumCardioMinutes(rows.filter((r) => r.zone === 2))
+  const target = profile?.weekly_cardio_min_target ?? null
+
+  const saveTarget = async (raw: string) => {
+    const n = parseInt(raw)
+    await update.mutateAsync({
+      weekly_cardio_min_target: Number.isFinite(n) && n > 0 ? n : null,
+    })
+    setEditing(false)
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-baseline justify-between">
+          <CardTitle className="text-base">This week</CardTitle>
+          <button
+            type="button"
+            onClick={() => {
+              setVal(target != null ? String(target) : '150')
+              setEditing((e) => !e)
+            }}
+            className="flex items-center gap-1 text-xs font-medium text-primary"
+          >
+            <Pencil className="h-3 w-3" />
+            {target != null ? 'Edit target' : 'Set target'}
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {editing ? (
+          <div className="flex items-center gap-2">
+            <Input
+              autoFocus
+              type="number"
+              inputMode="numeric"
+              aria-label="Weekly cardio minutes target"
+              className="w-24"
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+            />
+            <span className="text-sm text-muted-foreground">min / week</span>
+            <Button
+              size="sm"
+              onClick={() => saveTarget(val)}
+              disabled={update.isPending}
+            >
+              Save
+            </Button>
+            {target != null && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => saveTarget('')}
+                disabled={update.isPending}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-3xl font-bold tabular-nums">{minutes}</span>
+            <span className="text-sm font-medium text-muted-foreground">
+              {target != null ? `/ ${target} min` : 'min'}
+            </span>
+          </div>
+        )}
+        {target != null && !editing && (
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary"
+              style={{ width: `${Math.min(100, (minutes / target) * 100)}%` }}
+            />
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {sessions} {sessions === 1 ? 'session' : 'sessions'} since Monday
+          {z2 > 0 && ` · ${z2} min in Zone 2`}
+          {target == null &&
+            ' · set a target (150 min moderate is the common guideline)'}
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Aerobic efficiency: pace per session at a fixed HR zone. Getting faster at
+// the same heart rate = the base is growing. Needs distance + duration + zone.
+function PaceTrendCard() {
+  const [zone, setZone] = useState(2)
+  const { data: pts, isLoading } = useCardioPaceTrends(zone)
+  const delta =
+    pts && pts.length >= 2 ? pts[pts.length - 1].pace - pts[0].pace : null
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-baseline justify-between">
+          <CardTitle className="text-base">Pace at zone</CardTitle>
+          <span className="text-xs text-muted-foreground">last 90 days</span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-5 gap-1.5">
+          {[1, 2, 3, 4, 5].map((z) => {
+            const sel = zone === z
+            const c = zoneColor(z)
+            return (
+              <button
+                key={z}
+                type="button"
+                onClick={() => setZone(z)}
+                className="rounded-md border py-1.5 text-sm font-medium transition-colors"
+                style={{
+                  color: c,
+                  borderColor: sel ? c : 'transparent',
+                  background: `color-mix(in srgb, ${c} ${sel ? 16 : 8}%, transparent)`,
+                }}
+              >
+                Z{z}
+              </button>
+            )
+          })}
+        </div>
+        {isLoading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : !pts || pts.length < 2 ? (
+          <p className="text-sm text-muted-foreground">
+            Not enough data yet. Log two or more sessions with distance,
+            duration, and Zone {zone} (enter your avg HR when logging) and the
+            pace trend appears here.
+          </p>
+        ) : (
+          <>
+            <LineChartSvg
+              data={pts}
+              xKey="date"
+              series={[
+                {
+                  key: 'pace',
+                  color: zoneColor(zone),
+                  strokeWidth: 2,
+                  dotRadius: 3,
+                  name: 'min/mi',
+                },
+              ]}
+              height={180}
+            />
+            <p className="text-xs text-muted-foreground">
+              min/mi per session at Zone {zone} — lower is faster.
+              {delta != null && Math.abs(delta) >= 0.05 && (
+                <span className={delta < 0 ? 'text-success' : undefined}>
+                  {' '}
+                  {delta < 0 ? 'Faster' : 'Slower'} by{' '}
+                  {fmtClock(Math.abs(delta) * 60)} /mi vs. the first session.
+                </span>
+              )}
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

@@ -722,26 +722,6 @@ export function ProgramPage() {
         {/* Weekly cardio goal — same rollup Progress → Cardio shows, counting
             diary entries and programmed cardio alike */}
         <CardioGoalCard routineIds={routineIds} />
-
-        {/* Cardio hint — disappears once any template has a cardio item */}
-        {cardioMap && ![...cardioMap.values()].some((c) => c.cardio > 0) && (
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-              Cardio
-            </h2>
-            <Card className="flex items-center gap-3 border-dashed p-4">
-              <Activity className="h-5 w-5 shrink-0 text-orange-500" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium">Program your cardio</div>
-                <div className="text-xs text-muted-foreground">
-                  Add cardio to any template (Edit template → Cardio). A
-                  template that's only cardio becomes a cardio day in this
-                  rotation.
-                </div>
-              </div>
-            </Card>
-          </div>
-        )}
       </div>
 
       {/* Add-day sheet */}

@@ -3,7 +3,7 @@ import { NUTRIENT_BY_KEY, formatNutrient } from '@/lib/nutrients'
 import type { NutrientKey, Nutrients } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
-const SECTIONS: {
+export const SECTIONS: {
   title: string | null
   keys: NutrientKey[]
   indent?: NutrientKey[]
@@ -125,7 +125,7 @@ function MacroDonut({
   )
 }
 
-function MacroPie({ nutrients }: { nutrients: Nutrients }) {
+export function MacroPie({ nutrients }: { nutrients: Nutrients }) {
   const [basis, setBasis] = useState<'cal' | 'g'>('cal')
   const hasAny =
     nutrients.protein != null ||

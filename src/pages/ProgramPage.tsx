@@ -33,6 +33,7 @@ import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutine
 import { useRoutineMeta, useRoutineCardioMap } from '@/features/strength/useRoutineMeta'
 import { useWorkouts } from '@/features/strength/useStrength'
 import { useProgramPlannedVolume } from '@/features/strength/useProgram'
+import { useWeeklyCardioGoal } from '@/features/exercise/useWeeklyCardioGoal'
 import { todayISO, daysBetweenISO } from '@/lib/date'
 import { REGION_IDS, REGION_LABEL, resolveGoals } from '@/data/bodyMap'
 import {
@@ -718,6 +719,10 @@ export function ProgramPage() {
           </Card>
         </div>
 
+        {/* Weekly cardio goal — same rollup Progress → Cardio shows, counting
+            diary entries and programmed cardio alike */}
+        <CardioGoalCard routineIds={routineIds} />
+
         {/* Cardio hint — disappears once any template has a cardio item */}
         {cardioMap && ![...cardioMap.values()].some((c) => c.cardio > 0) && (
           <div>
@@ -852,6 +857,134 @@ export function ProgramPage() {
           document.body,
         )}
     </div>
+  )
+}
+
+/**
+ * Weekly cardio goal, collapsed to a one-line readout. Progress comes from
+ * logged `exercise_entries` (diary or programmed workout — both write there),
+ * while `routineIds` supplies what the rotation itself programs per cycle, so
+ * you can see whether the program covers the goal.
+ */
+function CardioGoalCard({ routineIds }: { routineIds: string[] }) {
+  const nav = useNavigate()
+  const [open, setOpen] = useState(false)
+  const { goal, summary } = useWeeklyCardioGoal()
+  const { data: cardioMap } = useRoutineCardioMap()
+
+  if (!goal)
+    return (
+      <button onClick={() => nav('/cardio/goal')} className="block w-full text-left">
+        <Card className="flex items-center gap-3 border-dashed p-4">
+          <Activity className="h-5 w-5 shrink-0 text-orange-500" />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">Set a weekly cardio goal</div>
+            <div className="text-xs text-muted-foreground">
+              Target minutes per week by intensity — light/heavy or zones 1–5.
+              Every cardio entry you log counts toward it.
+            </div>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Card>
+      </button>
+    )
+
+  const planned = routineIds.reduce(
+    (acc, id) => {
+      const c = cardioMap?.get(id)
+      if (!c) return acc
+      return {
+        light: acc.light + c.lightMinutes,
+        heavy: acc.heavy + c.heavyMinutes,
+      }
+    },
+    { light: 0, heavy: 0 },
+  )
+  const plannedTotal = Math.round(planned.light + planned.heavy)
+  // Normalize the stacked bar so an over-target week still reads full, not clipped.
+  const denom = Math.max(summary.totalTarget, summary.totalDone, 1)
+
+  return (
+    <Card className="overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full p-3 text-left"
+      >
+        <div className="flex items-center gap-2.5">
+          <Activity className="h-4 w-4 shrink-0 text-orange-500" />
+          <span className="flex-1 text-sm font-medium">Weekly cardio goal</span>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {summary.totalDone} / {summary.totalTarget} min
+          </span>
+          <ChevronDown
+            className={cn(
+              'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+          />
+        </div>
+        <div className="mt-2 flex h-1.5 gap-0.5 overflow-hidden rounded-full bg-muted">
+          {summary.buckets.map((b) => (
+            <div
+              key={b.key}
+              style={{ width: `${(b.done / denom) * 100}%`, background: b.color }}
+            />
+          ))}
+        </div>
+      </button>
+      {open && (
+        <div className="border-t border-border p-3 pt-2.5">
+          <div className="space-y-2">
+            {summary.buckets.map((b) => (
+              <div key={b.key}>
+                <div className="mb-0.5 flex items-baseline justify-between text-xs">
+                  <span>
+                    {b.label}{' '}
+                    <span className="text-muted-foreground">{b.sublabel}</span>
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {b.done}
+                    {b.target > 0 ? ` / ${b.target}` : ''} min
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${b.target > 0 ? Math.min(100, (b.done / b.target) * 100) : 0}%`,
+                      background: b.color,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2.5 text-xs leading-snug text-muted-foreground">
+            {plannedTotal > 0 ? (
+              <>
+                Your rotation programs {plannedTotal} min of cardio per cycle
+                {planned.heavy > 0 &&
+                  planned.light > 0 &&
+                  ` (${Math.round(planned.light)} light · ${Math.round(planned.heavy)} heavy)`}
+                .
+              </>
+            ) : (
+              <>
+                No cardio programmed in this rotation yet — add cardio to a
+                template and it counts here when you log it.
+              </>
+            )}
+          </p>
+          <button
+            onClick={() => nav('/cardio/goal')}
+            className="flex w-full items-center justify-end gap-0.5 pt-2 text-xs font-medium text-primary"
+          >
+            Edit goal <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+    </Card>
   )
 }
 

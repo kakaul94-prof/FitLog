@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Activity, ChevronDown, Pencil } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
@@ -23,10 +23,10 @@ import {
   useSyncWeightsNow,
 } from '@/features/measurements/useWeightSync'
 import type { Measurement } from '@/lib/database.types'
-import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
-import { useExerciseEntriesRange } from '@/features/exercise/useExercise'
+import { useProfile } from '@/features/profile/useProfile'
+import { useWeeklyCardioGoal } from '@/features/exercise/useWeeklyCardioGoal'
 import { useCardioPaceTrends } from '@/features/insights/useCardioPaceTrends'
-import { fmtClock, sumCardioMinutes, weekStartISO } from '@/lib/cardio'
+import { fmtClock } from '@/lib/cardio'
 import { zoneColor } from '@/data/zones'
 import { useNutritionTrends } from '@/features/insights/useNutritionTrends'
 import {
@@ -181,30 +181,12 @@ function CardioView() {
   )
 }
 
-// Weekly cardio volume vs. the profile target (Mon–today). The target is set
-// and cleared right here on the card; no target = just the minutes.
+// Weekly cardio volume vs. the cardio goal (Mon–today), broken out by intensity.
+// Counts every logged entry — diary or programmed workout — and shares its
+// rollup with the Program page. The goal itself is edited on /cardio/goal.
 function ThisWeekCard() {
-  const today = todayISO()
-  const start = weekStartISO(today)
-  const { data: entries } = useExerciseEntriesRange(start, today)
-  const { data: profile } = useProfile()
-  const update = useUpdateProfile()
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState('')
-
-  const rows = entries ?? []
-  const minutes = sumCardioMinutes(rows)
-  const sessions = rows.filter((r) => (r.duration_min ?? 0) > 0).length
-  const z2 = sumCardioMinutes(rows.filter((r) => r.zone === 2))
-  const target = profile?.weekly_cardio_min_target ?? null
-
-  const saveTarget = async (raw: string) => {
-    const n = parseInt(raw)
-    await update.mutateAsync({
-      weekly_cardio_min_target: Number.isFinite(n) && n > 0 ? n : null,
-    })
-    setEditing(false)
-  }
+  const nav = useNavigate()
+  const { goal, summary } = useWeeklyCardioGoal()
 
   return (
     <Card>
@@ -213,69 +195,56 @@ function ThisWeekCard() {
           <CardTitle className="text-base">This week</CardTitle>
           <button
             type="button"
-            onClick={() => {
-              setVal(target != null ? String(target) : '150')
-              setEditing((e) => !e)
-            }}
+            onClick={() => nav('/cardio/goal')}
             className="flex items-center gap-1 text-xs font-medium text-primary"
           >
             <Pencil className="h-3 w-3" />
-            {target != null ? 'Edit target' : 'Set target'}
+            {goal ? 'Edit goal' : 'Set goal'}
           </button>
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
-        {editing ? (
-          <div className="flex items-center gap-2">
-            <Input
-              autoFocus
-              type="number"
-              inputMode="numeric"
-              aria-label="Weekly cardio minutes target"
-              className="w-24"
-              value={val}
-              onChange={(e) => setVal(e.target.value)}
-            />
-            <span className="text-sm text-muted-foreground">min / week</span>
-            <Button
-              size="sm"
-              onClick={() => saveTarget(val)}
-              disabled={update.isPending}
-            >
-              Save
-            </Button>
-            {target != null && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => saveTarget('')}
-                disabled={update.isPending}
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-3xl font-bold tabular-nums">{minutes}</span>
-            <span className="text-sm font-medium text-muted-foreground">
-              {target != null ? `/ ${target} min` : 'min'}
-            </span>
-          </div>
-        )}
-        {target != null && !editing && (
-          <div className="h-2 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary"
-              style={{ width: `${Math.min(100, (minutes / target) * 100)}%` }}
-            />
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-3xl font-bold tabular-nums">
+            {summary.totalDone}
+          </span>
+          <span className="text-sm font-medium text-muted-foreground">
+            {goal ? `/ ${summary.totalTarget} min` : 'min'}
+          </span>
+        </div>
+        {goal && (
+          <div className="space-y-2 pt-0.5">
+            {summary.buckets.map((b) => (
+              <div key={b.key}>
+                <div className="mb-0.5 flex items-baseline justify-between text-xs">
+                  <span>
+                    {b.label}{' '}
+                    <span className="text-muted-foreground">{b.sublabel}</span>
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {b.done}
+                    {b.target > 0 ? ` / ${b.target}` : ''} min
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${b.target > 0 ? Math.min(100, (b.done / b.target) * 100) : 0}%`,
+                      background: b.color,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         )}
         <p className="text-xs text-muted-foreground">
-          {sessions} {sessions === 1 ? 'session' : 'sessions'} since Monday
-          {z2 > 0 && ` · ${z2} min in Zone 2`}
-          {target == null &&
-            ' · set a target (150 min moderate is the common guideline)'}
+          {summary.sessions} {summary.sessions === 1 ? 'session' : 'sessions'}{' '}
+          since Monday
+          {goal
+            ? ` · ${summary.mvpaDone} MVPA min (heavy counts double)`
+            : ' · set a goal (150 min moderate is the common guideline)'}
         </p>
       </CardContent>
     </Card>

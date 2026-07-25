@@ -52,8 +52,9 @@ export function useLogExercise() {
       const { error } = await supabase.from('exercise_entries').insert(e)
       if (error) throw error
     },
-    onSuccess: (_d, v) =>
-      qc.invalidateQueries({ queryKey: ['exercise', v.entry_date] }),
+    // Whole prefix, not just the day: the weekly cardio-goal rollup reads the
+    // ['exercise','range',…] key, which a date-specific key doesn't match.
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['exercise'] }),
   })
 }
 
@@ -98,7 +99,7 @@ export function useUpdateExercise() {
       if (error) throw error
     },
     onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: ['exercise', v.entry_date] })
+      qc.invalidateQueries({ queryKey: ['exercise'] })
       qc.invalidateQueries({ queryKey: ['exerciseEntry', v.id] })
     },
   })

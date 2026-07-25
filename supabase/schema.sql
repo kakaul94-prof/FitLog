@@ -63,6 +63,8 @@ alter table public.profiles add column if not exists program jsonb;
 alter table public.profiles add column if not exists calorie_goal_history jsonb not null default '[]'::jsonb;
 -- Weekly cardio minutes target (see migration_routine_cardio.sql). null = unset.
 alter table public.profiles add column if not exists weekly_cardio_min_target integer;
+-- Per-intensity weekly cardio goal (see migration_cardio_goal.sql). null = unset.
+alter table public.profiles add column if not exists cardio_goal jsonb;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles

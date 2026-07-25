@@ -112,9 +112,28 @@ export interface Profile {
   // model). null / empty sequence = no program set up yet.
   program: ProgramState | null
   // Weekly cardio minutes target (Progress → Cardio "This week"). null = unset.
+  // Superseded by cardio_goal below, which seeds from it on first save.
   weekly_cardio_min_target: number | null
+  // Per-intensity weekly cardio minutes goal (see CardioGoal). null = unset,
+  // in which case weekly_cardio_min_target still applies.
+  cardio_goal: CardioGoal | null
   created_at: string
   updated_at: string
+}
+
+// Weekly cardio goal, in one of two granularities. 'simple' targets light
+// (zones 1–2) and heavy (zones 3–5) minutes; 'zones' targets each of the 5
+// zones. Both sets of numbers are kept, so switching modes is non-destructive.
+// Resolution + the week rollup live in lib/cardioGoal.ts.
+export type CardioGoalMode = 'simple' | 'zones'
+
+export interface CardioGoal {
+  mode: CardioGoalMode
+  // Minutes/week, simple mode. 0 = untracked (minutes still count in totals).
+  light: number
+  heavy: number
+  // Minutes/week per zone, index 0 = zone 1 … index 4 = zone 5.
+  zones: number[]
 }
 
 // One slot in the program rotation: a template reference or a rest day. `id` is

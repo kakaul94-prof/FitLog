@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { workoutDurationMin, estimateRoutineMinutes } from '@/lib/progression'
 import { isCardioKey } from '@/lib/cardio'
+import { bucketForZone } from '@/lib/cardioGoal'
 import { resolveContrib, REGION_LABEL, type RegionId } from '@/data/bodyMap'
 
 export interface RoutineMeta {
@@ -108,6 +109,11 @@ export interface RoutineComposition {
   lifts: number
   cardio: number
   cardioMinutes: number
+  // Programmed cardio minutes split by target zone, for the weekly cardio goal's
+  // "what's still scheduled" line. Items with no target zone count as light,
+  // matching how logged entries without a zone are bucketed.
+  lightMinutes: number
+  heavyMinutes: number
 }
 
 /** Per-routine lift/cardio item counts for badges (Program rotation, add-day
@@ -126,15 +132,21 @@ export function useRoutineCardioMap() {
         routine_id: string
         exercise_key: string
         target_duration_min?: number | null
+        target_zone?: number | null
       }[]) {
         const info = map.get(r.routine_id) ?? {
           lifts: 0,
           cardio: 0,
           cardioMinutes: 0,
+          lightMinutes: 0,
+          heavyMinutes: 0,
         }
         if (isCardioKey(r.exercise_key)) {
+          const min = r.target_duration_min ?? 0
           info.cardio++
-          info.cardioMinutes += r.target_duration_min ?? 0
+          info.cardioMinutes += min
+          if (bucketForZone(r.target_zone) === 'heavy') info.heavyMinutes += min
+          else info.lightMinutes += min
         } else info.lifts++
         map.set(r.routine_id, info)
       }

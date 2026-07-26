@@ -50,7 +50,8 @@ import {
 } from '@/lib/cardio'
 import { zoneColor } from '@/data/zones'
 import { estimated1RM, warmupRamp } from '@/lib/calc'
-import { EXERCISES } from '@/data/exercises'
+import { EXERCISES, isHoldKind } from '@/data/exercises'
+import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import { dateLabel, timeLabel } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type {
@@ -722,7 +723,14 @@ function ExerciseCard({
   // Warm-up ramp to set 1's weight. Built-in bodyweight/timed lifts don't get
   // one; custom exercises (no meta) are treated as weighted, non-barbell.
   const meta = EXERCISES.find((e) => e.key === ex.exercise_key)
-  const warmupEligible = meta == null || meta.kind === 'weighted'
+  // Stretches and planks log a hold in seconds instead of reps × weight. Custom
+  // exercises carry their own type, so look those up too.
+  const { data: customExercises } = useCustomExercises()
+  const customKind = ex.exercise_key.startsWith('custom:')
+    ? customExercises?.find((c) => `custom:${c.id}` === ex.exercise_key)?.type
+    : undefined
+  const hold = isHoldKind(meta?.kind ?? customKind)
+  const warmupEligible = !hold && (meta == null || meta.kind === 'weighted')
   const workingLb = sets[0]?.weight_lb ?? null
   const ramp =
     workingLb != null ? warmupRamp(workingLb, meta?.equipment === 'Barbell') : []
@@ -920,10 +928,23 @@ function ExerciseCard({
               ))}
           </div>
         )}
-        <div className="grid grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem] gap-2 px-1 pb-1 text-xs text-muted-foreground">
+        <div
+          className={cn(
+            'grid gap-2 px-1 pb-1 text-xs text-muted-foreground',
+            hold
+              ? 'grid-cols-[2rem_1fr_3.5rem_1.5rem]'
+              : 'grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem]',
+          )}
+        >
           <span className="text-center">Set</span>
-          <span>lb</span>
-          <span>Reps</span>
+          {hold ? (
+            <span>Hold (sec)</span>
+          ) : (
+            <>
+              <span>lb</span>
+              <span>Reps</span>
+            </>
+          )}
           <span className="text-center">RPE</span>
           <span />
         </div>
@@ -933,6 +954,7 @@ function ExerciseCard({
             set={s}
             index={i + 1}
             workoutId={workoutId}
+            hold={hold}
             onWeightEntered={autoStart}
           />
         ))}
@@ -974,11 +996,14 @@ function SetRow({
   set,
   index,
   workoutId,
+  hold,
   onWeightEntered,
 }: {
   set: WorkoutSet
   index: number
   workoutId: string
+  // Hold exercises (stretches, planks) log seconds in place of lb × reps.
+  hold: boolean
   // Auto-start the parent exercise's timer the first time a weight is logged.
   onWeightEntered: () => void
 }) {
@@ -986,6 +1011,9 @@ function SetRow({
     set.weight_lb != null ? String(set.weight_lb) : '',
   )
   const [reps, setReps] = useState(set.reps != null ? String(set.reps) : '')
+  const [secs, setSecs] = useState(
+    set.duration_sec != null ? String(set.duration_sec) : '',
+  )
   const update = useUpdateSet()
   const del = useDeleteSet()
   const save = (patch: Partial<WorkoutSet>) =>
@@ -993,28 +1021,52 @@ function SetRow({
 
   return (
     <div className="py-1">
-      <div className="grid grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem] items-center gap-2">
+      <div
+        className={cn(
+          'grid items-center gap-2',
+          hold
+            ? 'grid-cols-[2rem_1fr_3.5rem_1.5rem]'
+            : 'grid-cols-[2rem_1fr_1fr_3.5rem_1.5rem]',
+        )}
+      >
         <span className="text-center text-sm text-muted-foreground">{index}</span>
-        <Input
-          className="h-9"
-          type="number"
-          inputMode="decimal"
-          value={weight}
-          onChange={(e) => setWeight(e.target.value)}
-          onBlur={() => {
-            const w = weight ? parseFloat(weight) : null
-            save({ weight_lb: w })
-            if (w != null && !Number.isNaN(w)) onWeightEntered()
-          }}
-        />
-        <Input
-          className="h-9"
-          type="number"
-          inputMode="numeric"
-          value={reps}
-          onChange={(e) => setReps(e.target.value)}
-          onBlur={() => save({ reps: reps ? parseFloat(reps) : null })}
-        />
+        {hold ? (
+          <Input
+            className="h-9"
+            type="number"
+            inputMode="numeric"
+            value={secs}
+            onChange={(e) => setSecs(e.target.value)}
+            onBlur={() => {
+              const d = secs ? parseFloat(secs) : null
+              save({ duration_sec: d })
+              if (d != null && !Number.isNaN(d)) onWeightEntered()
+            }}
+          />
+        ) : (
+          <>
+            <Input
+              className="h-9"
+              type="number"
+              inputMode="decimal"
+              value={weight}
+              onChange={(e) => setWeight(e.target.value)}
+              onBlur={() => {
+                const w = weight ? parseFloat(weight) : null
+                save({ weight_lb: w })
+                if (w != null && !Number.isNaN(w)) onWeightEntered()
+              }}
+            />
+            <Input
+              className="h-9"
+              type="number"
+              inputMode="numeric"
+              value={reps}
+              onChange={(e) => setReps(e.target.value)}
+              onBlur={() => save({ reps: reps ? parseFloat(reps) : null })}
+            />
+          </>
+        )}
         <Select
           className="h-9 px-1"
           value={set.effort != null ? String(set.effort) : ''}

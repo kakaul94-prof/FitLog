@@ -26,6 +26,7 @@ import {
   TrendingDown,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { MobilitySection } from '@/components/MobilitySection'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
@@ -95,6 +96,7 @@ export function ProgramPage() {
   const [adding, setAdding] = useState(false)
   const [actionFor, setActionFor] = useState<{ item: ProgramItem; index: number } | null>(null)
   const [volumeOpen, setVolumeOpen] = useState(false)
+  const [tab, setTab] = useState<'lift' | 'mobility'>('lift')
   const loadedRef = useRef(false)
 
   // Seed once: from the saved program, else a starter rotation built from the
@@ -467,7 +469,7 @@ export function ProgramPage() {
           </Button>
         }
         action={
-          counts.lifts > 0 ? (
+          counts.lifts > 0 && tab === 'lift' ? (
             isDeload ? (
               <button
                 onClick={endDeload}
@@ -487,6 +489,30 @@ export function ProgramPage() {
         }
       />
       <div className="space-y-5 p-4">
+        {/* Lift = the sequential rotation; Mobility = weekly minute targets you
+            bank into. Kept apart on purpose: mobility never advances the
+            rotation, which only reads `sequence`. */}
+        <div className="flex rounded-md bg-muted p-0.5">
+          {(['lift', 'mobility'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                'flex-1 rounded-[5px] py-1.5 text-xs font-medium capitalize',
+                tab === t
+                  ? 'bg-card text-primary shadow-sm'
+                  : 'text-muted-foreground',
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'mobility' && <MobilitySection />}
+
+        {tab === 'lift' && (
+          <div className="space-y-5">
         {/* Cycle progress strip */}
         {seq.length > 0 && (
           <div>
@@ -722,6 +748,8 @@ export function ProgramPage() {
         {/* Weekly cardio goal — same rollup Progress → Cardio shows, counting
             diary entries and programmed cardio alike */}
         <CardioGoalCard routineIds={routineIds} />
+          </div>
+        )}
       </div>
 
       {/* Add-day sheet */}

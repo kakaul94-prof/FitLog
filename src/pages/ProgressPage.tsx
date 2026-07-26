@@ -56,6 +56,10 @@ const TYPES = [
   { type: 'weight', label: 'Weight', unit: 'lb' },
   { type: 'body_fat', label: 'Body fat', unit: '%' },
   { type: 'waist', label: 'Waist', unit: 'in' },
+  // Flexibility benchmarks. Reaching past the toes is positive, stopping short
+  // is negative, so both trend upward as you get more flexible.
+  { type: 'sit_reach', label: 'Sit & reach', unit: 'in' },
+  { type: 'back_scratch', label: 'Back scratch', unit: 'in' },
 ]
 
 const ACCENT = 'var(--primary)'

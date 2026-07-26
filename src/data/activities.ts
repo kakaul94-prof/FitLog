@@ -25,6 +25,8 @@ export const ACTIVITIES: BuiltinActivity[] = [
   { key: 'weight_training', name: 'Weight training (general)', met: 3.5, distanceBased: false },
   { key: 'yoga', name: 'Yoga', met: 2.5, distanceBased: false },
   { key: 'pilates', name: 'Pilates', met: 3.0, distanceBased: false },
+  { key: 'stretching', name: 'Stretching', met: 2.3, distanceBased: false },
+  { key: 'foam_rolling', name: 'Foam rolling', met: 2.3, distanceBased: false },
   { key: 'soccer', name: 'Soccer', met: 7.0, distanceBased: false },
   { key: 'basketball', name: 'Basketball', met: 6.5, distanceBased: false },
   { key: 'tennis', name: 'Tennis', met: 7.3, distanceBased: false },

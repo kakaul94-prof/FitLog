@@ -1,4 +1,10 @@
-import type { DeloadState, NextOverride, ProgramItem } from './database.types'
+import type {
+  DeloadState,
+  NextOverride,
+  ProgramItem,
+  ProgramState,
+  SavedProgram,
+} from './database.types'
 
 // Sequential-rotation logic for the workout program. Pure + framework-free so
 // it's unit-tested and shared by the Program page and the Exercise "Next up"
@@ -108,6 +114,80 @@ export interface CycleCounts {
 export function cycleCounts(sequence: ProgramItem[]): CycleCounts {
   const rests = sequence.filter((it) => it.kind === 'rest').length
   return { length: sequence.length, lifts: sequence.length - rests, rests }
+}
+
+// --- Switching programs ----------------------------------------------------
+// `sequence` is always the live rotation, whichever program is active — the
+// rotation logic above never needs to know which one that is. Switching parks
+// the outgoing rotation in `saved` before overwriting `sequence`, so a
+// hand-built program survives a detour through a preset unchanged.
+
+/** Program id for a hand-built rotation (the implicit default). */
+export const CUSTOM_PROGRAM_ID = 'custom'
+
+/** Which program the live sequence belongs to. Absent `activeId` means the
+ *  rotation predates the picker, which by definition makes it the user's own. */
+export function activeProgramId(state: ProgramState | null | undefined): string {
+  return state?.activeId || CUSTOM_PROGRAM_ID
+}
+
+/** Display name for the custom program (user-renameable). */
+export function customProgramLabel(
+  state: ProgramState | null | undefined,
+): string {
+  return state?.customName?.trim() || 'Custom program'
+}
+
+/** Drop slots whose template no longer exists; rest days always survive. */
+export function pruneSequence(
+  sequence: ProgramItem[],
+  existingRoutineIds: Set<string>,
+): ProgramItem[] {
+  return sequence.filter(
+    (it) => it.kind === 'rest' || existingRoutineIds.has(it.routineId),
+  )
+}
+
+/** Whether a parked rotation can be brought back as-is: it still has a template
+ *  day, and every template it names still exists. A snapshot that lost templates
+ *  is better re-seeded (presets) than silently restored with holes. */
+export function programIsRestorable(
+  saved: SavedProgram | null | undefined,
+  existingRoutineIds: Set<string>,
+): boolean {
+  if (!saved?.sequence?.length) return false
+  const kept = pruneSequence(saved.sequence, existingRoutineIds)
+  return (
+    kept.length === saved.sequence.length &&
+    kept.some((it) => it.kind === 'routine')
+  )
+}
+
+/** Make `toId` the active program with `nextSequence` as its rotation, parking
+ *  the outgoing rotation under its own id first. The incoming program's parked
+ *  copy is consumed (it's live now, so a stale duplicate would double-list it in
+ *  the picker). `nextOverride` and `deload` both describe the outgoing rotation
+ *  — a pinned template and a mid-cycle deload count are meaningless against a
+ *  different set of days — so both reset. */
+export function switchProgramState(
+  state: ProgramState | null | undefined,
+  toId: string,
+  nextSequence: ProgramItem[],
+  today: string,
+): ProgramState {
+  const fromId = activeProgramId(state)
+  const saved: Record<string, SavedProgram> = { ...(state?.saved ?? {}) }
+  if (state?.sequence?.length && fromId !== toId)
+    saved[fromId] = { sequence: state.sequence, lastUsed: today }
+  delete saved[toId]
+  return {
+    ...(state ?? { sequence: [] }),
+    sequence: nextSequence,
+    activeId: toId,
+    saved,
+    nextOverride: null,
+    deload: null,
+  }
 }
 
 // --- Deload ---------------------------------------------------------------

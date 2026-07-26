@@ -202,6 +202,22 @@ export interface ProgramState {
   // based, and keeping it out means banking stretch time never advances the lift
   // rotation (which only reads `sequence`). null/absent = not set up.
   mobility?: MobilityState | null
+  // Which program `sequence` currently belongs to: a PROGRAMS preset id, or
+  // 'custom' for a hand-built rotation. Absent = 'custom', so every rotation
+  // that predates the picker reads as the user's own without being rewritten.
+  activeId?: string
+  // The user's label for their custom rotation. Absent = "Custom program".
+  customName?: string | null
+  // Rotations parked when switching programs, keyed by program id. Switching
+  // snapshots the live `sequence` here first, so nothing is ever overwritten;
+  // switching back restores the saved copy rather than rebuilding it.
+  saved?: Record<string, SavedProgram>
+}
+
+export interface SavedProgram {
+  sequence: ProgramItem[]
+  // ISO date the rotation was last live, for the picker's "last used" line.
+  lastUsed?: string | null
 }
 
 // An alternate serving unit for a food (e.g. "1 cup = 240 g"). Nutrition

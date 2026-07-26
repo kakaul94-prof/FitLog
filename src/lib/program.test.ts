@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
+  activeProgramId,
+  CUSTOM_PROGRAM_ID,
+  customProgramLabel,
   cycleCounts,
   currentProgramIndex,
   deloadActive,
   nextProgramRoutineId,
+  programIsRestorable,
   programRoutineIds,
   programWorkoutCount,
+  pruneSequence,
+  switchProgramState,
   upcomingProgramRoutineIds,
 } from './program'
-import type { ProgramItem } from './database.types'
+import type { ProgramItem, ProgramState } from './database.types'
 
 const R = (routineId: string): ProgramItem => ({
   id: `i-${routineId}`,
@@ -145,6 +151,138 @@ describe('programWorkoutCount', () => {
       { source_routine_id: null },
     ]
     expect(programWorkoutCount(['a', 'b', 'c'], w)).toBe(2)
+  })
+})
+
+describe('activeProgramId', () => {
+  it('reads a rotation with no activeId as the user’s own', () => {
+    expect(activeProgramId(null)).toBe(CUSTOM_PROGRAM_ID)
+    expect(activeProgramId({ sequence: seq })).toBe(CUSTOM_PROGRAM_ID)
+  })
+  it('returns the stored id once a program has been picked', () => {
+    expect(activeProgramId({ sequence: seq, activeId: 'ppl' })).toBe('ppl')
+  })
+})
+
+describe('customProgramLabel', () => {
+  it('falls back when unnamed or blank', () => {
+    expect(customProgramLabel({ sequence: seq })).toBe('Custom program')
+    expect(customProgramLabel({ sequence: seq, customName: '  ' })).toBe(
+      'Custom program',
+    )
+  })
+  it('uses the user’s name', () => {
+    expect(customProgramLabel({ sequence: seq, customName: 'My split' })).toBe(
+      'My split',
+    )
+  })
+})
+
+describe('pruneSequence', () => {
+  it('drops slots whose template is gone but keeps rest days', () => {
+    expect(pruneSequence(seqRest, new Set(['a', 'c']))).toEqual([
+      R('a'),
+      REST(1),
+      REST(2),
+      R('c'),
+    ])
+  })
+})
+
+describe('programIsRestorable', () => {
+  const all = new Set(['a', 'b', 'c'])
+  it('is false for a missing or empty snapshot', () => {
+    expect(programIsRestorable(null, all)).toBe(false)
+    expect(programIsRestorable({ sequence: [] }, all)).toBe(false)
+  })
+  it('is false when a template it names no longer exists', () => {
+    expect(programIsRestorable({ sequence: seq }, new Set(['a', 'b']))).toBe(
+      false,
+    )
+  })
+  it('is false when only rest days survive', () => {
+    expect(programIsRestorable({ sequence: [REST(1)] }, all)).toBe(false)
+  })
+  it('is true when every template is still there', () => {
+    expect(programIsRestorable({ sequence: seqRest }, all)).toBe(true)
+  })
+})
+
+describe('switchProgramState', () => {
+  const custom: ProgramState = {
+    sequence: seqRest,
+    nextOverride: { routineId: 'b', sinceWorkoutId: 'w1' },
+    deload: { startProgramWorkouts: 4 },
+  }
+  const preset = [R('u1'), R('l1')]
+
+  it('parks the outgoing rotation under its own id', () => {
+    const next = switchProgramState(custom, 'upper_lower', preset, '2026-07-26')
+    expect(next.saved?.[CUSTOM_PROGRAM_ID]).toEqual({
+      sequence: seqRest,
+      lastUsed: '2026-07-26',
+    })
+    expect(next.sequence).toEqual(preset)
+    expect(next.activeId).toBe('upper_lower')
+  })
+
+  it('resets the pin and deload, which described the old rotation', () => {
+    const next = switchProgramState(custom, 'upper_lower', preset, '2026-07-26')
+    expect(next.nextOverride).toBeNull()
+    expect(next.deload).toBeNull()
+  })
+
+  it('restores a parked rotation byte-for-byte and consumes its slot', () => {
+    const onPreset = switchProgramState(
+      custom,
+      'upper_lower',
+      preset,
+      '2026-07-26',
+    )
+    const back = switchProgramState(
+      onPreset,
+      CUSTOM_PROGRAM_ID,
+      onPreset.saved![CUSTOM_PROGRAM_ID].sequence,
+      '2026-08-01',
+    )
+    expect(back.sequence).toEqual(seqRest)
+    expect(back.activeId).toBe(CUSTOM_PROGRAM_ID)
+    expect(back.saved?.[CUSTOM_PROGRAM_ID]).toBeUndefined()
+    expect(back.saved?.upper_lower).toEqual({
+      sequence: preset,
+      lastUsed: '2026-08-01',
+    })
+  })
+
+  it('never parks over the incoming program’s own snapshot', () => {
+    const state: ProgramState = {
+      sequence: preset,
+      activeId: 'upper_lower',
+      saved: { [CUSTOM_PROGRAM_ID]: { sequence: seqRest, lastUsed: '2026-07-26' } },
+    }
+    const back = switchProgramState(state, CUSTOM_PROGRAM_ID, seqRest, '2026-08-01')
+    expect(back.saved?.[CUSTOM_PROGRAM_ID]).toBeUndefined()
+    expect(back.sequence).toEqual(seqRest)
+  })
+
+  it('keeps unrelated state (mobility) untouched', () => {
+    const withMobility: ProgramState = {
+      ...custom,
+      mobility: { stretches: [], log: [] },
+    }
+    const next = switchProgramState(
+      withMobility,
+      'ppl',
+      preset,
+      '2026-07-26',
+    )
+    expect(next.mobility).toEqual({ stretches: [], log: [] })
+  })
+
+  it('re-picking the active program does not park a duplicate', () => {
+    const state: ProgramState = { sequence: preset, activeId: 'ppl' }
+    const next = switchProgramState(state, 'ppl', preset, '2026-07-26')
+    expect(next.saved?.ppl).toBeUndefined()
   })
 })
 

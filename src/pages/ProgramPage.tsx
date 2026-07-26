@@ -17,12 +17,14 @@ import {
   Clock,
   Dumbbell,
   GripVertical,
-  ListOrdered,
+  LayoutGrid,
   Moon,
   MoreVertical,
   Play,
   Plus,
+  RefreshCw,
   SkipForward,
+  SlidersHorizontal,
   Target,
   Timer,
   Trash2,
@@ -33,7 +35,11 @@ import { MobilitySection } from '@/components/MobilitySection'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
-import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
+import {
+  useRoutine,
+  useRoutines,
+  useStartFromRoutine,
+} from '@/features/strength/useRoutines'
 import { useRoutineMeta, useRoutineCardioMap } from '@/features/strength/useRoutineMeta'
 import { useWorkouts } from '@/features/strength/useStrength'
 import { useProgramPlannedVolume } from '@/features/strength/useProgram'
@@ -43,6 +49,8 @@ import { mobilityWeek } from '@/lib/mobility'
 import { todayISO, daysBetweenISO } from '@/lib/date'
 import { REGION_IDS, REGION_LABEL, resolveGoals } from '@/data/bodyMap'
 import {
+  activeProgramId,
+  customProgramLabel,
   cycleCounts,
   currentProgramIndex,
   DELOAD_VOLUME_FACTOR,
@@ -52,6 +60,8 @@ import {
   programRoutineIds,
   programWorkoutCount,
 } from '@/lib/program'
+import { programById } from '@/data/programs'
+import { isCardioKey } from '@/lib/cardio'
 import type { DeloadState, NextOverride, ProgramItem } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
@@ -102,6 +112,8 @@ export function ProgramPage() {
   const [actionFor, setActionFor] = useState<{ item: ProgramItem; index: number } | null>(null)
   const [volumeOpen, setVolumeOpen] = useState(false)
   const [rotationOpen, setRotationOpen] = useState(false)
+  // Program slot id whose exercise list is expanded (one at a time).
+  const [openDay, setOpenDay] = useState<string | null>(null)
   const loadedRef = useRef(false)
 
   // Seed once: from the saved program, else a starter rotation built from the
@@ -166,8 +178,17 @@ export function ProgramPage() {
     setSeq(nextSeq)
     setOverride(nextOverride)
     setDeload(nextDeload)
+    // Merge, never rebuild: `program` also carries the mobility list, which
+    // program the rotation belongs to, and the rotations parked for the other
+    // programs. Writing a bare object here drops all of it (jsonb updates
+    // replace the whole value).
     update.mutate({
-      program: { sequence: nextSeq, nextOverride, deload: nextDeload },
+      program: {
+        ...(profile?.program ?? {}),
+        sequence: nextSeq,
+        nextOverride,
+        deload: nextDeload,
+      },
     })
   }
   const commitRef = useRef(commit)
@@ -467,6 +488,15 @@ export function ProgramPage() {
     `${counts.length} day${counts.length === 1 ? '' : 's'}`,
     ...(counts.rests > 0 ? [`${counts.rests} rest`] : []),
   ].join(' · ')
+  // The rotation card is titled by the program it belongs to. An unset activeId
+  // reads as custom, so a rotation built before the picker existed keeps working
+  // and simply shows as the user's own.
+  const activeId = activeProgramId(profile?.program)
+  const activePreset = programById(activeId)
+  const programTitle = activePreset
+    ? `${activePreset.name} program`
+    : customProgramLabel(profile?.program)
+  const ProgramIcon = activePreset ? LayoutGrid : SlidersHorizontal
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
@@ -593,17 +623,23 @@ export function ProgramPage() {
           </div>
         )}
 
-        {/* Rotation (collapsible) */}
+        {/* The program: its rotation, each day's exercises, and the swap-out
+            entry — one card so the days you train and the program they belong
+            to are never two separate things to reconcile. */}
         <Card className="overflow-hidden">
           <button
             onClick={() => setRotationOpen((o) => !o)}
             aria-expanded={rotationOpen}
             className="flex w-full items-center gap-2.5 p-3 text-left"
           >
-            <ListOrdered className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="flex-1 text-sm font-medium">Rotation</span>
+            <ProgramIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+              {programTitle}
+            </span>
             {seq.length > 0 && (
-              <span className="text-xs text-muted-foreground">{rotationLabel}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {rotationLabel}
+              </span>
             )}
             <ChevronDown
               className={cn(
@@ -613,13 +649,15 @@ export function ProgramPage() {
             />
           </button>
           {rotationOpen && (
-            <div className="border-t border-border p-3">
+            <>
+              <div className="border-t border-border p-3">
               <div ref={containerRef} className="space-y-2 empty:hidden">
                 {seq.map((item, index) => {
                   const dragging = dragKey === item.id
                   const isRoutine = item.kind === 'routine'
                   const isCurrent = index === currentIdx
                   const isNext = index === nextIdx
+                  const dayOpen = openDay === item.id
                   return (
                     <div
                       key={item.id}
@@ -636,54 +674,80 @@ export function ProgramPage() {
                     >
                       <Card
                         className={cn(
-                          'flex items-center gap-2 p-3',
+                          'overflow-hidden',
                           isCurrent && 'bg-primary/5 ring-1 ring-primary/40',
                         )}
                       >
-                        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                        {isRoutine ? (
-                          isCardioDay(item.routineId) ? (
-                            <Activity className="h-4 w-4 shrink-0 text-orange-500" />
-                          ) : (
-                            <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          )
-                        ) : (
-                          <Moon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        )}
-                        <span
-                          className={cn(
-                            'min-w-0 flex-1 truncate text-sm',
-                            isRoutine ? 'font-medium' : 'text-muted-foreground',
-                          )}
+                        {/* Tap toggles the exercise list; a press that promoted
+                            to a drag swallows its click (see onUp), so the two
+                            gestures don't collide. */}
+                        <div
+                          onClick={
+                            isRoutine
+                              ? () => setOpenDay(dayOpen ? null : item.id)
+                              : undefined
+                          }
+                          className="flex items-center gap-2 p-3"
                         >
-                          {isRoutine ? routineName(item.routineId) : 'Rest day'}
-                        </span>
-                        {isRoutine &&
-                          !isCardioDay(item.routineId) &&
-                          (cardioMap?.get(item.routineId)?.cardio ?? 0) > 0 && (
-                            <Activity
-                              className="h-3.5 w-3.5 shrink-0 text-orange-500/70"
-                              aria-label="Includes cardio"
+                          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                          {isRoutine ? (
+                            isCardioDay(item.routineId) ? (
+                              <Activity className="h-4 w-4 shrink-0 text-orange-500" />
+                            ) : (
+                              <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            )
+                          ) : (
+                            <Moon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
+                          <span
+                            className={cn(
+                              'min-w-0 flex-1 truncate text-sm',
+                              isRoutine ? 'font-medium' : 'text-muted-foreground',
+                            )}
+                          >
+                            {isRoutine ? routineName(item.routineId) : 'Rest day'}
+                          </span>
+                          {isRoutine &&
+                            !isCardioDay(item.routineId) &&
+                            (cardioMap?.get(item.routineId)?.cardio ?? 0) > 0 && (
+                              <Activity
+                                className="h-3.5 w-3.5 shrink-0 text-orange-500/70"
+                                aria-label="Includes cardio"
+                              />
+                            )}
+                          {isCurrent && (
+                            <span className="shrink-0 rounded-full border border-primary/50 px-2 py-0.5 text-[10px] font-medium text-primary">
+                              Last done
+                            </span>
+                          )}
+                          {isNext && (
+                            <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
+                              Next up
+                            </span>
+                          )}
+                          {isRoutine && (
+                            <ChevronDown
+                              className={cn(
+                                'h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform',
+                                dayOpen && 'rotate-180',
+                              )}
                             />
                           )}
-                        {isCurrent && (
-                          <span className="shrink-0 rounded-full border border-primary/50 px-2 py-0.5 text-[10px] font-medium text-primary">
-                            Last done
-                          </span>
+                          <button
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setActionFor({ item, index })
+                            }}
+                            className="shrink-0 text-muted-foreground"
+                            aria-label="Options"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {isRoutine && dayOpen && (
+                          <DayExercises routineId={item.routineId} />
                         )}
-                        {isNext && (
-                          <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
-                            Next up
-                          </span>
-                        )}
-                        <button
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => setActionFor({ item, index })}
-                          className="shrink-0 text-muted-foreground"
-                          aria-label="Options"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
                       </Card>
                     </div>
                   )
@@ -697,12 +761,29 @@ export function ProgramPage() {
                 <Plus className="h-4 w-4" /> Add day
               </Button>
               {seq.length > 0 && (
-                <p className="mt-2 px-1 text-xs text-muted-foreground">
-                  Press and hold a day to reorder · tap ⋮ to set next, skip, or
-                  remove.
+                <p className="mt-2 px-1 text-xs leading-snug text-muted-foreground">
+                  Tap a day to see its exercises · press and hold to reorder ·
+                  tap ⋮ to set next, skip, or remove.
                 </p>
               )}
-            </div>
+              </div>
+              <button
+                onClick={() => nav('/program/browse')}
+                className="flex w-full items-center gap-2.5 border-t border-border p-3 text-left active:bg-accent"
+              >
+                <RefreshCw className="h-4 w-4 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-primary">
+                    Change program
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {activePreset ? activePreset.name : 'Custom'} · browse the
+                    ready-made splits
+                  </span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+              </button>
+            </>
           )}
         </Card>
 
@@ -879,6 +960,71 @@ export function ProgramPage() {
           </div>,
           document.body,
         )}
+    </div>
+  )
+}
+
+/** The prescription on a template row: sets × reps for lifts, duration or
+ *  distance for cardio items. `—` when the template leaves it unset. */
+function targetLabel(e: {
+  exercise_key: string
+  target_sets: number | null
+  target_reps: number | null
+  target_duration_min: number | null
+  target_distance_mi: number | null
+}): string {
+  if (isCardioKey(e.exercise_key)) {
+    if (e.target_duration_min) return `${e.target_duration_min} min`
+    if (e.target_distance_mi) return `${e.target_distance_mi} mi`
+    return '—'
+  }
+  if (!e.target_sets) return '—'
+  return e.target_reps ? `${e.target_sets} × ${e.target_reps}` : `${e.target_sets} sets`
+}
+
+/**
+ * A rotation day's exercises, inline under its row. Fetched on demand (the
+ * query only runs once the day is expanded) so the Program page still loads
+ * with the same handful of requests it always has.
+ */
+function DayExercises({ routineId }: { routineId: string }) {
+  const nav = useNavigate()
+  const { data, isLoading } = useRoutine(routineId)
+  const exercises = data?.exercises ?? []
+
+  return (
+    <div
+      // Reading the list shouldn't arm the row's long-press drag.
+      onPointerDown={(e) => e.stopPropagation()}
+      className="border-t border-border bg-muted/30 px-3 py-2"
+    >
+      {isLoading ? (
+        <p className="py-1 text-xs text-muted-foreground">Loading…</p>
+      ) : exercises.length === 0 ? (
+        <p className="py-1 text-xs text-muted-foreground">
+          No exercises in this template yet.
+        </p>
+      ) : (
+        exercises.map((e) => (
+          <div key={e.id} className="flex items-baseline gap-2 py-0.5 text-xs">
+            <span className="min-w-0 flex-1 truncate">
+              {e.exercise_name}
+              {e.superset_group != null && (
+                <span className="ml-1.5 text-muted-foreground">superset</span>
+              )}
+            </span>
+            <span className="shrink-0 tabular-nums text-muted-foreground">
+              {targetLabel(e)}
+            </span>
+          </div>
+        ))
+      )}
+      <button
+        onClick={() => nav(`/routines/${routineId}`)}
+        className="flex w-full items-center justify-end gap-0.5 pt-1.5 text-xs font-medium text-primary"
+      >
+        Edit template <ChevronRight className="h-3.5 w-3.5" />
+      </button>
     </div>
   )
 }

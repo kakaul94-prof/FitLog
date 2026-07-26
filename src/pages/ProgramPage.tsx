@@ -14,14 +14,17 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Dumbbell,
   GripVertical,
+  ListOrdered,
   Moon,
   MoreVertical,
   Play,
   Plus,
   SkipForward,
   Target,
+  Timer,
   Trash2,
   TrendingDown,
 } from 'lucide-react'
@@ -35,6 +38,8 @@ import { useRoutineMeta, useRoutineCardioMap } from '@/features/strength/useRout
 import { useWorkouts } from '@/features/strength/useStrength'
 import { useProgramPlannedVolume } from '@/features/strength/useProgram'
 import { useWeeklyCardioGoal } from '@/features/exercise/useWeeklyCardioGoal'
+import { useMobility } from '@/features/mobility/useMobility'
+import { mobilityWeek } from '@/lib/mobility'
 import { todayISO, daysBetweenISO } from '@/lib/date'
 import { REGION_IDS, REGION_LABEL, resolveGoals } from '@/data/bodyMap'
 import {
@@ -96,7 +101,7 @@ export function ProgramPage() {
   const [adding, setAdding] = useState(false)
   const [actionFor, setActionFor] = useState<{ item: ProgramItem; index: number } | null>(null)
   const [volumeOpen, setVolumeOpen] = useState(false)
-  const [tab, setTab] = useState<'lift' | 'mobility'>('lift')
+  const [rotationOpen, setRotationOpen] = useState(false)
   const loadedRef = useRef(false)
 
   // Seed once: from the saved program, else a starter rotation built from the
@@ -458,6 +463,10 @@ export function ProgramPage() {
       : `${counts.length}-day cycle`,
     ...(setsPerCycle > 0 ? [`${setsPerCycle} sets this cycle`] : []),
   ].join(' · ')
+  const rotationLabel = [
+    `${counts.length} day${counts.length === 1 ? '' : 's'}`,
+    ...(counts.rests > 0 ? [`${counts.rests} rest`] : []),
+  ].join(' · ')
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
@@ -469,7 +478,7 @@ export function ProgramPage() {
           </Button>
         }
         action={
-          counts.lifts > 0 && tab === 'lift' ? (
+          counts.lifts > 0 ? (
             isDeload ? (
               <button
                 onClick={endDeload}
@@ -489,30 +498,6 @@ export function ProgramPage() {
         }
       />
       <div className="space-y-5 p-4">
-        {/* Lift = the sequential rotation; Mobility = weekly minute targets you
-            bank into. Kept apart on purpose: mobility never advances the
-            rotation, which only reads `sequence`. */}
-        <div className="flex rounded-md bg-muted p-0.5">
-          {(['lift', 'mobility'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                'flex-1 rounded-[5px] py-1.5 text-xs font-medium capitalize',
-                tab === t
-                  ? 'bg-card text-primary shadow-sm'
-                  : 'text-muted-foreground',
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-
-        {tab === 'mobility' && <MobilitySection />}
-
-        {tab === 'lift' && (
-          <div className="space-y-5">
         {/* Cycle progress strip */}
         {seq.length > 0 && (
           <div>
@@ -547,8 +532,17 @@ export function ProgramPage() {
         {/* Next-up hero */}
         {nextId && (
           <Card className="p-4">
-            <div className="text-xs font-semibold uppercase tracking-wider text-primary">
-              Next up
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-xs font-semibold uppercase tracking-wider text-primary">
+                Next up
+              </span>
+              {/* Personal estimate: median of your recent runs of this template,
+                  else ~3 min per target set (see estimateRoutineMinutes). */}
+              {!!meta?.estMinutes && (
+                <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  <Clock className="h-3 w-3" />~{meta.estMinutes} min
+                </span>
+              )}
             </div>
             <h2 className="mt-0.5 truncate text-2xl font-bold">
               {routineName(nextId)}
@@ -599,99 +593,118 @@ export function ProgramPage() {
           </div>
         )}
 
-        {/* Rotation */}
-        <div>
-          <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-            Rotation
-          </h2>
-          <div ref={containerRef} className="space-y-2 empty:hidden">
-            {seq.map((item, index) => {
-              const dragging = dragKey === item.id
-              const isRoutine = item.kind === 'routine'
-              const isCurrent = index === currentIdx
-              const isNext = index === nextIdx
-              return (
-                <div
-                  key={item.id}
-                  data-block={item.id}
-                  onPointerDown={startPress(item.id)}
-                  onPointerMove={movePress}
-                  onPointerUp={endPress}
-                  onPointerCancel={endPress}
-                  onContextMenu={(e) => e.preventDefault()}
-                  className={cn(
-                    'relative select-none',
-                    dragging && 'z-10 rounded-xl opacity-95 shadow-xl ring-2 ring-primary',
-                  )}
-                >
-                  <Card
-                    className={cn(
-                      'flex items-center gap-2 p-3',
-                      isCurrent && 'bg-primary/5 ring-1 ring-primary/40',
-                    )}
-                  >
-                    <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
-                    {isRoutine ? (
-                      isCardioDay(item.routineId) ? (
-                        <Activity className="h-4 w-4 shrink-0 text-orange-500" />
-                      ) : (
-                        <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      )
-                    ) : (
-                      <Moon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    )}
-                    <span
-                      className={cn(
-                        'min-w-0 flex-1 truncate text-sm',
-                        isRoutine ? 'font-medium' : 'text-muted-foreground',
-                      )}
-                    >
-                      {isRoutine ? routineName(item.routineId) : 'Rest day'}
-                    </span>
-                    {isRoutine &&
-                      !isCardioDay(item.routineId) &&
-                      (cardioMap?.get(item.routineId)?.cardio ?? 0) > 0 && (
-                        <Activity
-                          className="h-3.5 w-3.5 shrink-0 text-orange-500/70"
-                          aria-label="Includes cardio"
-                        />
-                      )}
-                    {isCurrent && (
-                      <span className="shrink-0 rounded-full border border-primary/50 px-2 py-0.5 text-[10px] font-medium text-primary">
-                        Last done
-                      </span>
-                    )}
-                    {isNext && (
-                      <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
-                        Next up
-                      </span>
-                    )}
-                    <button
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={() => setActionFor({ item, index })}
-                      className="shrink-0 text-muted-foreground"
-                      aria-label="Options"
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </button>
-                  </Card>
-                </div>
-              )
-            })}
-          </div>
-          <Button
-            variant="outline"
-            className="mt-2 w-full"
-            onClick={() => setAdding(true)}
+        {/* Rotation (collapsible) */}
+        <Card className="overflow-hidden">
+          <button
+            onClick={() => setRotationOpen((o) => !o)}
+            aria-expanded={rotationOpen}
+            className="flex w-full items-center gap-2.5 p-3 text-left"
           >
-            <Plus className="h-4 w-4" /> Add day
-          </Button>
-          {seq.length > 0 && (
-            <p className="mt-2 px-1 text-xs text-muted-foreground">
-              Press and hold a day to reorder · tap ⋮ to set next, skip, or remove.
-            </p>
+            <ListOrdered className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="flex-1 text-sm font-medium">Rotation</span>
+            {seq.length > 0 && (
+              <span className="text-xs text-muted-foreground">{rotationLabel}</span>
+            )}
+            <ChevronDown
+              className={cn(
+                'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+                rotationOpen && 'rotate-180',
+              )}
+            />
+          </button>
+          {rotationOpen && (
+            <div className="border-t border-border p-3">
+              <div ref={containerRef} className="space-y-2 empty:hidden">
+                {seq.map((item, index) => {
+                  const dragging = dragKey === item.id
+                  const isRoutine = item.kind === 'routine'
+                  const isCurrent = index === currentIdx
+                  const isNext = index === nextIdx
+                  return (
+                    <div
+                      key={item.id}
+                      data-block={item.id}
+                      onPointerDown={startPress(item.id)}
+                      onPointerMove={movePress}
+                      onPointerUp={endPress}
+                      onPointerCancel={endPress}
+                      onContextMenu={(e) => e.preventDefault()}
+                      className={cn(
+                        'relative select-none',
+                        dragging && 'z-10 rounded-xl opacity-95 shadow-xl ring-2 ring-primary',
+                      )}
+                    >
+                      <Card
+                        className={cn(
+                          'flex items-center gap-2 p-3',
+                          isCurrent && 'bg-primary/5 ring-1 ring-primary/40',
+                        )}
+                      >
+                        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/40" />
+                        {isRoutine ? (
+                          isCardioDay(item.routineId) ? (
+                            <Activity className="h-4 w-4 shrink-0 text-orange-500" />
+                          ) : (
+                            <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )
+                        ) : (
+                          <Moon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <span
+                          className={cn(
+                            'min-w-0 flex-1 truncate text-sm',
+                            isRoutine ? 'font-medium' : 'text-muted-foreground',
+                          )}
+                        >
+                          {isRoutine ? routineName(item.routineId) : 'Rest day'}
+                        </span>
+                        {isRoutine &&
+                          !isCardioDay(item.routineId) &&
+                          (cardioMap?.get(item.routineId)?.cardio ?? 0) > 0 && (
+                            <Activity
+                              className="h-3.5 w-3.5 shrink-0 text-orange-500/70"
+                              aria-label="Includes cardio"
+                            />
+                          )}
+                        {isCurrent && (
+                          <span className="shrink-0 rounded-full border border-primary/50 px-2 py-0.5 text-[10px] font-medium text-primary">
+                            Last done
+                          </span>
+                        )}
+                        {isNext && (
+                          <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
+                            Next up
+                          </span>
+                        )}
+                        <button
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => setActionFor({ item, index })}
+                          className="shrink-0 text-muted-foreground"
+                          aria-label="Options"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </Card>
+                    </div>
+                  )
+                })}
+              </div>
+              <Button
+                variant="outline"
+                className="mt-2 w-full"
+                onClick={() => setAdding(true)}
+              >
+                <Plus className="h-4 w-4" /> Add day
+              </Button>
+              {seq.length > 0 && (
+                <p className="mt-2 px-1 text-xs text-muted-foreground">
+                  Press and hold a day to reorder · tap ⋮ to set next, skip, or
+                  remove.
+                </p>
+              )}
+            </div>
           )}
-        </div>
+        </Card>
 
         {/* Weekly set goals (collapsible) */}
         <div>
@@ -748,8 +761,10 @@ export function ProgramPage() {
         {/* Weekly cardio goal — same rollup Progress → Cardio shows, counting
             diary entries and programmed cardio alike */}
         <CardioGoalCard routineIds={routineIds} />
-          </div>
-        )}
+
+        {/* Mobility — weekly minute targets you bank into. Deliberately outside
+            the rotation: it never advances the cycle, which reads `sequence`. */}
+        <MobilityCard />
       </div>
 
       {/* Add-day sheet */}
@@ -865,6 +880,59 @@ export function ProgramPage() {
           document.body,
         )}
     </div>
+  )
+}
+
+/**
+ * Mobility, collapsed to a one-line readout: minutes banked this week against
+ * the summed stretch targets. The list itself (timers, sheets) is unchanged —
+ * it just lives behind this disclosure instead of its own tab.
+ */
+function MobilityCard() {
+  const [open, setOpen] = useState(false)
+  const { state } = useMobility()
+  const week = useMemo(() => mobilityWeek(state, todayISO()), [state])
+  const hasStretches = week.rows.length > 0
+  const bankedMin = Math.round(week.bankedSec / 60)
+  const targetMin = Math.round(week.targetSec / 60)
+
+  return (
+    <Card className="overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="w-full p-3 text-left"
+      >
+        <div className="flex items-center gap-2.5">
+          <Timer className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="flex-1 text-sm font-medium">Mobility</span>
+          <span className="text-xs tabular-nums text-muted-foreground">
+            {hasStretches ? `${bankedMin} / ${targetMin} min` : 'No stretches yet'}
+          </span>
+          <ChevronDown
+            className={cn(
+              'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+              open && 'rotate-180',
+            )}
+          />
+        </div>
+        {hasStretches && (
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary"
+              style={{
+                width: `${Math.round(Math.min(1, Math.max(0, week.progress)) * 100)}%`,
+              }}
+            />
+          </div>
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-border p-3">
+          <MobilitySection />
+        </div>
+      )}
+    </Card>
   )
 }
 

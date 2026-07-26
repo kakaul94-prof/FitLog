@@ -14,6 +14,7 @@ import {
   heatColor,
   volumeStatus,
   regionForSlug,
+  resolveContrib,
 } from './bodyMap'
 
 const EX_KEYS = new Set(EXERCISES.map((e) => e.key))
@@ -124,14 +125,29 @@ describe('muscle-volume mapping', () => {
 
   // Resolution order mirrors useMuscleVolume: override -> name -> tag. Every
   // built-in must land somewhere or it stays neutral on the heatmap.
-  it('resolves a contribution for every built-in', () => {
+  const resolveBuiltin = (e: (typeof EXERCISES)[number]) =>
+    EXERCISE_OVERRIDE[e.key] ??
+    NAME_CONTRIB[normalizeExerciseName(e.name)] ??
+    contribForTag(e.muscle)
+
+  it('resolves a contribution for every built-in lift', () => {
     for (const e of EXERCISES) {
-      const resolved =
-        EXERCISE_OVERRIDE[e.key] ??
-        NAME_CONTRIB[normalizeExerciseName(e.name)] ??
-        contribForTag(e.muscle)
-      expect(resolved, `${e.key} (${e.muscle})`).toBeTruthy()
+      if (e.kind === 'mobility') continue
+      expect(resolveBuiltin(e), `${e.key} (${e.muscle})`).toBeTruthy()
     }
+  })
+
+  // Stretches are held, not trained — counting them as sets would inflate the
+  // heatmap, so resolveContrib drops them even when their tag would otherwise
+  // match (Pigeon Pose → Glutes).
+  it('leaves mobility work off the volume heatmap', () => {
+    const mobility = EXERCISES.filter((e) => e.kind === 'mobility')
+    expect(mobility.length).toBeGreaterThan(0)
+    for (const e of mobility)
+      expect(
+        resolveContrib(e.key, e.name, new Map()),
+        `${e.key} (${e.muscle})`,
+      ).toBeUndefined()
   })
 
   it('resolves muscle tags tolerant of synonyms and casing', () => {

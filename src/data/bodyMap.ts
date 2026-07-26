@@ -290,6 +290,13 @@ export const BUILTIN_TAG: Record<string, string> = Object.fromEntries(
   EXERCISES.map((e) => [e.key, e.muscle]),
 )
 
+// Stretches are held, not trained. Their muscle tags would otherwise resolve
+// through the tag map (Pigeon Pose → Glutes) and count holds as working sets,
+// inflating the volume heatmap — so mobility work is excluded outright.
+const MOBILITY_KEYS = new Set(
+  EXERCISES.filter((e) => e.kind === 'mobility').map((e) => e.key),
+)
+
 // --- Weekly set goals -------------------------------------------------------
 // Default sets/week target per region — sensible evidence-based starting points
 // (bigger muscles higher); the user overrides any of them in the Set-goals
@@ -373,6 +380,7 @@ export function resolveContrib(
   exerciseName: string | null,
   customTag: Map<string, string | null>,
 ): Partial<Record<RegionId, number>> | undefined {
+  if (MOBILITY_KEYS.has(exerciseKey)) return undefined
   const tag = exerciseKey.startsWith('custom:')
     ? customTag.get(exerciseKey) ?? null
     : BUILTIN_TAG[exerciseKey] ?? null

@@ -48,7 +48,12 @@ export type ActivityLevel =
 export type GoalType = 'lose' | 'maintain' | 'gain'
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks'
 export type FoodSource = 'usda' | 'manual' | 'recipe'
-export type ExerciseType = 'weighted' | 'bodyweight' | 'timed' | 'cardio'
+export type ExerciseType =
+  | 'weighted'
+  | 'bodyweight'
+  | 'timed'
+  | 'mobility'
+  | 'cardio'
 // Progression style for a strength goal (see src/lib/progression.ts).
 export type ProgressionMethod = 'linear' | 'double' | '531'
 
@@ -158,6 +163,34 @@ export interface NextOverride {
   sinceWorkoutId: string | null
 }
 
+// A stretch in the Mobility list. Its target is weekly minutes chipped away at
+// across the week (see lib/mobility.ts), not a session done in one sitting.
+export interface MobilityStretch {
+  id: string
+  name: string
+  /** Weekly minutes target. */
+  targetMin: number
+  /** Per-sitting hold length in seconds: the timer counts down from here and
+   *  chimes at zero. null/absent = open-ended count-up (e.g. dead hangs). */
+  holdSec?: number | null
+}
+
+// One banking of time against a stretch. Seconds, not minutes, so a 1:24 hold
+// stores exactly — minutes are only a display rounding.
+export interface MobilityLogEntry {
+  id: string
+  stretchId: string
+  /** 'YYYY-MM-DD' the time was banked on. */
+  date: string
+  seconds: number
+}
+
+export interface MobilityState {
+  stretches: MobilityStretch[]
+  /** Banked time, pruned to the recent weeks on every save. */
+  log: MobilityLogEntry[]
+}
+
 export interface ProgramState {
   sequence: ProgramItem[]
   // Pinned next template; bare string = legacy save (pre-marker, active only
@@ -165,6 +198,10 @@ export interface ProgramState {
   nextOverride?: NextOverride | string | null
   // Manually-started deload (advisory lighter cycle). null/absent = not deloading.
   deload?: DeloadState | null
+  // Mobility list. Deliberately outside `sequence`: mobility is weekly/calendar
+  // based, and keeping it out means banking stretch time never advances the lift
+  // rotation (which only reads `sequence`). null/absent = not set up.
+  mobility?: MobilityState | null
 }
 
 // An alternate serving unit for a food (e.g. "1 cup = 240 g"). Nutrition

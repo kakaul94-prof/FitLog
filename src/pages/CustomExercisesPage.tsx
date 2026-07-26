@@ -146,6 +146,7 @@ export function CustomExercisesPage() {
                 <option value="weighted">Weighted</option>
                 <option value="bodyweight">Bodyweight</option>
                 <option value="timed">Timed</option>
+                <option value="mobility">Mobility</option>
               </Select>
             </div>
             <div className="flex gap-2">

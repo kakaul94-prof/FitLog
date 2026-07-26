@@ -7,8 +7,12 @@ export interface CalorieBar {
   date: string
   kcal: number
   logged: boolean
-  // The calorie goal in effect on this day (see goalForDate); null = no goal.
+  // The budget for this day — the goal in effect then (see goalForDate) plus
+  // any cardio burned. null = no goal.
   goal?: number | null
+  // Cardio calories burned that day; shown in the tooltip so the raised goal
+  // line is self-explaining. Omit/0 = no cardio.
+  burned?: number
 }
 
 const AXIS = '#9ca3af'
@@ -44,8 +48,9 @@ function md(iso: string): string {
 /**
  * Dependency-free daily-calories bar chart (hand-rolled SVG, like CalorieRing /
  * LineChartSvg — recharts crashes in the prod bundle). Bars are green under that
- * day's goal, red over it; the dashed line steps with the goal history. Unlogged
- * days render as gaps. Tap a bar to read its total.
+ * day's budget, red over it; the dashed line steps with the goal history and
+ * rises on days with cardio burned. Unlogged days render as gaps. Tap a bar to
+ * read its total.
  */
 export function CalorieBars({
   data,
@@ -203,6 +208,11 @@ export function CalorieBars({
           <div className="text-muted-foreground">
             {data[active].kcal.toLocaleString()} cal
           </div>
+          {(data[active].burned ?? 0) > 0 && (
+            <div className="text-muted-foreground">
+              +{data[active].burned!.toLocaleString()} exercise
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -627,11 +627,13 @@ function NutritionView() {
   const rows = trends ?? []
   const today = todayISO()
   // Pin each day to the goal that was in effect then (today/future = live), so a
-  // range spanning a goal change compares against the right target per day.
-  const barRows = rows.map((d) => ({
-    ...d,
-    goal: goalForDate(profile?.calorie_goal_history, d.date, goal, today),
-  }))
+  // range spanning a goal change compares against the right target per day, then
+  // add that day's cardio burn — the same `goal + burned` budget the diary ring
+  // uses, so a workout day doesn't read as "over" here but under there.
+  const barRows = rows.map((d) => {
+    const base = goalForDate(profile?.calorie_goal_history, d.date, goal, today)
+    return { ...d, goal: base == null ? null : base + d.burned }
+  })
   const logged = barRows.filter((d) => d.logged)
   const loggedCount = logged.length
   const avgKcal = loggedCount
@@ -709,22 +711,29 @@ function NutritionView() {
             <CardContent>
               <CalorieBars data={barRows} />
               {goal != null ? (
-                <div className="mt-2 flex justify-center gap-3 text-[11px] text-muted-foreground">
-                  <span className="inline-flex items-center gap-1">
-                    <span
-                      className="inline-block h-2 w-2 rounded-sm"
-                      style={{ background: RING_GREEN }}
-                    />
-                    under goal
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <span
-                      className="inline-block h-2 w-2 rounded-sm"
-                      style={{ background: RING_OVER }}
-                    />
-                    over goal
-                  </span>
-                  <span>gap = not logged</span>
+                <div className="mt-2 space-y-1 text-[11px] text-muted-foreground">
+                  <div className="flex justify-center gap-3">
+                    <span className="inline-flex items-center gap-1">
+                      <span
+                        className="inline-block h-2 w-2 rounded-sm"
+                        style={{ background: RING_GREEN }}
+                      />
+                      under goal
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span
+                        className="inline-block h-2 w-2 rounded-sm"
+                        style={{ background: RING_OVER }}
+                      />
+                      over goal
+                    </span>
+                    <span>gap = not logged</span>
+                  </div>
+                  {logged.some((d) => d.burned > 0) && (
+                    <p className="text-center">
+                      Dashed line = goal + cardio burned that day.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="mt-2 text-center text-xs text-muted-foreground">

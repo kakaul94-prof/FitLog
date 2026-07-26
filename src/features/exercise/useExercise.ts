@@ -54,7 +54,11 @@ export function useLogExercise() {
     },
     // Whole prefix, not just the day: the weekly cardio-goal rollup reads the
     // ['exercise','range',…] key, which a date-specific key doesn't match.
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['exercise'] }),
+    // nutritionTrends folds burn into each day's calorie budget, so it moves too.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['exercise'] })
+      qc.invalidateQueries({ queryKey: ['nutritionTrends'] })
+    },
   })
 }
 
@@ -68,7 +72,10 @@ export function useDeleteExercise() {
         .eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['exercise'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['exercise'] })
+      qc.invalidateQueries({ queryKey: ['nutritionTrends'] })
+    },
   })
 }
 
@@ -101,6 +108,7 @@ export function useUpdateExercise() {
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ['exercise'] })
       qc.invalidateQueries({ queryKey: ['exerciseEntry', v.id] })
+      qc.invalidateQueries({ queryKey: ['nutritionTrends'] })
     },
   })
 }

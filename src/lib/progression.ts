@@ -248,6 +248,211 @@ export function suggestNext(
   }
 }
 
+// --- Within-session next-set coach -------------------------------------------
+
+/** A just-logged set plus its post-set feedback (`workout_sets.feel`/`pain`). */
+export interface LoggedSet {
+  weight_lb: number | null
+  reps: number | null
+  /** RPE 1 (easy) … 10 (max). */
+  effort?: number | null
+  /** Movement quality — 'off' = form broke down. */
+  feel?: 'good' | 'off' | null
+  /** Pain site ('shoulder', 'knee', …); null/absent = no pain. */
+  pain?: string | null
+}
+
+export type NextSetAction = 'increase' | 'hold' | 'backoff' | 'stop'
+
+export interface NextSetSuggestion {
+  /** Suggested load, or null on bodyweight work (reps move instead). */
+  weightLb: number | null
+  reps: number
+  action: NextSetAction
+  /** "190 × 5" or "12 reps" — the UI prefixes it with "Next:". */
+  headline: string
+  rationale: string
+  source: string
+  /** Set when `action` is 'stop': the pain site behind it. */
+  painSite?: string
+  /**
+   * The hold is corrective (form broke down) rather than a routine "you're in
+   * the pocket" hold — worth flagging in the UI, where a plain hold is quiet.
+   */
+  caution?: boolean
+  /** The suggested set is a 5/3/1 AMRAP — chase reps, not a number. */
+  amrap?: boolean
+}
+
+export interface NextSetContext {
+  /** The lift's strength goal when it has one — sets the rep target + increment. */
+  goal?: StrengthGoal | null
+  /** Reps to aim for with no goal: the template's target, else set 1's reps. */
+  fallbackReps?: number | null
+  /** Sets already logged for this exercise (the 1-based position of `last`). */
+  setsDone?: number
+}
+
+const COACH_SOURCE = 'RPE autoregulation — Helms et al., RTS'
+// Pain isn't a training signal to autoregulate around, so its rule cites itself.
+const PAIN_SOURCE = 'Pain flag — train around it, not through it'
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const headlineFor = (w: number | null, r: number) =>
+  w == null ? `${r} reps` : `${w} × ${r}`
+
+/**
+ * The 5/3/1 wave's prescription for set `i` (0-based) off a training max, or
+ * null once the wave has no set left today — the week's three sets ARE the
+ * prescription, so there's nothing to coach past them.
+ */
+function waveSet(goal: StrengthGoal, tm: number, i: number): NextSetSuggestion | null {
+  const wk = W531[Math.min(3, Math.max(0, (goal.week ?? 1) - 1))]
+  if (i >= wk.pct.length) return null
+  const amrap = wk.amrap && i === wk.pct.length - 1
+  const weightLb = round5(tm * wk.pct[i])
+  const reps = wk.reps[i]
+  return {
+    weightLb,
+    reps,
+    action: 'hold',
+    headline: `${weightLb} × ${reps}${amrap ? '+' : ''}`,
+    rationale: amrap
+      ? `Last set of the wave — push past ${reps} but leave 1–2 in the tank.`
+      : `Week ${goal.week} prescribes ${Math.round(wk.pct[i] * 100)}% of your ${tm} lb training max.`,
+    source: PROGRESSION_SOURCE['531'],
+    amrap,
+  }
+}
+
+/**
+ * Coach the NEXT set of the exercise you're part-way through, reading the set
+ * you just logged (weight/reps/RPE + the feel & pain feedback). First matching
+ * rule wins: pain stops the exercise, an overshoot (RPE 9–10 or missed reps)
+ * backs the load off, 'off' form holds it, an easy set that hit its reps adds
+ * the increment, and everything else holds. Complements `suggestNext`, which
+ * plans the next SESSION toward the goal.
+ *
+ * 5/3/1 prescribes its own percentages, so a 5/3/1 goal (given a training max
+ * and `setsDone`) follows the wave instead of autoregulating — only pain and a
+ * true RPE-10 set interrupt it. Bodyweight sets (no load logged) move reps
+ * rather than weight. Returns null when the set is empty.
+ */
+export function suggestNextSet(
+  last: LoggedSet,
+  ctx: NextSetContext = {},
+): NextSetSuggestion | null {
+  const reps = last.reps ?? 0
+  const weight = last.weight_lb ?? 0
+  if (reps <= 0 && weight <= 0) return null
+
+  const goal = ctx.goal ?? null
+  const inc = goal?.increment_lb ?? 5
+  // Double progression chases the top of the range before adding load; linear
+  // (and 5/3/1's fallback) works off the bottom. No goal → the template's target.
+  const target = goal
+    ? goal.method === 'double'
+      ? goal.rep_high
+      : goal.rep_low
+    : Math.max(1, ctx.fallbackReps ?? reps)
+  const e = last.effort ?? null
+  const missedBy = Math.max(0, target - reps)
+  // Bodyweight work logs no load, so there's nothing to add or shave.
+  const bw = weight <= 0
+  const lighter = (pct: number) => round5(weight * (1 - pct))
+  const fewer = (n: number) => Math.max(1, reps - n)
+
+  const backoff = (pct: number, why: string): NextSetSuggestion => {
+    const weightLb = bw ? null : lighter(pct)
+    const r = bw ? fewer(pct >= 0.1 ? 2 : 1) : target
+    return {
+      weightLb,
+      reps: r,
+      action: 'backoff',
+      headline: headlineFor(weightLb, r),
+      rationale: bw
+        ? `${why} — drop to ${r} reps so the next set is clean.`
+        : `${why} — drop ~${Math.round(pct * 100)}% to ${weightLb} lb so the next set is clean.`,
+      source: COACH_SOURCE,
+    }
+  }
+
+  if (last.pain) {
+    const weightLb = bw ? null : lighter(0.3)
+    const r = bw ? fewer(Math.ceil(reps * 0.3)) : target
+    return {
+      weightLb,
+      reps: r,
+      action: 'stop',
+      headline: 'Stop for today',
+      rationale: `${capitalize(last.pain)} pain on that set — best move is to end this exercise. If you keep going: ${
+        bw ? `${r} reps` : `${weightLb} lb`
+      }, slow and controlled.`,
+      source: PAIN_SOURCE,
+      painSite: last.pain,
+    }
+  }
+
+  // An RPE-10 set overrides even a 5/3/1 prescription.
+  if (e != null && e >= 10)
+    return backoff(0.1, 'That was everything you had (RPE 10)')
+
+  // A readable 5/3/1 wave (training max set, position known) IS the plan — its
+  // three sets and then nothing. Without those we can't index the wave, so the
+  // autoregulation rules below take over.
+  if (goal?.method === '531' && goal.tm_lb && ctx.setsDone != null)
+    return waveSet(goal, goal.tm_lb, ctx.setsDone)
+
+  if (missedBy >= 2)
+    return backoff(0.1, `${missedBy} reps short of ${target}`)
+  if (e === 9) return backoff(0.05, 'RPE 9 — one rep from failure')
+  if (missedBy === 1) return backoff(0.05, `A rep short of ${target}`)
+
+  if (last.feel === 'off') {
+    const weightLb = bw ? null : weight
+    return {
+      weightLb,
+      reps: bw ? reps : target,
+      action: 'hold',
+      headline: headlineFor(weightLb, bw ? reps : target),
+      rationale: bw
+        ? 'Form went off on that set — hold these reps until it feels clean.'
+        : `Form went off on that set — hold ${weight} lb, no added load until it's clean.`,
+      source: COACH_SOURCE,
+      caution: true,
+    }
+  }
+
+  if (e != null && e <= 6 && missedBy === 0) {
+    const weightLb = bw ? null : round5(weight + inc)
+    const r = bw ? reps + 1 : (goal?.rep_low ?? target)
+    return {
+      weightLb,
+      reps: r,
+      action: 'increase',
+      headline: headlineFor(weightLb, r),
+      rationale: bw
+        ? `RPE ${e} and the reps were there — add a rep.`
+        : `RPE ${e} and the reps were there — add ${inc} lb.`,
+      source: COACH_SOURCE,
+    }
+  }
+
+  const weightLb = bw ? null : weight
+  const r = bw ? reps : target
+  return {
+    weightLb,
+    reps: r,
+    action: 'hold',
+    headline: headlineFor(weightLb, r),
+    rationale:
+      e != null
+        ? `RPE ${e} at ${reps} reps — right in the pocket, run it back.`
+        : `${headlineFor(bw ? null : weight, reps)} logged — run it back.`,
+    source: COACH_SOURCE,
+  }
+}
+
 export interface GoalPace {
   /** lb of e1RM still needed to hit the target (0 once reached). */
   remaining: number

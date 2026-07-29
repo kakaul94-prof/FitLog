@@ -20,6 +20,24 @@ export function useStrengthGoal(key: string | undefined) {
   })
 }
 
+/**
+ * Every strength goal keyed by exercise_key, in ONE query — the workout page's
+ * in-session coach needs each lift's method / rep range / increment, and a
+ * per-card query would mean one round trip per exercise.
+ */
+export function useStrengthGoalMap() {
+  return useQuery({
+    queryKey: ['strengthGoalMap'],
+    queryFn: async (): Promise<Map<string, StrengthGoal>> => {
+      const { data, error } = await supabase.from('strength_goals').select('*')
+      if (error) throw error
+      return new Map(
+        ((data ?? []) as StrengthGoal[]).map((g) => [g.exercise_key, g] as const),
+      )
+    },
+  })
+}
+
 export interface NewStrengthGoal {
   exercise_key: string
   exercise_name: string
@@ -49,6 +67,7 @@ export function useSaveStrengthGoal() {
     onSuccess: (g) => {
       qc.invalidateQueries({ queryKey: ['strengthGoal', g.exercise_key] })
       qc.invalidateQueries({ queryKey: ['strengthGoalsOverview'] })
+      qc.invalidateQueries({ queryKey: ['strengthGoalMap'] })
     },
   })
 }
@@ -72,6 +91,7 @@ export function useUpdateStrengthGoal() {
     onSuccess: ({ exercise_key }) => {
       qc.invalidateQueries({ queryKey: ['strengthGoal', exercise_key] })
       qc.invalidateQueries({ queryKey: ['strengthGoalsOverview'] })
+      qc.invalidateQueries({ queryKey: ['strengthGoalMap'] })
     },
   })
 }
@@ -93,6 +113,7 @@ export function useDeleteStrengthGoal() {
     onSuccess: ({ exercise_key }) => {
       qc.invalidateQueries({ queryKey: ['strengthGoal', exercise_key] })
       qc.invalidateQueries({ queryKey: ['strengthGoalsOverview'] })
+      qc.invalidateQueries({ queryKey: ['strengthGoalMap'] })
     },
   })
 }

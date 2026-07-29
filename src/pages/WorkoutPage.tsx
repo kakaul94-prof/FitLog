@@ -15,6 +15,10 @@ import {
   Play,
   LogOut,
   Trash2,
+  AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -37,6 +41,7 @@ import {
   type WorkoutSnapshot,
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
+import { useStrengthGoalMap } from '@/features/strength/useStrengthGoals'
 import { useRoutine } from '@/features/strength/useRoutines'
 import { useExerciseEntries } from '@/features/exercise/useExercise'
 import { useCustomActivities } from '@/features/exercise/useCustomActivities'
@@ -50,6 +55,7 @@ import {
 } from '@/lib/cardio'
 import { zoneColor } from '@/data/zones'
 import { estimated1RM, warmupRamp } from '@/lib/calc'
+import { suggestNextSet, type NextSetSuggestion } from '@/lib/progression'
 import { EXERCISES, isHoldKind } from '@/data/exercises'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import { dateLabel, timeLabel } from '@/lib/date'
@@ -131,6 +137,15 @@ export function WorkoutPage() {
   const cardioItems = (routineData?.exercises ?? []).filter((e) =>
     isCardioKey(e.exercise_key),
   )
+  // The template's rep targets, for the next-set coach on lifts with no
+  // strength goal to take a rep range from.
+  const routineTargets = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const e of routineData?.exercises ?? [])
+      if (!isCardioKey(e.exercise_key) && e.target_reps != null)
+        m.set(e.exercise_key, e.target_reps)
+    return m
+  }, [routineData])
 
   // PR celebration queue: exercise cards report hits up here; we show one banner
   // at a time and auto-dismiss it after a few seconds (tap dismisses early).
@@ -310,6 +325,7 @@ export function WorkoutPage() {
         setsFor={setsFor}
         workoutId={id!}
         onPR={onPR}
+        routineTargets={routineTargets}
       />
     ) : (
       <ExerciseCard
@@ -318,6 +334,7 @@ export function WorkoutPage() {
         sets={setsFor(b.exercises[0].id)}
         workoutId={id!}
         onPR={onPR}
+        routineTargets={routineTargets}
       />
     )
 
@@ -632,12 +649,14 @@ function SupersetBlock({
   setsFor,
   workoutId,
   onPR,
+  routineTargets,
 }: {
   group: number
   exercises: WorkoutExercise[]
   setsFor: (weId: string) => WorkoutSet[]
   workoutId: string
   onPR: (hit: Omit<PRHit, 'id'>) => void
+  routineTargets?: Map<string, number>
 }) {
   const timing = useUpdateSupersetTiming()
   // The block's window is derived from its exercises (stamped together): start
@@ -685,6 +704,7 @@ function SupersetBlock({
           showTiming={false}
           onAutoStart={maybeAutoStart}
           onPR={onPR}
+          routineTargets={routineTargets}
         />
       ))}
     </div>
@@ -699,6 +719,7 @@ function ExerciseCard({
   showTiming = true,
   onAutoStart,
   onPR,
+  routineTargets,
 }: {
   ex: WorkoutExercise
   sets: WorkoutSet[]
@@ -711,9 +732,13 @@ function ExerciseCard({
   // cards fall back to stamping their own started_at (set below).
   onAutoStart?: () => void
   onPR: (hit: Omit<PRHit, 'id'>) => void
+  // Template rep targets by exercise_key — the coach's fallback when the lift
+  // has no strength goal.
+  routineTargets?: Map<string, number>
 }) {
   const nav = useNavigate()
   const addSet = useAddSet()
+  const updateSet = useUpdateSet()
   const updateEx = useUpdateExercise()
   const delEx = useDeleteExercise()
   const lastNote = useLastExerciseNote(ex.exercise_key, workoutId)
@@ -845,13 +870,60 @@ function ExerciseCard({
         stamp({ started_at: new Date().toISOString() })
     })
 
-  // Post-set feedback asks on the most recently completed set (weight + reps
-  // logged); earlier rows keep their chips only once an answer is saved.
+  // Which rows have been filled in during this visit. A goal'd lift's set rows
+  // arrive PRE-FILLED with the next-session suggestion (see useAddExercise), so
+  // "has weight + reps" can't tell a set you performed from an untouched
+  // prefill — the feedback strip and the coach only follow a row you've typed
+  // in. Reopening the workout clears this, so they stay quiet until the next
+  // set is logged rather than re-asking about old ones.
+  const [touched, setTouched] = useState<Set<string>>(new Set())
+  const markLogged = useCallback((id: string) => {
+    setTouched((t) => (t.has(id) ? t : new Set(t).add(id)))
+  }, [])
+
+  // Post-set feedback asks on the most recently completed set; earlier rows keep
+  // their chips only once an answer is saved.
   let lastDoneIdx = -1
   if (!hold)
     sets.forEach((s, i) => {
-      if (s.weight_lb != null && s.reps != null) lastDoneIdx = i
+      if (s.weight_lb != null && s.reps != null && touched.has(s.id))
+        lastDoneIdx = i
     })
+
+  // The next-set coach reads that set (RPE + feel/pain) and says what to do on
+  // the next one. Hidden on hold exercises and once the exercise is done.
+  const { data: goalMap } = useStrengthGoalMap()
+  const lastDone = lastDoneIdx >= 0 ? sets[lastDoneIdx] : null
+  const coach =
+    lastDone && !done
+      ? suggestNextSet(lastDone, {
+          goal: goalMap?.get(ex.exercise_key) ?? null,
+          fallbackReps:
+            routineTargets?.get(ex.exercise_key) ?? sets[0]?.reps ?? null,
+          setsDone: lastDoneIdx + 1,
+        })
+      : null
+
+  // Load the suggestion into the next row: the first empty one after the set it
+  // read, or a fresh row when every row is filled.
+  const applyCoach = () => {
+    if (!coach) return
+    const patch = { weight_lb: coach.weightLb, reps: coach.reps }
+    const blank = sets.findIndex(
+      (s, i) => i > lastDoneIdx && s.weight_lb == null && s.reps == null,
+    )
+    if (blank >= 0)
+      updateSet.mutate({ id: sets[blank].id, workout_id: workoutId, ...patch })
+    else
+      addSet.mutate({
+        workout_id: workoutId,
+        workout_exercise_id: ex.id,
+        exercise_key: ex.exercise_key,
+        exercise_name: ex.exercise_name,
+        set_number: sets.length + 1,
+        ...patch,
+      })
+  }
 
   return (
     <Card className="overflow-hidden">
@@ -964,6 +1036,7 @@ function ExerciseCard({
             workoutId={workoutId}
             hold={hold}
             onWeightEntered={autoStart}
+            onLogged={markLogged}
             feedback={i === lastDoneIdx}
           />
         ))}
@@ -973,6 +1046,13 @@ function ExerciseCard({
         >
           + Add set
         </button>
+        {coach && (
+          <CoachCard
+            s={coach}
+            onUse={applyCoach}
+            onEnd={() => stamp({ ended_at: new Date().toISOString() })}
+          />
+        )}
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -1001,6 +1081,71 @@ function ExerciseCard({
   )
 }
 
+// The next-set coach: what to do on the next set, why, and one tap to load it
+// into the row. A plain "you're in the pocket" hold stays neutral on purpose —
+// only adding load, a corrective hold, a back-off or a stop earns a colour, so
+// an ordinary set doesn't read as an event.
+function CoachCard({
+  s,
+  onUse,
+  onEnd,
+}: {
+  s: NextSetSuggestion
+  onUse: () => void
+  onEnd: () => void
+}) {
+  const alarm = s.action === 'stop'
+  const warn = s.action === 'backoff' || s.caution
+  const tone = alarm
+    ? 'bg-destructive/10 text-destructive'
+    : warn
+      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+      : s.action === 'increase'
+        ? 'bg-primary/10 text-primary'
+        : 'bg-secondary text-foreground'
+  const Icon = alarm
+    ? AlertTriangle
+    : s.action === 'increase'
+      ? TrendingUp
+      : s.action === 'backoff'
+        ? TrendingDown
+        : Minus
+  const target = s.weightLb == null ? s.headline : `${s.weightLb} lb × ${s.reps}`
+  return (
+    <div className={cn('mt-1.5 rounded-md p-2.5', tone)}>
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="text-sm font-semibold">
+          {alarm ? 'Stop for today' : `Next: ${s.headline}`}
+        </span>
+        {s.amrap && (
+          <span className="rounded-full bg-background/60 px-1.5 py-0.5 text-[10px] font-medium">
+            AMRAP
+          </span>
+        )}
+      </div>
+      <p className="mt-1 text-xs opacity-90">{s.rationale}</p>
+      <div className="mt-2 flex gap-1.5">
+        {alarm && (
+          <button
+            onClick={onEnd}
+            className="rounded-md bg-destructive px-2.5 py-1 text-xs font-medium text-destructive-foreground active:opacity-80"
+          >
+            End exercise
+          </button>
+        )}
+        <button
+          onClick={onUse}
+          className="rounded-md bg-background/70 px-2.5 py-1 text-xs font-medium active:opacity-80"
+        >
+          {alarm ? `Keep going light · ${target}` : `Use ${target}`}
+        </button>
+      </div>
+      <p className="mt-1.5 text-[10px] opacity-70">{s.source}</p>
+    </div>
+  )
+}
+
 // Pain-site options for the post-set feedback strip (stored lowercase on
 // workout_sets.pain; null = no pain).
 const PAIN_SITES = [
@@ -1020,6 +1165,7 @@ function SetRow({
   workoutId,
   hold,
   onWeightEntered,
+  onLogged,
   feedback,
 }: {
   set: WorkoutSet
@@ -1029,6 +1175,9 @@ function SetRow({
   hold: boolean
   // Auto-start the parent exercise's timer the first time a weight is logged.
   onWeightEntered: () => void
+  // This row was filled in by hand (vs. arriving prefilled) — tells the parent
+  // which set the feedback strip and the coach should follow.
+  onLogged: (id: string) => void
   // Show the "how was it?" strip (the exercise's most recently completed set).
   feedback: boolean
 }) {
@@ -1045,6 +1194,19 @@ function SetRow({
     update.mutate({ id: set.id, workout_id: workoutId, ...patch })
   // Pain chip tapped but no site picked yet — the site row is open.
   const [painPick, setPainPick] = useState(false)
+
+  // Weight/reps can now be written from outside the row (the coach's "Use"
+  // fills the next set), so mirror prop changes into the inputs — but never
+  // over a field currently being typed in, which would clobber the entry.
+  const wFocus = useRef(false)
+  const rFocus = useRef(false)
+  useEffect(() => {
+    if (!wFocus.current)
+      setWeight(set.weight_lb != null ? String(set.weight_lb) : '')
+  }, [set.weight_lb])
+  useEffect(() => {
+    if (!rFocus.current) setReps(set.reps != null ? String(set.reps) : '')
+  }, [set.reps])
 
   return (
     <div className="py-1">
@@ -1078,10 +1240,17 @@ function SetRow({
               inputMode="decimal"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
+              onFocus={() => {
+                wFocus.current = true
+              }}
               onBlur={() => {
+                wFocus.current = false
                 const w = weight ? parseFloat(weight) : null
                 save({ weight_lb: w })
-                if (w != null && !Number.isNaN(w)) onWeightEntered()
+                if (w != null && !Number.isNaN(w)) {
+                  onWeightEntered()
+                  onLogged(set.id)
+                }
               }}
             />
             <Input
@@ -1090,16 +1259,27 @@ function SetRow({
               inputMode="numeric"
               value={reps}
               onChange={(e) => setReps(e.target.value)}
-              onBlur={() => save({ reps: reps ? parseFloat(reps) : null })}
+              onFocus={() => {
+                rFocus.current = true
+              }}
+              onBlur={() => {
+                rFocus.current = false
+                const r = reps ? parseFloat(reps) : null
+                save({ reps: r })
+                if (r != null && !Number.isNaN(r)) onLogged(set.id)
+              }}
             />
           </>
         )}
         <Select
           className="h-9 px-1"
           value={set.effort != null ? String(set.effort) : ''}
-          onChange={(e) =>
+          onChange={(e) => {
             save({ effort: e.target.value ? parseInt(e.target.value) : null })
-          }
+            // Rating a prefilled row is often the only edit a goal'd lift needs,
+            // so it counts as logging the set.
+            if (e.target.value) onLogged(set.id)
+          }}
         >
           <option value="">–</option>
           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (

@@ -7,6 +7,7 @@ import {
   projectGoalEta,
   requiredPace,
   suggestNext,
+  suggestNextSet,
   weightForReps,
   workoutDurationMin,
 } from './progression'
@@ -71,6 +72,160 @@ describe('currentE1RM', () => {
       sets(500, 1, 1),
     ]
     expect(currentE1RM(sessions)).toBe(117)
+  })
+})
+
+describe('suggestNextSet — within-session coach', () => {
+  it('has nothing to say about an empty set', () => {
+    expect(suggestNextSet({ weight_lb: null, reps: null })).toBeNull()
+  })
+
+  it('stops the exercise on pain, offering ~30% less to continue', () => {
+    const s = suggestNextSet(
+      { weight_lb: 190, reps: 5, effort: 8, pain: 'shoulder' },
+      { goal: makeGoal() },
+    )!
+    expect(s.action).toBe('stop')
+    expect(s.weightLb).toBe(135)
+    expect(s.painSite).toBe('shoulder')
+    expect(s.rationale).toContain('Shoulder')
+  })
+
+  it('backs off ~10% on an RPE 10 set', () => {
+    const s = suggestNextSet({ weight_lb: 200, reps: 5, effort: 10 }, {
+      goal: makeGoal(),
+    })!
+    expect(s.action).toBe('backoff')
+    expect(s.weightLb).toBe(180)
+  })
+
+  it('backs off ~10% when reps fall 2+ short', () => {
+    const s = suggestNextSet({ weight_lb: 200, reps: 3, effort: 8 }, {
+      goal: makeGoal(),
+    })!
+    expect(s.action).toBe('backoff')
+    expect(s.weightLb).toBe(180)
+    expect(s.rationale).toContain('2 reps short')
+  })
+
+  it('backs off ~5% on RPE 9', () => {
+    const s = suggestNextSet({ weight_lb: 200, reps: 5, effort: 9 }, {
+      goal: makeGoal(),
+    })!
+    expect(s.action).toBe('backoff')
+    expect(s.weightLb).toBe(190)
+  })
+
+  it('backs off ~5% when a single rep is missed', () => {
+    const s = suggestNextSet({ weight_lb: 200, reps: 4, effort: 8 }, {
+      goal: makeGoal(),
+    })!
+    expect(s.action).toBe('backoff')
+    expect(s.weightLb).toBe(190)
+  })
+
+  it("holds the load when form went off, however easy it felt", () => {
+    const s = suggestNextSet(
+      { weight_lb: 190, reps: 5, effort: 5, feel: 'off' },
+      { goal: makeGoal() },
+    )!
+    expect(s.action).toBe('hold')
+    expect(s.weightLb).toBe(190)
+    expect(s.rationale).toMatch(/no added load/)
+  })
+
+  it('adds the increment on an easy set that hit its reps', () => {
+    const s = suggestNextSet(
+      { weight_lb: 185, reps: 5, effort: 6, feel: 'good' },
+      { goal: makeGoal() },
+    )!
+    expect(s.action).toBe('increase')
+    expect(s.weightLb).toBe(190)
+    expect(s.headline).toBe('190 × 5')
+  })
+
+  it('drops to the bottom of the range when double progression adds weight', () => {
+    const s = suggestNextSet({ weight_lb: 100, reps: 8, effort: 6 }, {
+      goal: makeGoal({ method: 'double' }),
+    })!
+    expect(s.action).toBe('increase')
+    expect(s).toMatchObject({ weightLb: 105, reps: 5 })
+  })
+
+  it('holds an RPE 7–8 set that hit its reps', () => {
+    const s = suggestNextSet({ weight_lb: 185, reps: 5, effort: 8 }, {
+      goal: makeGoal(),
+    })!
+    expect(s.action).toBe('hold')
+    expect(s.weightLb).toBe(185)
+    expect(s.rationale).toMatch(/in the pocket/)
+  })
+
+  it('falls back to the template target with no goal', () => {
+    const s = suggestNextSet(
+      { weight_lb: 100, reps: 10, effort: 6 },
+      { fallbackReps: 10 },
+    )!
+    expect(s.action).toBe('increase')
+    expect(s).toMatchObject({ weightLb: 105, reps: 10 })
+  })
+
+  it('reads reps as hit when there is no target at all', () => {
+    const s = suggestNextSet({ weight_lb: 100, reps: 7, effort: 8 })!
+    expect(s.action).toBe('hold')
+    expect(s).toMatchObject({ weightLb: 100, reps: 7 })
+  })
+
+  it('moves reps, not load, on bodyweight sets', () => {
+    const easy = suggestNextSet({ weight_lb: null, reps: 12, effort: 5 })!
+    expect(easy).toMatchObject({ action: 'increase', weightLb: null, reps: 13 })
+    expect(easy.headline).toBe('13 reps')
+    const hard = suggestNextSet({ weight_lb: null, reps: 12, effort: 10 })!
+    expect(hard).toMatchObject({ action: 'backoff', weightLb: null, reps: 10 })
+  })
+
+  it('follows the 5/3/1 wave instead of autoregulating', () => {
+    const goal = makeGoal({ method: '531', tm_lb: 200, week: 1 })
+    // Week 1 is 65/75/85% × 5; two sets done → the 85% AMRAP set is next.
+    const s = suggestNextSet({ weight_lb: 150, reps: 5, effort: 6 }, {
+      goal,
+      setsDone: 2,
+    })!
+    expect(s.weightLb).toBe(170)
+    expect(s.amrap).toBe(true)
+    expect(s.action).toBe('hold')
+    expect(s.source).toMatch(/Wendler/)
+  })
+
+  it('lets pain and RPE 10 interrupt a 5/3/1 wave', () => {
+    const goal = makeGoal({ method: '531', tm_lb: 200, week: 1 })
+    const maxed = suggestNextSet({ weight_lb: 150, reps: 5, effort: 10 }, {
+      goal,
+      setsDone: 1,
+    })!
+    expect(maxed.action).toBe('backoff')
+    const hurt = suggestNextSet(
+      { weight_lb: 150, reps: 5, effort: 7, pain: 'knee' },
+      { goal, setsDone: 1 },
+    )!
+    expect(hurt.action).toBe('stop')
+  })
+
+  it('has nothing left to prescribe once the 5/3/1 wave is done', () => {
+    const goal = makeGoal({ method: '531', tm_lb: 200, week: 1 })
+    expect(
+      suggestNextSet({ weight_lb: 170, reps: 6, effort: 8 }, { goal, setsDone: 3 }),
+    ).toBeNull()
+  })
+
+  it('autoregulates a 5/3/1 goal that has no training max yet', () => {
+    const goal = makeGoal({ method: '531', tm_lb: null, week: 1 })
+    const s = suggestNextSet({ weight_lb: 150, reps: 5, effort: 6 }, {
+      goal,
+      setsDone: 1,
+    })!
+    expect(s.action).toBe('increase')
+    expect(s.weightLb).toBe(155)
   })
 })
 

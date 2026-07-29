@@ -845,6 +845,14 @@ function ExerciseCard({
         stamp({ started_at: new Date().toISOString() })
     })
 
+  // Post-set feedback asks on the most recently completed set (weight + reps
+  // logged); earlier rows keep their chips only once an answer is saved.
+  let lastDoneIdx = -1
+  if (!hold)
+    sets.forEach((s, i) => {
+      if (s.weight_lb != null && s.reps != null) lastDoneIdx = i
+    })
+
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center gap-2 border-b border-border p-3">
@@ -956,6 +964,7 @@ function ExerciseCard({
             workoutId={workoutId}
             hold={hold}
             onWeightEntered={autoStart}
+            feedback={i === lastDoneIdx}
           />
         ))}
         <button
@@ -992,12 +1001,26 @@ function ExerciseCard({
   )
 }
 
+// Pain-site options for the post-set feedback strip (stored lowercase on
+// workout_sets.pain; null = no pain).
+const PAIN_SITES = [
+  'shoulder',
+  'elbow',
+  'wrist',
+  'low back',
+  'hip',
+  'knee',
+  'other',
+]
+const painLabel = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
 function SetRow({
   set,
   index,
   workoutId,
   hold,
   onWeightEntered,
+  feedback,
 }: {
   set: WorkoutSet
   index: number
@@ -1006,6 +1029,8 @@ function SetRow({
   hold: boolean
   // Auto-start the parent exercise's timer the first time a weight is logged.
   onWeightEntered: () => void
+  // Show the "how was it?" strip (the exercise's most recently completed set).
+  feedback: boolean
 }) {
   const [weight, setWeight] = useState(
     set.weight_lb != null ? String(set.weight_lb) : '',
@@ -1018,6 +1043,8 @@ function SetRow({
   const del = useDeleteSet()
   const save = (patch: Partial<WorkoutSet>) =>
     update.mutate({ id: set.id, workout_id: workoutId, ...patch })
+  // Pain chip tapped but no site picked yet — the site row is open.
+  const [painPick, setPainPick] = useState(false)
 
   return (
     <div className="py-1">
@@ -1089,6 +1116,69 @@ function SetRow({
           <X className="h-4 w-4" />
         </button>
       </div>
+      {!hold && (feedback || set.feel != null || set.pain != null) && (
+        <div className="mt-1 pl-10 pr-7">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-0.5 text-[11px] text-muted-foreground">
+              Felt
+            </span>
+            <button
+              onClick={() => save({ feel: set.feel === 'good' ? null : 'good' })}
+              className={cn(
+                'rounded-full px-2.5 py-0.5 text-xs',
+                set.feel === 'good'
+                  ? 'bg-primary/15 font-medium text-primary'
+                  : 'bg-secondary text-muted-foreground',
+              )}
+            >
+              Good
+            </button>
+            <button
+              onClick={() => save({ feel: set.feel === 'off' ? null : 'off' })}
+              className={cn(
+                'rounded-full px-2.5 py-0.5 text-xs',
+                set.feel === 'off'
+                  ? 'bg-amber-500/15 font-medium text-amber-600 dark:text-amber-400'
+                  : 'bg-secondary text-muted-foreground',
+              )}
+            >
+              Off
+            </button>
+            <button
+              onClick={() => {
+                if (set.pain != null) {
+                  save({ pain: null })
+                  setPainPick(false)
+                } else setPainPick((p) => !p)
+              }}
+              className={cn(
+                'rounded-full px-2.5 py-0.5 text-xs',
+                set.pain != null
+                  ? 'bg-destructive/15 font-medium text-destructive'
+                  : 'bg-secondary text-muted-foreground',
+              )}
+            >
+              {set.pain != null ? `Pain · ${painLabel(set.pain)}` : 'Pain'}
+            </button>
+          </div>
+          {painPick && set.pain == null && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {PAIN_SITES.map((site) => (
+                <button
+                  key={site}
+                  onClick={() => {
+                    save({ pain: site })
+                    setPainPick(false)
+                  }}
+                  className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs text-destructive"
+                >
+                  {painLabel(site)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

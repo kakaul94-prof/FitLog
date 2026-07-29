@@ -362,6 +362,12 @@ alter table public.workout_sets
   add column if not exists started_at timestamptz,
   add column if not exists ended_at  timestamptz;
 
+-- Post-set feedback for the next-set coach (see migration_set_feedback.sql):
+-- feel = movement quality ('good'|'off'); pain = site label, null = no pain.
+alter table public.workout_sets
+  add column if not exists feel text check (feel in ('good','off')),
+  add column if not exists pain text;
+
 alter table public.routine_exercises
   add column if not exists superset_group integer;
 

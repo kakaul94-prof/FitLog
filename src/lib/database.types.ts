@@ -443,6 +443,10 @@ export interface WorkoutSet {
   distance: number | null
   effort: number | null
   is_warmup: boolean
+  /** Post-set feedback: movement quality — 'off' = form broke down. */
+  feel?: 'good' | 'off' | null
+  /** Post-set pain site ('shoulder', 'low back', …); null = no pain. */
+  pain?: string | null
   created_at: string
 }
 

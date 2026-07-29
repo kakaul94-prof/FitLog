@@ -186,6 +186,8 @@ export function useRestoreWorkout() {
         distance: s.distance,
         effort: s.effort,
         is_warmup: s.is_warmup,
+        feel: s.feel ?? null,
+        pain: s.pain ?? null,
       })
 
       const snapExIds = new Set(snapshot.exercises.map((e) => e.id))
@@ -288,7 +290,9 @@ export function useRestoreWorkout() {
           cur.duration_sec !== s.duration_sec ||
           cur.distance !== s.distance ||
           cur.effort !== s.effort ||
-          cur.is_warmup !== s.is_warmup
+          cur.is_warmup !== s.is_warmup ||
+          (cur.feel ?? null) !== (s.feel ?? null) ||
+          (cur.pain ?? null) !== (s.pain ?? null)
         ) {
           const { error } = await supabase
             .from('workout_sets')
@@ -300,6 +304,8 @@ export function useRestoreWorkout() {
               distance: s.distance,
               effort: s.effort,
               is_warmup: s.is_warmup,
+              feel: s.feel ?? null,
+              pain: s.pain ?? null,
             })
             .eq('id', s.id)
           if (error) throw error

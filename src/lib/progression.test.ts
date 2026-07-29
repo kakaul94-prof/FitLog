@@ -6,6 +6,7 @@ import {
   nextRoutineId,
   projectGoalEta,
   requiredPace,
+  sessionWarning,
   suggestNext,
   suggestNextSet,
   weightForReps,
@@ -226,6 +227,82 @@ describe('suggestNextSet — within-session coach', () => {
     })!
     expect(s.action).toBe('increase')
     expect(s.weightLb).toBe(155)
+  })
+})
+
+describe('suggestNext — last session feedback', () => {
+  it('holds the weight instead of increasing after a session with pain', () => {
+    const hurt: PriorSet[] = [
+      { weight_lb: 100, reps: 5 },
+      { weight_lb: 100, reps: 5, pain: 'shoulder' },
+      { weight_lb: 100, reps: 5 },
+    ]
+    const s = suggestNext(makeGoal(), [hurt])
+    expect(s.action).toBe('repeat')
+    expect(s.sets[0].weightLb).toBe(100)
+    expect(s.warning).toMatch(/Shoulder pain/)
+    expect(s.rationale).toMatch(/shoulder pain/)
+  })
+
+  it('still deloads a stall even when pain was logged', () => {
+    const hurt = (): PriorSet[] => [
+      { weight_lb: 100, reps: 3, pain: 'knee' },
+      { weight_lb: 100, reps: 3 },
+      { weight_lb: 100, reps: 3 },
+    ]
+    const s = suggestNext(makeGoal(), [hurt(), hurt()])
+    expect(s.action).toBe('deload')
+    expect(s.sets[0].weightLb).toBe(90)
+    expect(s.warning).toMatch(/Knee pain/)
+  })
+
+  it("holds when the top sets' form went off", () => {
+    const off: PriorSet[] = [
+      { weight_lb: 100, reps: 5, feel: 'off' },
+      { weight_lb: 100, reps: 5, feel: 'off' },
+      { weight_lb: 100, reps: 5, feel: 'good' },
+    ]
+    const s = suggestNext(makeGoal(), [off])
+    expect(s.action).toBe('repeat')
+    expect(s.warning).toMatch(/Form went off/)
+  })
+
+  it('ignores one off set among clean ones', () => {
+    const mostlyClean: PriorSet[] = [
+      { weight_lb: 100, reps: 5, feel: 'off' },
+      { weight_lb: 100, reps: 5, feel: 'good' },
+      { weight_lb: 100, reps: 5, feel: 'good' },
+    ]
+    const s = suggestNext(makeGoal(), [mostlyClean])
+    expect(s.action).toBe('increase')
+    expect(s.warning).toBeUndefined()
+  })
+
+  it('reads pain from the last session only, not older ones', () => {
+    const clean = sets(105, 5, 3)
+    const old: PriorSet[] = [{ weight_lb: 100, reps: 5, pain: 'hip' }]
+    const s = suggestNext(makeGoal(), [clean, old])
+    expect(s.action).toBe('increase')
+    expect(s.warning).toBeUndefined()
+  })
+
+  it('warns on a 5/3/1 wave without changing its percentages', () => {
+    const goal = makeGoal({ method: '531', tm_lb: 200, week: 1 })
+    const hurt: PriorSet[] = [{ weight_lb: 130, reps: 5, pain: 'wrist' }]
+    const s = suggestNext(goal, [hurt])
+    expect(s.sets[0].weightLb).toBe(130) // 65% of the 200 lb training max
+    expect(s.warning).toMatch(/Wrist pain/)
+  })
+})
+
+describe('sessionWarning', () => {
+  it('is undefined for a clean session', () => {
+    expect(sessionWarning(sets(100, 5, 3, 7))).toBeUndefined()
+  })
+  it('prefers pain over form when both are present', () => {
+    expect(
+      sessionWarning([{ weight_lb: 100, reps: 5, feel: 'off', pain: 'elbow' }]),
+    ).toMatch(/Elbow pain/)
   })
 })
 

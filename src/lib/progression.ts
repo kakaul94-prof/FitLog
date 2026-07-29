@@ -9,6 +9,10 @@ export interface PriorSet {
   weight_lb: number | null
   reps: number | null
   effort?: number | null
+  /** Post-set movement quality — 'off' = form broke down. */
+  feel?: 'good' | 'off' | null
+  /** Post-set pain site; null/absent = no pain. */
+  pain?: string | null
 }
 
 export interface SuggestedSet {
@@ -26,6 +30,11 @@ export interface Suggestion {
   action: SuggestAction
   rationale: string
   source: string
+  /**
+   * Something from last session worth seeing before you lift — pain logged on
+   * this exercise, or form that went off. Surfaced alongside the suggestion.
+   */
+  warning?: string
 }
 
 export const PROGRESSION_LABEL: Record<ProgressionMethod, string> = {
@@ -66,6 +75,27 @@ export function formatGoalTarget(g: {
 const working = (sets: PriorSet[]) =>
   sets.filter((s) => (s.weight_lb ?? 0) > 0 && (s.reps ?? 0) > 0)
 
+/** The first pain site logged anywhere in a session, or null. */
+export function sessionPain(sets: PriorSet[]): string | null {
+  for (const s of sets) if (s.pain) return s.pain
+  return null
+}
+
+/**
+ * What last session's feedback says you should know before lifting this again:
+ * pain logged anywhere in it, else form going off on its top sets. Undefined
+ * when the session raised nothing. Shared by the session engine and the
+ * workout page (which shows it on lifts with no goal too).
+ */
+export function sessionWarning(sets: PriorSet[]): string | undefined {
+  const site = sessionPain(sets)
+  if (site)
+    return `${capitalize(site)} pain logged here last session — warm up thoroughly and stop if it comes back.`
+  return sessionTop(sets)?.formOff
+    ? 'Form went off on your top sets last session — earn the load back.'
+    : undefined
+}
+
 /** Best estimated 1RM across recent sessions — reflects current strength. */
 export function currentE1RM(sessions: PriorSet[][], lookback = 5): number {
   let best = 0
@@ -85,6 +115,8 @@ function sessionTop(
   reps: number
   count: number
   effort: number | null
+  /** Half or more of the top sets were graded 'off' (form broke down). */
+  formOff: boolean
 } | null {
   const w = working(sets)
   if (!w.length) return null
@@ -94,11 +126,13 @@ function sessionTop(
   const efforts = atTop
     .map((s) => s.effort)
     .filter((e): e is number => typeof e === 'number')
+  const off = atTop.filter((s) => s.feel === 'off').length
   return {
     topWeight,
     reps,
     count: atTop.length,
     effort: efforts.length ? Math.max(...efforts) : null,
+    formOff: off > 0 && off * 2 >= atTop.length,
   }
 }
 
@@ -141,6 +175,8 @@ function suggest531(
       wk.amrap ? 'Last set is AMRAP — push for reps.' : 'Deload week — keep it light.'
     }`,
     source,
+    // The wave's percentages stand, but last session's feedback still gets said.
+    warning: sessionWarning(sessions[0] ?? []),
   }
 }
 
@@ -163,7 +199,10 @@ export function suggestNext(
   const bottomReps = goal.rep_low
   const setCount = Math.max(1, goal.sets)
 
-  const sess = sessions.map(working).filter((s) => s.length)
+  // Keep the raw sessions alongside the working-set view so feedback (pain can
+  // sit on any set) and the load math read the same session by index.
+  const rawSess = sessions.filter((s) => working(s).length)
+  const sess = rawSess.map(working)
   if (!sess.length)
     return {
       method: goal.method,
@@ -174,12 +213,7 @@ export function suggestNext(
       source,
     }
 
-  const last = sessionTop(sess[0]) as {
-    topWeight: number
-    reps: number
-    count: number
-    effort: number | null
-  }
+  const last = sessionTop(sess[0]) as NonNullable<ReturnType<typeof sessionTop>>
   const hit = last.count >= setCount && last.reps >= targetReps
   // Stall = two sessions at the same top weight, neither hitting the target.
   const prev = sess[1] ? sessionTop(sess[1]) : null
@@ -232,6 +266,20 @@ export function suggestNext(
       : `Missed ${targetReps} reps last time — repeat ${last.topWeight} lb.`
   }
 
+  // Last session's feedback vetoes a load increase: pain logged anywhere on the
+  // exercise, or top sets whose form went off. A deload is never blocked —
+  // backing off is the right move either way.
+  const pain = sessionPain(rawSess[0])
+  const warning = sessionWarning(rawSess[0])
+  if (action === 'increase' && (pain || last.formOff)) {
+    weight = last.topWeight
+    reps = targetReps
+    action = 'repeat'
+    rationale = pain
+      ? `You hit ${last.count}×${last.reps} at ${last.topWeight} lb, but ${pain} pain came up — hold this weight until it's clean.`
+      : `You hit ${last.count}×${last.reps} at ${last.topWeight} lb, but form went off — hold this weight until it's clean.`
+  }
+
   const sets = Array.from({ length: setCount }, () => ({
     weightLb: weight,
     reps,
@@ -245,6 +293,7 @@ export function suggestNext(
     source: usedRpe
       ? `${source} · RPE autoregulation — Helms et al., RTS`
       : source,
+    warning,
   }
 }
 

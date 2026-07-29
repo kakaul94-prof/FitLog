@@ -19,6 +19,7 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Target,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -41,7 +42,11 @@ import {
   type WorkoutSnapshot,
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
-import { useStrengthGoalMap } from '@/features/strength/useStrengthGoals'
+import {
+  useSessionPlans,
+  useStrengthGoalMap,
+  type SessionPlan,
+} from '@/features/strength/useStrengthGoals'
 import { useRoutine } from '@/features/strength/useRoutines'
 import { useExerciseEntries } from '@/features/exercise/useExercise'
 import { useCustomActivities } from '@/features/exercise/useCustomActivities'
@@ -55,7 +60,12 @@ import {
 } from '@/lib/cardio'
 import { zoneColor } from '@/data/zones'
 import { estimated1RM, warmupRamp } from '@/lib/calc'
-import { suggestNextSet, type NextSetSuggestion } from '@/lib/progression'
+import {
+  PROGRESSION_LABEL,
+  suggestNextSet,
+  type NextSetSuggestion,
+  type Suggestion,
+} from '@/lib/progression'
 import { EXERCISES, isHoldKind } from '@/data/exercises'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import { dateLabel, timeLabel } from '@/lib/date'
@@ -137,6 +147,14 @@ export function WorkoutPage() {
   const cardioItems = (routineData?.exercises ?? []).filter((e) =>
     isCardioKey(e.exercise_key),
   )
+  // Today's plan + last session's warnings for the lifts in this workout,
+  // computed from PRIOR sessions only (one batched query, not one per card).
+  const liftKeys = useMemo(
+    () => [...new Set(exercises.map((e) => e.exercise_key))],
+    [exercises],
+  )
+  const { data: plans } = useSessionPlans(workout?.id, liftKeys)
+
   // The template's rep targets, for the next-set coach on lifts with no
   // strength goal to take a rep range from.
   const routineTargets = useMemo(() => {
@@ -326,6 +344,7 @@ export function WorkoutPage() {
         workoutId={id!}
         onPR={onPR}
         routineTargets={routineTargets}
+        plans={plans}
       />
     ) : (
       <ExerciseCard
@@ -335,6 +354,7 @@ export function WorkoutPage() {
         workoutId={id!}
         onPR={onPR}
         routineTargets={routineTargets}
+        plan={plans?.get(b.exercises[0].exercise_key)}
       />
     )
 
@@ -650,6 +670,7 @@ function SupersetBlock({
   workoutId,
   onPR,
   routineTargets,
+  plans,
 }: {
   group: number
   exercises: WorkoutExercise[]
@@ -657,6 +678,7 @@ function SupersetBlock({
   workoutId: string
   onPR: (hit: Omit<PRHit, 'id'>) => void
   routineTargets?: Map<string, number>
+  plans?: Map<string, SessionPlan>
 }) {
   const timing = useUpdateSupersetTiming()
   // The block's window is derived from its exercises (stamped together): start
@@ -705,6 +727,7 @@ function SupersetBlock({
           onAutoStart={maybeAutoStart}
           onPR={onPR}
           routineTargets={routineTargets}
+          plan={plans?.get(ex.exercise_key)}
         />
       ))}
     </div>
@@ -720,6 +743,7 @@ function ExerciseCard({
   onAutoStart,
   onPR,
   routineTargets,
+  plan,
 }: {
   ex: WorkoutExercise
   sets: WorkoutSet[]
@@ -735,6 +759,8 @@ function ExerciseCard({
   // Template rep targets by exercise_key — the coach's fallback when the lift
   // has no strength goal.
   routineTargets?: Map<string, number>
+  // Today's prescription + last session's warning for this lift.
+  plan?: SessionPlan
 }) {
   const nav = useNavigate()
   const addSet = useAddSet()
@@ -966,6 +992,28 @@ function ExerciseCard({
             }
           />
         )}
+        {!done && plan?.warning && (
+          <div
+            className={cn(
+              'mb-1.5 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-xs',
+              plan.painSite
+                ? 'bg-destructive/10 text-destructive'
+                : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+            )}
+          >
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>{plan.warning}</span>
+          </div>
+        )}
+        {!done && plan?.sug && planLabel(plan.sug) && (
+          <div className="mb-1.5 flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1.5 text-xs text-primary">
+            <Target className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-medium">Today: {planLabel(plan.sug)}</span>
+            <span className="opacity-70">
+              · {PROGRESSION_LABEL[plan.sug.method]}
+            </span>
+          </div>
+        )}
         {warmupEligible && (
           <div className="mb-1.5 rounded-md bg-primary/10 px-2 py-1.5">
             <button
@@ -1079,6 +1127,17 @@ function ExerciseCard({
       </div>
     </Card>
   )
+}
+
+// Today's prescription, condensed for the exercise header. 5/3/1's own headline
+// is just "Week N of 4", so append its top (AMRAP) set to make it actionable.
+function planLabel(sug: Suggestion): string {
+  if (sug.action === 'start' || !sug.sets.length) return ''
+  if (sug.method === '531') {
+    const top = sug.sets[sug.sets.length - 1]
+    return `${sug.headline} · ${top.weightLb} × ${top.reps}${top.amrap ? '+' : ''}`
+  }
+  return sug.headline
 }
 
 // The next-set coach: what to do on the next set, why, and one tap to load it

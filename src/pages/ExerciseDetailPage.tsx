@@ -11,6 +11,7 @@ import {
   RotateCw,
   TrendingUp,
   Trophy,
+  AlertTriangle,
 } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { ActionSheet } from '@/components/ActionSheet'
@@ -1005,7 +1006,13 @@ function GoalCard({
   const [editing, setEditing] = useState(false)
 
   const priorSessions = (sessions ?? []).map((s) =>
-    s.sets.map((x) => ({ weight_lb: x.weight_lb, reps: x.reps, effort: x.effort })),
+    s.sets.map((x) => ({
+      weight_lb: x.weight_lb,
+      reps: x.reps,
+      effort: x.effort,
+      feel: x.feel,
+      pain: x.pain,
+    })),
   )
   const current = currentE1RM(priorSessions)
 
@@ -1184,6 +1191,13 @@ function GoalCard({
             )}
             <p className="mt-2 text-xs text-muted-foreground">{sug.rationale}</p>
           </>
+        )}
+
+        {sug.warning && (
+          <div className="mt-2 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>{sug.warning}</span>
+          </div>
         )}
 
         <p className="mt-2 text-[11px] text-muted-foreground">{sug.source}</p>

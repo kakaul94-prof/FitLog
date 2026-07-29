@@ -669,6 +669,9 @@ export interface ExerciseSessionSet {
   reps: number | null
   weight_lb: number | null
   effort: number | null
+  /** Post-set feedback — see workout_sets.feel / .pain. */
+  feel?: 'good' | 'off' | null
+  pain?: string | null
 }
 export interface ExerciseSession {
   workoutId: string
@@ -686,7 +689,7 @@ export function useExerciseSessions(key: string | undefined) {
     queryFn: async (): Promise<ExerciseSession[]> => {
       const { data: sets, error } = await supabase
         .from('workout_sets')
-        .select('workout_id,set_number,reps,weight_lb,effort')
+        .select('workout_id,set_number,reps,weight_lb,effort,feel,pain')
         .eq('exercise_key', key)
       if (error) throw error
       const s = (sets ?? []) as (ExerciseSessionSet & { workout_id: string })[]
@@ -726,6 +729,8 @@ export function useExerciseSessions(key: string | undefined) {
           reps: x.reps,
           weight_lb: x.weight_lb,
           effort: x.effort,
+          feel: x.feel ?? null,
+          pain: x.pain ?? null,
         })
         byW.set(x.workout_id, arr)
       }

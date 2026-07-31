@@ -73,10 +73,11 @@ export function ExerciseAddPage() {
     kcal: params.get('kcal'),
     distanceBased: params.get('distanceBased') === '1',
   }
-  const [name, setName] = useState(pf.name ?? ACTIVITIES[0].name)
-  const [met, setMet] = useState(pf.met ? Number(pf.met) : ACTIVITIES[0].met)
+  // No default activity — a fresh add starts blank and opens the picker.
+  const [name, setName] = useState(pf.name ?? '')
+  const [met, setMet] = useState(pf.met ? Number(pf.met) : 0)
   const [distanceBased, setDistanceBased] = useState(
-    pf.name ? pf.distanceBased : ACTIVITIES[0].distanceBased,
+    pf.name ? pf.distanceBased : false,
   )
   const [duration, setDuration] = useState(pf.dur ?? '')
   const [distance, setDistance] = useState(pf.dist ?? '')
@@ -86,7 +87,7 @@ export function ExerciseAddPage() {
 
   // Activity search / custom-create UI
   const [search, setSearch] = useState('')
-  const [changing, setChanging] = useState(false)
+  const [changing, setChanging] = useState(!editing && !pf.name)
   const [adding, setAdding] = useState(false)
   const [cname, setCname] = useState('')
   const [cmet, setCmet] = useState('5')
@@ -98,7 +99,7 @@ export function ExerciseAddPage() {
   const [editingKcal, setEditingKcal] = useState(false)
   const [activeTile, setActiveTile] = useState<
     'duration' | 'distance' | 'hr' | null
-  >(editing || pf.name ? null : 'duration')
+  >(null)
 
   const allActivities: PickActivity[] = [
     ...(custom ?? []).map((c) => ({
@@ -182,7 +183,10 @@ export function ExerciseAddPage() {
     setDistanceBased(a.distanceBased)
     setSearch('')
     setChanging(false)
-    if (!a.distanceBased) setActiveTile((t) => (t === 'distance' ? null : t))
+    // Straight into duration once an activity is chosen.
+    setActiveTile((t) =>
+      t == null || (t === 'distance' && !a.distanceBased) ? 'duration' : t,
+    )
   }
 
   const openCreate = () => {
@@ -298,12 +302,19 @@ export function ExerciseAddPage() {
                     className="flex min-w-0 items-center gap-1.5 text-left"
                     onClick={() => setRenaming(true)}
                   >
-                    <span className="truncate font-semibold">
-                      {name || 'Exercise'}
+                    <span
+                      className={cn(
+                        'truncate font-semibold',
+                        !name && 'text-muted-foreground',
+                      )}
+                    >
+                      {name || 'Choose an activity'}
                     </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      · {met} MET
-                    </span>
+                    {name && (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        · {met} MET
+                      </span>
+                    )}
                     <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   </button>
                 )}
@@ -716,7 +727,7 @@ export function ExerciseAddPage() {
             className="w-full"
             size="lg"
             onClick={onSave}
-            disabled={pending || calories <= 0}
+            disabled={pending || !name.trim() || calories <= 0}
           >
             {pending ? 'Saving…' : editing ? 'Save changes' : 'Add exercise'}
           </Button>

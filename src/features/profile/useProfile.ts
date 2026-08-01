@@ -16,6 +16,13 @@ export function useProfile() {
   })
 }
 
+// Next-set coach opt-in, off until you turn it on from the workout page. Reads
+// the cached profile, so every card/row can ask without extra round trips.
+export function useCoachEnabled() {
+  const { data } = useProfile()
+  return data?.coach_enabled === true
+}
+
 export function useUpdateProfile() {
   const qc = useQueryClient()
   return useMutation({

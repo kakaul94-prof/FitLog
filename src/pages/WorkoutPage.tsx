@@ -20,6 +20,7 @@ import {
   TrendingDown,
   Minus,
   Target,
+  Sparkles,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -48,6 +49,7 @@ import {
   type SessionPlan,
 } from '@/features/strength/useStrengthGoals'
 import { useRoutine } from '@/features/strength/useRoutines'
+import { useCoachEnabled, useUpdateProfile } from '@/features/profile/useProfile'
 import { useExerciseEntries } from '@/features/exercise/useExercise'
 import { useCustomActivities } from '@/features/exercise/useCustomActivities'
 import {
@@ -149,11 +151,17 @@ export function WorkoutPage() {
   )
   // Today's plan + last session's warnings for the lifts in this workout,
   // computed from PRIOR sessions only (one batched query, not one per card).
+  // Skipped entirely with the coach off — passing no workout id disables it.
   const liftKeys = useMemo(
     () => [...new Set(exercises.map((e) => e.exercise_key))],
     [exercises],
   )
-  const { data: plans } = useSessionPlans(workout?.id, liftKeys)
+  const coachEnabled = useCoachEnabled()
+  const updateProfile = useUpdateProfile()
+  const { data: plans } = useSessionPlans(
+    coachEnabled ? workout?.id : undefined,
+    liftKeys,
+  )
 
   // The template's rep targets, for the next-set coach on lifts with no
   // strength goal to take a rep range from.
@@ -367,6 +375,21 @@ export function WorkoutPage() {
           <Button variant="ghost" size="icon" onClick={() => nav('/strength')}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
+        }
+        action={
+          <button
+            onClick={() => updateProfile.mutate({ coach_enabled: !coachEnabled })}
+            aria-pressed={coachEnabled}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold',
+              coachEnabled
+                ? 'border-primary/40 bg-primary/15 text-primary'
+                : 'border-border text-muted-foreground',
+            )}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Coach
+          </button>
         }
       />
       <div className="space-y-4 p-4 pb-32">
@@ -908,9 +931,11 @@ function ExerciseCard({
   }, [])
 
   // Post-set feedback asks on the most recently completed set; earlier rows keep
-  // their chips only once an answer is saved.
+  // their chips only once an answer is saved. With the coach off there is no
+  // "current" set, which silences the strip and the card in one place.
+  const coachEnabled = useCoachEnabled()
   let lastDoneIdx = -1
-  if (!hold)
+  if (!hold && coachEnabled)
     sets.forEach((s, i) => {
       if (s.weight_lb != null && s.reps != null && touched.has(s.id))
         lastDoneIdx = i
@@ -1253,6 +1278,9 @@ function SetRow({
     update.mutate({ id: set.id, workout_id: workoutId, ...patch })
   // Pain chip tapped but no site picked yet — the site row is open.
   const [painPick, setPainPick] = useState(false)
+  // Answers already saved on this set stay hidden while the coach is off; the
+  // rows themselves are untouched, so turning it back on brings them back.
+  const coachEnabled = useCoachEnabled()
 
   // Weight/reps can now be written from outside the row (the coach's "Use"
   // fills the next set), so mirror prop changes into the inputs — but never
@@ -1355,7 +1383,9 @@ function SetRow({
           <X className="h-4 w-4" />
         </button>
       </div>
-      {!hold && (feedback || set.feel != null || set.pain != null) && (
+      {!hold &&
+        coachEnabled &&
+        (feedback || set.feel != null || set.pain != null) && (
         <div className="mt-1 pl-10 pr-7">
           <div className="flex flex-wrap items-center gap-1">
             <span className="mr-0.5 text-[11px] text-muted-foreground">

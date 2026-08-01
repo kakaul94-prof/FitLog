@@ -122,6 +122,10 @@ export interface Profile {
   // Per-intensity weekly cardio minutes goal (see CardioGoal). null = unset,
   // in which case weekly_cardio_min_target still applies.
   cardio_goal: CardioGoal | null
+  // Next-set coach opt-in (Coach pill on the workout page). false = the feedback
+  // chips, today's plan line, the last-session warning and the coach card are
+  // all hidden; saved feel/pain rows stay in the database either way.
+  coach_enabled: boolean
   created_at: string
   updated_at: string
 }

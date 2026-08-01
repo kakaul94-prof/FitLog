@@ -61,6 +61,7 @@ import {
 import { EXERCISES } from '@/data/exercises'
 import { getExerciseForm } from '@/data/exerciseForm'
 import { builtinKeyForName } from '@/data/exerciseAliases'
+import { useCoachEnabled } from '@/features/profile/useProfile'
 
 const METRICS = [
   { key: 'e1rm', label: 'Est. 1RM' },
@@ -1004,6 +1005,9 @@ function GoalCard({
   const update = useUpdateStrengthGoal()
   const del = useDeleteStrengthGoal()
   const [editing, setEditing] = useState(false)
+  // The last-session pain/form heads-up belongs to the coach, so it follows the
+  // same switch as the workout page — the two surfaces can't disagree.
+  const coachEnabled = useCoachEnabled()
 
   const priorSessions = (sessions ?? []).map((s) =>
     s.sets.map((x) => ({
@@ -1193,7 +1197,7 @@ function GoalCard({
           </>
         )}
 
-        {sug.warning && (
+        {coachEnabled && sug.warning && (
           <div className="mt-2 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
             <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
             <span>{sug.warning}</span>

@@ -65,6 +65,8 @@ alter table public.profiles add column if not exists calorie_goal_history jsonb 
 alter table public.profiles add column if not exists weekly_cardio_min_target integer;
 -- Per-intensity weekly cardio goal (see migration_cardio_goal.sql). null = unset.
 alter table public.profiles add column if not exists cardio_goal jsonb;
+-- Next-set coach opt-in (see migration_coach_enabled.sql). Off by default.
+alter table public.profiles add column if not exists coach_enabled boolean not null default false;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles

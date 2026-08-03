@@ -8,7 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { EXERCISES } from '@/data/exercises'
-import { useAddExercise } from '@/features/strength/useStrength'
+import { builtinKeyForName } from '@/data/exerciseAliases'
+import {
+  useAddExercise,
+  useExerciseSetCounts,
+} from '@/features/strength/useStrength'
 import {
   useCustomExercises,
   useCreateCustomExercise,
@@ -32,19 +36,35 @@ export function ExercisePickerPage() {
   const [cequip, setCequip] = useState('')
   const [ctype, setCtype] = useState<ExerciseType>('weighted')
 
+  const { data: setCounts } = useExerciseSetCounts()
+  const setsFor = (key: string) => setCounts?.get(key) ?? 0
+
+  const customRows = (custom ?? []).map((c) => ({
+    key: `custom:${c.id}`,
+    name: c.name,
+    muscle: c.muscle ?? 'Custom',
+    equipment: c.equipment ?? '',
+  }))
+
+  // One of your customs shadows a built-in when its name resolves to that
+  // built-in's key ("Face Pulls (Back)" -> face_pull). Hide the built-in so the
+  // same lift isn't offered twice — but only once it has no sets of its own,
+  // or hiding it would put logged history out of reach.
+  const shadowed = new Set(
+    customRows
+      .map((c) => builtinKeyForName(c.name))
+      .filter((k): k is string => !!k),
+  )
   const list = [
-    ...(custom ?? []).map((c) => ({
-      key: `custom:${c.id}`,
-      name: c.name,
-      muscle: c.muscle ?? 'Custom',
-      equipment: c.equipment ?? '',
-    })),
-    ...EXERCISES.map((e) => ({
-      key: e.key,
-      name: e.name,
-      muscle: e.muscle,
-      equipment: e.equipment,
-    })),
+    ...customRows,
+    ...EXERCISES.filter((e) => !(shadowed.has(e.key) && setsFor(e.key) === 0)).map(
+      (e) => ({
+        key: e.key,
+        name: e.name,
+        muscle: e.muscle,
+        equipment: e.equipment,
+      }),
+    ),
   ]
   const q = search.toLowerCase()
   const filtered = list.filter(
@@ -178,6 +198,7 @@ export function ExercisePickerPage() {
               <div className="text-xs text-muted-foreground">
                 {e.muscle}
                 {e.equipment ? ` · ${e.equipment}` : ''}
+                {setsFor(e.key) > 0 ? ` · ${setsFor(e.key)} sets` : ''}
               </div>
             </button>
           ))}

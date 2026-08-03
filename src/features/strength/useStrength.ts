@@ -807,3 +807,29 @@ export function useExerciseBests(
     },
   })
 }
+
+// Total logged sets per exercise_key (built-in slug or 'custom:<uuid>'), for the
+// picker's "126 sets" hint and its duplicate-hiding rule. Paged because this is
+// the one query that scans every set row — PostgREST caps a single response.
+export function useExerciseSetCounts() {
+  return useQuery({
+    queryKey: ['exerciseSetCounts'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<Map<string, number>> => {
+      const counts = new Map<string, number>()
+      const PAGE = 1000
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('workout_sets')
+          .select('exercise_key')
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        const rows = (data ?? []) as { exercise_key: string }[]
+        for (const r of rows)
+          counts.set(r.exercise_key, (counts.get(r.exercise_key) ?? 0) + 1)
+        if (rows.length < PAGE) break
+      }
+      return counts
+    },
+  })
+}

@@ -29,3 +29,19 @@ export const NUTRIENT_SOURCES: Partial<Record<NutrientKey, string[]>> = {
   folate: ['lentils', 'spinach', 'asparagus', 'avocado', 'fortified cereal'],
   b12: ['beef', 'salmon', 'eggs', 'dairy', 'fortified cereal'],
 }
+
+/**
+ * How many of `keys` each food is a source for — spinach covers both magnesium
+ * and vitamin K, so it counts 2. The report uses this to lead with the foods
+ * that fix the most shortfalls at once. Insertion order follows `keys`, so
+ * equal counts tie-break toward the most-deficient nutrient's foods.
+ */
+export function sharedFoodCounts(keys: NutrientKey[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const k of keys) {
+    for (const food of NUTRIENT_SOURCES[k] ?? []) {
+      counts.set(food, (counts.get(food) ?? 0) + 1)
+    }
+  }
+  return counts
+}

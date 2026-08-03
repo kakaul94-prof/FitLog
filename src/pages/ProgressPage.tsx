@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Activity, Pencil } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
@@ -35,7 +35,7 @@ import {
 } from '@/features/insights/useMicronutrientTrends'
 import { useNutrientSources } from '@/features/insights/useNutrientSources'
 import { useDailySupplements } from '@/features/profile/useDailySupplements'
-import { NUTRIENT_SOURCES } from '@/data/nutrientSources'
+import { NUTRIENT_SOURCES, sharedFoodCounts } from '@/data/nutrientSources'
 import { NUTRIENT_SYMPTOMS } from '@/data/nutrientSymptoms'
 import { NUTRIENTS, NUTRIENT_BY_KEY, formatNutrient } from '@/lib/nutrients'
 import type { NutrientKey } from '@/lib/database.types'
@@ -796,6 +796,14 @@ function NutritionReportCard({ days }: { days: number }) {
   const over = data.stats.filter((s) => s.direction === 'limit' && s.flagged)
   const today = todayISO()
 
+  // Foods that fix more than one shortfall — surfaced as "best bets" and floated
+  // to the front of each nutrient's Try list.
+  const shared = sharedFoodCounts(low.map((s) => s.key))
+  const bets = [...shared]
+    .filter(([, n]) => n >= 2)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+
   return (
     <Card>
       <CardHeader>
@@ -814,7 +822,15 @@ function NutritionReportCard({ days }: { days: number }) {
         ) : (
           <>
             {low.length > 0 && (
-              <ReportSection title="Running low" stats={low} showFoods />
+              <ReportSection title="Running low" stats={low} shared={shared}>
+                {bets.length > 0 && (
+                  <p className="mt-2 rounded-lg bg-primary/10 px-3 py-2 text-xs leading-snug text-primary">
+                    <span className="font-medium">Best bets: </span>
+                    {bets[0][0]} covers {bets[0][1]} of these
+                    {bets.slice(1).map(([food, n]) => ` · ${food} ${n}`)}
+                  </p>
+                )}
+              </ReportSection>
             )}
             {over.length > 0 && (
               <ReportSection title="Running over" stats={over} />
@@ -830,21 +846,30 @@ function NutritionReportCard({ days }: { days: number }) {
   )
 }
 
+/** `shared` (lows only) both enables the Try lists and orders them: foods that
+ *  cover more of the flagged nutrients come first. */
 function ReportSection({
   title,
   stats,
-  showFoods = false,
+  shared,
+  children,
 }: {
   title: string
   stats: MicroStat[]
-  showFoods?: boolean
+  shared?: Map<string, number>
+  children?: ReactNode
 }) {
   return (
     <div>
       <p className="text-xs text-muted-foreground">{title}</p>
+      {children}
       <ul>
         {stats.map((s) => {
-          const foods = showFoods ? NUTRIENT_SOURCES[s.key] : undefined
+          const foods = shared
+            ? [...(NUTRIENT_SOURCES[s.key] ?? [])].sort(
+                (a, b) => (shared.get(b) ?? 0) - (shared.get(a) ?? 0),
+              )
+            : undefined
           return (
             <li key={s.key} className="border-t border-border py-2.5">
               <div className="flex items-baseline justify-between gap-2">
@@ -867,7 +892,7 @@ function ReportSection({
                   {NUTRIENT_SYMPTOMS[s.key]}
                 </p>
               )}
-              {foods && (
+              {foods && foods.length > 0 && (
                 <p className="mt-1 text-xs leading-snug text-muted-foreground/80">
                   Try: {foods.join(', ')}
                 </p>

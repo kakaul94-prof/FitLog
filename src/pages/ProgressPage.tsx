@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Activity, ChevronDown, Pencil } from 'lucide-react'
+import { Activity, Pencil } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
 import { RING_GREEN, RING_OVER } from '@/components/CalorieRing'
@@ -36,6 +36,7 @@ import {
 import { useNutrientSources } from '@/features/insights/useNutrientSources'
 import { useDailySupplements } from '@/features/profile/useDailySupplements'
 import { NUTRIENT_SOURCES } from '@/data/nutrientSources'
+import { NUTRIENT_SYMPTOMS } from '@/data/nutrientSymptoms'
 import { NUTRIENTS, NUTRIENT_BY_KEY, formatNutrient } from '@/lib/nutrients'
 import type { NutrientKey } from '@/lib/database.types'
 import { useCardioZoneTrends } from '@/features/insights/useCardioZoneTrends'
@@ -49,7 +50,7 @@ import {
   resolveCalorieGoal,
   resolveMacroTargets,
 } from '@/lib/calc'
-import { todayISO } from '@/lib/date'
+import { todayISO, addDaysISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
 
 const TYPES = [
@@ -761,6 +762,8 @@ function NutritionView() {
             </Card>
           )}
 
+          <NutritionReportCard days={days} />
+
           <MicronutrientCard days={days} />
 
           <TopSourcesCard days={days} />
@@ -770,11 +773,117 @@ function NutritionView() {
   )
 }
 
+/** "Jul 28" — short month/day for the report's date range. */
+function shortDate(iso: string): string {
+  return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+/**
+ * Weekly/Monthly report — the flagged nutrients from the same rollup the
+ * Micronutrients bars use, but written out: what's low, what's over, what each
+ * can feel like (NUTRIENT_SYMPTOMS), and foods to fix the lows
+ * (NUTRIENT_SOURCES). Title follows the 7/30-day range toggle.
+ */
+function NutritionReportCard({ days }: { days: number }) {
+  const { dailyMicros } = useDailySupplements()
+  const { data } = useMicronutrientTrends(days, dailyMicros)
+  if (!data || data.loggedCount === 0) return null
+
+  const low = data.stats.filter((s) => s.direction === 'floor' && s.flagged)
+  const over = data.stats.filter((s) => s.direction === 'limit' && s.flagged)
+  const today = todayISO()
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{days === 7 ? 'Weekly' : 'Monthly'} report</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          {shortDate(addDaysISO(today, -(days - 1)))} – {shortDate(today)} ·{' '}
+          {data.loggedCount} of {days} days logged
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {low.length === 0 && over.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Nothing flagged — you’re on track with your nutrient targets this{' '}
+            {days === 7 ? 'week' : 'month'}.
+          </p>
+        ) : (
+          <>
+            {low.length > 0 && (
+              <ReportSection title="Running low" stats={low} showFoods />
+            )}
+            {over.length > 0 && (
+              <ReportSection title="Running over" stats={over} />
+            )}
+          </>
+        )}
+        <p className="border-t border-border pt-3 text-[11px] leading-snug text-muted-foreground">
+          General information, not medical advice. Foods without micronutrient
+          data count as 0, so amounts can read low.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function ReportSection({
+  title,
+  stats,
+  showFoods = false,
+}: {
+  title: string
+  stats: MicroStat[]
+  showFoods?: boolean
+}) {
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground">{title}</p>
+      <ul>
+        {stats.map((s) => {
+          const foods = showFoods ? NUTRIENT_SOURCES[s.key] : undefined
+          return (
+            <li key={s.key} className="border-t border-border py-2.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-sm">{s.label}</span>
+                <span className="text-xs font-medium tabular-nums text-destructive">
+                  {s.pctDV}% DV
+                </span>
+              </div>
+              <div className="my-1.5 h-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.min(100, s.pctDV)}%`,
+                    background: RING_OVER,
+                  }}
+                />
+              </div>
+              {NUTRIENT_SYMPTOMS[s.key] && (
+                <p className="text-xs leading-snug text-muted-foreground">
+                  {NUTRIENT_SYMPTOMS[s.key]}
+                </p>
+              )}
+              {foods && (
+                <p className="mt-1 text-xs leading-snug text-muted-foreground/80">
+                  Try: {foods.join(', ')}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 function MicronutrientCard({ days }: { days: number }) {
   const { dailyMicros, supplements } = useDailySupplements()
   const { data } = useMicronutrientTrends(days, dailyMicros)
   const [showAll, setShowAll] = useState(false)
-  const [showSources, setShowSources] = useState(false)
   if (!data || data.loggedCount === 0) return null
 
   const low = data.stats.filter((s) => s.direction === 'floor' && s.flagged)
@@ -787,55 +896,6 @@ function MicronutrientCard({ days }: { days: number }) {
         <CardTitle>Micronutrients</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {low.length > 0 ? (
-          <div>
-            <button
-              onClick={() => setShowSources((v) => !v)}
-              className="flex w-full items-start justify-between gap-2 text-left text-sm"
-            >
-              <span>
-                <span className="text-muted-foreground">Low this week: </span>
-                {low.slice(0, 4).map((s) => s.label).join(', ')}
-                {low.length > 4 && ` +${low.length - 4} more`}
-              </span>
-              <ChevronDown
-                className={cn(
-                  'mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform',
-                  showSources && 'rotate-180',
-                )}
-              />
-            </button>
-            {showSources && (
-              <ul className="mt-2 space-y-2">
-                {low.map((s) => {
-                  const foods = NUTRIENT_SOURCES[s.key]
-                  if (!foods) return null
-                  return (
-                    <li key={s.key} className="text-xs leading-snug">
-                      <span className="font-medium text-foreground">
-                        {s.label}:{' '}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {foods.join(', ')}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            You’re on track with your micronutrient targets this week.
-          </p>
-        )}
-        {over.length > 0 && (
-          <p className="text-sm">
-            <span className="text-muted-foreground">Over on: </span>
-            {over.map((s) => s.label).join(', ')}
-          </p>
-        )}
-
         {shown.length > 0 && (
           <div className="space-y-2">
             {shown.map((s) => (
@@ -852,8 +912,7 @@ function MicronutrientCard({ days }: { days: number }) {
         </button>
 
         <p className="text-[11px] leading-snug text-muted-foreground">
-          Targets are FDA Daily Values, averaged over your logged days. Foods
-          without micronutrient data count as 0, so amounts can read low.
+          Targets are FDA Daily Values, averaged over your logged days.
           {supplements.length > 0 && (
             <>
               {' '}

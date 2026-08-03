@@ -946,7 +946,8 @@ function MacroBar({
 // Card footer: passive Health Connect steps (native Android only — the steps
 // half renders nothing on web / older APKs; before the READ_STEPS grant it
 // shows a "Connect steps" tap) merged with the nutrient-breakdown link into
-// one compact row.
+// one compact row. With a step goal set (Profile → Steps) the count reads
+// "6,432 / 10,000" and turns primary once the goal is hit.
 function CardFooter({
   date,
   showNutrients,
@@ -957,7 +958,11 @@ function CardFooter({
   const nav = useNavigate()
   const { data } = useSteps(date)
   const connect = useConnectSteps(date)
+  const { data: profile } = useProfile()
   const steps = data && data.status !== 'unavailable' ? data : null
+  const stepGoal = profile?.step_goal ?? null
+  const stepCount = steps?.steps ?? 0
+  const goalMet = stepGoal != null && stepGoal > 0 && stepCount >= stepGoal
   if (!steps && !showNutrients) return null
   return (
     <div className="mt-3 flex items-center justify-center gap-2.5 border-t border-border pt-3">
@@ -973,11 +978,20 @@ function CardFooter({
           </button>
         ) : (
           <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Footprints className="h-4 w-4" />
-            <span className="font-semibold tabular-nums text-foreground">
-              {(steps.steps ?? 0).toLocaleString()}
-            </span>{' '}
-            steps
+            <Footprints className={cn('h-4 w-4', goalMet && 'text-primary')} />
+            <span
+              className={cn(
+                'font-semibold tabular-nums',
+                goalMet ? 'text-primary' : 'text-foreground',
+              )}
+            >
+              {stepCount.toLocaleString()}
+            </span>
+            <span>
+              {stepGoal != null && stepGoal > 0
+                ? `/ ${stepGoal.toLocaleString()} steps`
+                : 'steps'}
+            </span>
           </span>
         ))}
       {steps && showNutrients && (

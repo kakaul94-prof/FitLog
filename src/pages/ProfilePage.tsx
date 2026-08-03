@@ -74,6 +74,7 @@ export function ProfilePage() {
   const [maxHr, setMaxHr] = useState('')
   const [restingHr, setRestingHr] = useState('')
   const [showHrTips, setShowHrTips] = useState(false)
+  const [stepGoal, setStepGoal] = useState('')
   const [weight, setWeight] = useState('')
   const [rate, setRate] = useState('0')
   const [goalWeight, setGoalWeight] = useState('')
@@ -106,6 +107,7 @@ export function ProfilePage() {
     setMaxHrMode(profile.max_hr != null ? 'manual' : 'age')
     setMaxHr(profile.max_hr != null ? String(profile.max_hr) : '')
     setRestingHr(profile.resting_hr != null ? String(profile.resting_hr) : '')
+    setStepGoal(profile.step_goal != null ? String(profile.step_goal) : '')
     setRate(String(profile.goal_rate_lb_per_week))
     setGoalWeight(profile.goal_weight_lb != null ? String(profile.goal_weight_lb) : '')
     setManualMode(profile.calorie_goal_mode === 'manual')
@@ -208,6 +210,7 @@ export function ProfilePage() {
       macro_targets: macroTargets,
       max_hr: maxHrMode === 'manual' ? parseInt(maxHr) || null : null,
       resting_hr: restingHr.trim() ? parseInt(restingHr) || null : null,
+      step_goal: stepGoal.trim() ? parseInt(stepGoal) || null : null,
     })
     if (weightNum != null && weightNum !== latestWeight) {
       await logWeight.mutateAsync({
@@ -507,6 +510,28 @@ export function ProfilePage() {
                 </div>
               )}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Steps */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Steps</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            <Label htmlFor="stepgoal">Daily step goal</Label>
+            <Input
+              id="stepgoal"
+              type="number"
+              inputMode="numeric"
+              placeholder="e.g. 10000"
+              value={stepGoal}
+              onChange={(e) => setStepGoal(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Shown next to your step count on the diary. Leave blank for no
+              goal.
+            </p>
           </CardContent>
         </Card>
 

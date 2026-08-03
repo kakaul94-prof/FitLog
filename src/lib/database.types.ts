@@ -113,6 +113,9 @@ export interface Profile {
   // HR (enables Karvonen reserve zones when set).
   max_hr: number | null
   resting_hr: number | null
+  // Daily step goal, shown next to the Health Connect step count on the diary
+  // card. null = no goal, in which case the count renders on its own.
+  step_goal: number | null
   // Workout program: ordered rotation of templates + rest days (sequential
   // model). null / empty sequence = no program set up yet.
   program: ProgramState | null

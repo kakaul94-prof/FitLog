@@ -163,7 +163,7 @@ export const EXERCISE_OVERRIDE: Record<string, Partial<Record<RegionId, number>>
   barbell_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   db_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   seated_cable_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
-  face_pull: { rear_delts: 1, upper_back: 1 },
+  face_pull: { rear_delts: 1, upper_back: 0.5 },
   // posterior chain
   deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5, upper_back: 0.5 },
   romanian_deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5 },
@@ -171,6 +171,8 @@ export const EXERCISE_OVERRIDE: Record<string, Partial<Record<RegionId, number>>
   front_squat: { quads: 1, glutes: 0.5 },
   leg_curl: { hams: 1 },
   lunge: { quads: 1, glutes: 1 },
+  // shoulders — the dumbbell press path lets the side delt work too
+  db_shoulder_press: { shoulders: 1, triceps: 0.5, side_delts: 0.5 },
   // arms
   hammer_curl: { biceps: 1, forearm: 0.5 },
   // core
@@ -212,6 +214,9 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'chest supported rows': { upper_back: 1, lats: 0.5, rear_delts: 0.5 },
   'flexion row': { erector_spinae: 1, lats: 0.5 },
   'w raise': { upper_back: 1, rear_delts: 0.5 },
+  // prone Y — lower traps lead, rear delt assists (same shape as the W raise)
+  'inclined prone y raise': { upper_back: 1, rear_delts: 0.5 },
+  'inclined prone y raises': { upper_back: 1, rear_delts: 0.5 },
   // back — rear delt
   'rear delt rows': { rear_delts: 1, upper_back: 0.5 },
   'inclined rear delt rows': { rear_delts: 1, upper_back: 0.5 },
@@ -219,8 +224,8 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'reverse rear delt cable flys': { rear_delts: 1, upper_back: 0.5 },
   'inclined dumbbell face pulls': { rear_delts: 1, upper_back: 0.5 },
   'inclined y raises': { rear_delts: 1, upper_back: 0.5 },
+  'face pulls': { rear_delts: 1, upper_back: 0.5 },
   // back — custom Back-tagged rows/pulldowns: generic back spread + 0.5 rear-delt accessory
-  'face pulls': { upper_back: 0.5, lats: 0.5, biceps: 0.5, rear_delts: 0.5 },
   'lat pull down': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },
   'pull ups': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },
   'seated row': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },

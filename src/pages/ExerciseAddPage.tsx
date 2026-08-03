@@ -15,12 +15,13 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { ACTIVITIES } from '@/data/activities'
+import { ACTIVITIES, RECORDER_ACTIVITIES } from '@/data/activities'
 import { useLatestWeight } from '@/features/measurements/useMeasurements'
 import {
   useLogExercise,
   useUpdateExercise,
   useExerciseEntry,
+  useLastCardioField,
 } from '@/features/exercise/useExercise'
 import {
   useCustomActivities,
@@ -31,6 +32,8 @@ import {
 import {
   metCalories,
   distanceCalories,
+  effectiveWeightLb,
+  levelMet,
   resolveMaxHr,
   resolveHrZones,
   resolveZoneForHr,
@@ -45,7 +48,26 @@ interface PickActivity {
   name: string
   met: number
   distanceBased: boolean
+  loadable: boolean
+  leveled: boolean
 }
+
+/** Fallback console scale when we've never seen one for this activity. */
+const DEFAULT_LEVEL_MAX = 10
+
+/** Quick-pick plate/vest weights, mirroring the duration row's presets. */
+const LOAD_PRESETS = [10, 20, 35, 45]
+
+/** Does a prefilled name (GPS recorder, or a cardio item on a workout) belong
+ *  to an activity that offers a load? Prefills carry a name, not a key. */
+const loadableByName = (n: string): boolean =>
+  [...RECORDER_ACTIVITIES, ...ACTIVITIES].some(
+    (a) => a.name === n && a.loadable,
+  )
+
+/** Same, for the machine resistance-level field. */
+const leveledByName = (n: string): boolean =>
+  ACTIVITIES.some((a) => a.name === n && a.leveled)
 
 export function ExerciseAddPage() {
   const nav = useNavigate()
@@ -79,8 +101,17 @@ export function ExerciseAddPage() {
   const [distanceBased, setDistanceBased] = useState(
     pf.name ? pf.distanceBased : false,
   )
+  const [loadable, setLoadable] = useState(
+    pf.name ? loadableByName(pf.name) : false,
+  )
+  const [leveled, setLeveled] = useState(
+    pf.name ? leveledByName(pf.name) : false,
+  )
   const [duration, setDuration] = useState(pf.dur ?? '')
   const [distance, setDistance] = useState(pf.dist ?? '')
+  const [load, setLoad] = useState('')
+  const [level, setLevel] = useState('')
+  const [levelMax, setLevelMax] = useState(String(DEFAULT_LEVEL_MAX))
   const [override, setOverride] = useState(pf.kcal ?? '')
   const [avgHr, setAvgHr] = useState('')
   const [zone, setZone] = useState<number | null>(null)
@@ -98,7 +129,7 @@ export function ExerciseAddPage() {
   const [renaming, setRenaming] = useState(false)
   const [editingKcal, setEditingKcal] = useState(false)
   const [activeTile, setActiveTile] = useState<
-    'duration' | 'distance' | 'hr' | null
+    'duration' | 'distance' | 'load' | 'level' | 'hr' | null
   >(null)
 
   const allActivities: PickActivity[] = [
@@ -107,12 +138,20 @@ export function ExerciseAddPage() {
       name: c.name,
       met: c.met,
       distanceBased: c.distance_based,
+      // Custom activities have no loadable flag of their own; a distance-based
+      // one is a walk/hike variant, which is where a pack makes sense.
+      loadable: c.distance_based,
+      // No resistance dial by default — most custom activities are chores or
+      // classes, and a stray tile on those is worse than a missing one.
+      leveled: false,
     })),
     ...ACTIVITIES.map((a) => ({
       key: a.key,
       name: a.name,
       met: a.met,
       distanceBased: a.distanceBased,
+      loadable: !!a.loadable,
+      leveled: !!a.leveled,
     })),
   ]
   const q = search.trim().toLowerCase()
@@ -125,12 +164,20 @@ export function ExerciseAddPage() {
   const zones = resolveHrZones(profile)
   const dur = parseFloat(duration) || 0
   const dist = parseFloat(distance) || 0
+  const loadLb = loadable ? parseFloat(load) || 0 : 0
+  // A carried load is extra mass to move, so it feeds both burn formulas.
+  const movedLb = effectiveWeightLb(w, loadLb)
+  const lvl = leveled ? parseInt(level) || 0 : 0
+  const lvlMax = parseInt(levelMax) || 0
+  // A resistance level, once set, replaces the activity's generic MET — it says
+  // far more about the effort than "elliptical" does.
+  const effMet = (leveled ? levelMet(lvl, lvlMax) : null) ?? met
   const est =
     w == null
       ? 0
       : distanceBased && dist
-        ? distanceCalories(dist, w, met)
-        : metCalories(met, dur, w)
+        ? distanceCalories(dist, movedLb, effMet)
+        : metCalories(effMet, dur, movedLb)
   const calories = override ? parseInt(override) || 0 : est
 
   const date = entry?.entry_date ?? params.get('date') ?? todayISO()
@@ -156,36 +203,86 @@ export function ExerciseAddPage() {
       setMet(entry.met ?? 0)
       setDistanceBased(entry.distance_mi != null)
     }
+    // An entry that recorded a load stays loadable even if the activity has
+    // since changed, so the saved weight is still visible and editable.
+    const ld = match ? match.loadable : entry.load_lb != null
+    setLoadable(ld || entry.load_lb != null)
+    setLeveled((match ? match.leveled : false) || entry.level != null)
+    setLevel(entry.level != null ? String(entry.level) : '')
+    if (entry.level_max != null) setLevelMax(String(entry.level_max))
     setName(entry.name)
     setDuration(entry.duration_min != null ? String(entry.duration_min) : '')
     setDistance(entry.distance_mi != null ? String(entry.distance_mi) : '')
+    setLoad(entry.load_lb != null ? String(entry.load_lb) : '')
     setAvgHr(entry.avg_hr != null ? String(entry.avg_hr) : '')
     setZone(entry.zone ?? null)
     // Preserve a manual override (e.g. from a watch): if the stored calories
-    // don't match the formula estimate, keep them as an override.
+    // don't match the formula estimate, keep them as an override. The load has
+    // to be in this estimate too, or every loaded entry reopens mislabelled.
     const di = entry.distance_mi ?? 0
-    const m = match ? match.met : entry.met ?? 0
+    // A levelled entry snapshotted its resolved MET, so trust the stored one
+    // over the activity's generic value.
+    const m =
+      entry.level != null ? entry.met ?? 0 : match ? match.met : entry.met ?? 0
     const db = match ? match.distanceBased : entry.distance_mi != null
+    const mv = effectiveWeightLb(w, entry.load_lb)
     const e0 =
       w == null
         ? 0
         : db && di
-          ? distanceCalories(di, w, m)
-          : metCalories(m, entry.duration_min ?? 0, w)
+          ? distanceCalories(di, mv, m)
+          : metCalories(m, entry.duration_min ?? 0, mv)
     if (Math.round(e0) !== Math.round(entry.calories))
       setOverride(String(entry.calories))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing, entry, weightPending, custom, w])
 
+  // Prefill the load you used last time for this activity — once per activity,
+  // so clearing the field doesn't immediately refill it.
+  const { data: lastLoad } = useLastCardioField(
+    !editing && loadable && name ? name : null,
+    'load_lb',
+  )
+  const loadPrefilledFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (editing || !loadable || lastLoad == null) return
+    if (loadPrefilledFor.current === name) return
+    loadPrefilledFor.current = name
+    setLoad(String(lastLoad))
+  }, [editing, loadable, lastLoad, name])
+
+  // Same for how many levels the console has — set 18 once and it sticks, but
+  // it stays per-entry so a session on the gym's machine is one field to change.
+  const { data: lastLevelMax } = useLastCardioField(
+    !editing && leveled && name ? name : null,
+    'level_max',
+  )
+  const maxPrefilledFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (editing || !leveled || lastLevelMax == null) return
+    if (maxPrefilledFor.current === name) return
+    maxPrefilledFor.current = name
+    setLevelMax(String(lastLevelMax))
+  }, [editing, leveled, lastLevelMax, name])
+
   const pickActivity = (a: PickActivity) => {
     setName(a.name)
     setMet(a.met)
     setDistanceBased(a.distanceBased)
+    setLoadable(a.loadable)
+    if (!a.loadable) setLoad('')
+    setLeveled(a.leveled)
+    if (!a.leveled) setLevel('')
     setSearch('')
     setChanging(false)
     // Straight into duration once an activity is chosen.
     setActiveTile((t) =>
-      t == null || (t === 'distance' && !a.distanceBased) ? 'duration' : t,
+      t == null ||
+      (t === 'distance' && !a.distanceBased) ||
+      (t === 'load' && !a.loadable) ||
+      (t === 'level' && !a.leveled)
+        ? 'duration'
+        : t,
     )
   }
 
@@ -229,6 +326,8 @@ export function ExerciseAddPage() {
       name: next.name,
       met: next.met,
       distanceBased: next.distance_based,
+      loadable: next.distance_based,
+      leveled: false,
     })
     closeForm()
   }
@@ -243,9 +342,14 @@ export function ExerciseAddPage() {
     const payload = {
       entry_date: date,
       name: name.trim() || 'Exercise',
-      met,
+      // Snapshot the MET actually used, so a past entry keeps its numbers if the
+      // level→MET mapping is ever retuned.
+      met: effMet,
       duration_min: dur || null,
       distance_mi: distanceBased && dist ? dist : null,
+      load_lb: loadLb || null,
+      level: lvl || null,
+      level_max: lvl ? lvlMax || null : null,
       calories,
       avg_hr: avgHr.trim() ? parseInt(avgHr) || null : null,
       zone,
@@ -312,7 +416,7 @@ export function ExerciseAddPage() {
                     </span>
                     {name && (
                       <span className="shrink-0 text-xs text-muted-foreground">
-                        · {met} MET
+                        · {Math.round(effMet * 10) / 10} MET
                       </span>
                     )}
                     <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -524,7 +628,16 @@ export function ExerciseAddPage() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {editingKcal
                       ? "Enter your watch's number"
-                      : 'Auto-estimate · tap to override'}
+                      : loadLb
+                        ? `Auto-estimate · includes ${loadLb} lb load`
+                        : lvl
+                          ? `Auto-estimate · level ${lvl} of ${lvlMax}`
+                          : 'Auto-estimate · tap to override'}
+                  </p>
+                ) : null}
+                {override && loadLb ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Your number stands — the load isn't applied to it.
                   </p>
                 ) : null}
                 {w == null && (
@@ -537,7 +650,15 @@ export function ExerciseAddPage() {
               <div
                 className={cn(
                   'grid gap-2',
-                  distanceBased ? 'grid-cols-3' : 'grid-cols-2',
+                  // Duration + HR are always there; distance/load/level are
+                  // per-activity. 4+ wraps to two columns — a single row of four
+                  // is too tight to tap.
+                  2 + [distanceBased, loadable, leveled].filter(Boolean).length >
+                    3
+                    ? 'grid-cols-2'
+                    : distanceBased || loadable || leveled
+                      ? 'grid-cols-3'
+                      : 'grid-cols-2',
                 )}
               >
                 {[
@@ -552,6 +673,24 @@ export function ExerciseAddPage() {
                           key: 'distance' as const,
                           value: dist ? `${dist} mi` : null,
                           label: 'Distance',
+                        },
+                      ]
+                    : []),
+                  ...(loadable
+                    ? [
+                        {
+                          key: 'load' as const,
+                          value: loadLb ? `${loadLb} lb` : null,
+                          label: 'Load',
+                        },
+                      ]
+                    : []),
+                  ...(leveled
+                    ? [
+                        {
+                          key: 'level' as const,
+                          value: lvl ? `${lvl}/${lvlMax}` : null,
+                          label: 'Resistance',
                         },
                       ]
                     : []),
@@ -647,6 +786,84 @@ export function ExerciseAddPage() {
                   value={distance}
                   onChange={(e) => setDistance(e.target.value)}
                 />
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTile === 'load' && loadable && (
+            <Card>
+              <CardContent className="space-y-2 p-4">
+                <Label htmlFor="load">Added weight (lb)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="load"
+                    type="number"
+                    inputMode="decimal"
+                    className="w-20 text-center"
+                    value={load}
+                    onChange={(e) => setLoad(e.target.value)}
+                  />
+                  {LOAD_PRESETS.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() =>
+                        setLoad((l) => (parseFloat(l) === v ? '' : String(v)))
+                      }
+                      className={cn(
+                        'flex-1 rounded-full border py-1.5 text-sm transition-colors',
+                        loadLb === v
+                          ? 'border-primary bg-primary/10 font-medium text-primary'
+                          : 'border-border',
+                      )}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Pack, plate, or vest — added to your body weight for the
+                  estimate.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTile === 'level' && leveled && (
+            <Card>
+              <CardContent className="space-y-2 p-4">
+                <Label htmlFor="level">Resistance level</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="level"
+                    type="number"
+                    inputMode="numeric"
+                    className="w-20 text-center"
+                    value={level}
+                    onChange={(e) => setLevel(e.target.value)}
+                  />
+                  <span className="text-sm text-muted-foreground">of</span>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    aria-label="Levels on this machine"
+                    className="w-20 text-center"
+                    value={levelMax}
+                    onChange={(e) => setLevelMax(e.target.value)}
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    on this machine
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {lvl && lvlMax > 1
+                    ? `${Math.round(
+                        (Math.min(1, (lvl - 1) / (lvlMax - 1)) * 100),
+                      )}% of max · ${Math.round(effMet * 10) / 10} MET. `
+                    : ''}
+                  Level scales differ by machine, so the estimate uses your share
+                  of max — assuming you hold the same cadence.
+                </p>
               </CardContent>
             </Card>
           )}

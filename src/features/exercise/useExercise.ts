@@ -40,9 +40,39 @@ export interface NewExercise {
   met: number | null
   duration_min: number | null
   distance_mi: number | null
+  load_lb: number | null
+  level: number | null
+  level_max: number | null
   calories: number
   avg_hr: number | null
   zone: number | null
+}
+
+/**
+ * The value you last used for this activity — the ruck weight you carried, or
+ * how many resistance levels your machine has. Prefills the add form the way
+ * strength prefills "last time". Null name = disabled, so it costs nothing on
+ * an ordinary cardio entry.
+ */
+export function useLastCardioField(
+  name: string | null,
+  field: 'load_lb' | 'level_max',
+) {
+  return useQuery({
+    queryKey: ['exerciseLastField', field, name],
+    enabled: !!name,
+    queryFn: async (): Promise<number | null> => {
+      const { data, error } = await supabase
+        .from('exercise_entries')
+        .select(field)
+        .eq('name', name)
+        .not(field, 'is', null)
+        .order('entry_date', { ascending: false })
+        .limit(1)
+      if (error) throw error
+      return (data?.[0] as Record<string, number> | undefined)?.[field] ?? null
+    },
+  })
 }
 
 export function useLogExercise() {

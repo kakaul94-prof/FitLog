@@ -7,6 +7,8 @@ import {
   cmToFtIn,
   distanceCalories,
   distanceCoef,
+  effectiveWeightLb,
+  levelMet,
   paceAwareCalories,
   estimateAdaptiveTDEE,
   estimated1RM,
@@ -434,6 +436,73 @@ describe('distanceCalories', () => {
   it('returns 0 without distance or weight', () => {
     expect(distanceCalories(0, 154, 8)).toBe(0)
     expect(distanceCalories(5, 0, 8)).toBe(0)
+  })
+})
+
+describe('effectiveWeightLb', () => {
+  it('adds the carried load to body weight', () => {
+    expect(effectiveWeightLb(190, 35)).toBe(225)
+  })
+  it('treats a missing or negative load as unloaded', () => {
+    expect(effectiveWeightLb(190, null)).toBe(190)
+    expect(effectiveWeightLb(190, -10)).toBe(190)
+  })
+  it('stays 0 without a body weight, so estimates stay blank', () => {
+    expect(effectiveWeightLb(null, 35)).toBe(0)
+  })
+})
+
+describe('loaded cardio (rucking)', () => {
+  // 190 lb, 30 min at rucking's unloaded 4.5 MET. Pandolf puts the same three
+  // loads at 205/220/233 kcal gross, so these track it within ~10%.
+  const ruck = (loadLb: number) =>
+    metCalories(4.5, 30, effectiveWeightLb(190, loadLb))
+
+  it('scales the MET burn with the load', () => {
+    expect(ruck(0)).toBe(204)
+    expect(ruck(20)).toBe(225)
+    expect(ruck(35)).toBe(241)
+    expect(ruck(50)).toBe(257)
+  })
+
+  it('keeps the walking coefficient on the distance path', () => {
+    // MET 4.5 < 7, so a loaded 1.75 mi ruck is priced as a walk, not a run.
+    expect(distanceCalories(1.75, effectiveWeightLb(190, 35), 4.5)).toBe(172)
+  })
+})
+
+describe('levelMet', () => {
+  it('anchors the bottom and top of any scale', () => {
+    expect(levelMet(1, 10)).toBeCloseTo(3.5, 5)
+    expect(levelMet(10, 10)).toBeCloseTo(8.9, 5)
+    expect(levelMet(1, 18)).toBeCloseTo(3.5, 5)
+    expect(levelMet(18, 18)).toBeCloseTo(8.9, 5)
+  })
+
+  it('makes the same effort match across different scales', () => {
+    // Level 12 of 18 is 65% of max — level ~7 of 10, ~10 of 15. Coarser scales
+    // can't land on it exactly (7/10 is 67%), so allow a rounding step.
+    const target = levelMet(12, 18)!
+    expect(target).toBeCloseTo(6.99, 2)
+    expect(Math.abs(levelMet(7, 10)! - target)).toBeLessThan(0.3)
+    expect(Math.abs(levelMet(10, 15)! - target)).toBeLessThan(0.3)
+  })
+
+  it('prices the same raw level differently on a longer scale', () => {
+    // The whole point: "level 5" is 44% of max on a 10, but 24% on an 18.
+    expect(metCalories(levelMet(5, 10)!, 20, 190)).toBe(178)
+    expect(metCalories(levelMet(5, 18)!, 20, 190)).toBe(144)
+  })
+
+  it('clamps out-of-range levels instead of extrapolating', () => {
+    expect(levelMet(25, 18)).toBeCloseTo(8.9, 5)
+    expect(levelMet(0, 18)).toBeNull()
+  })
+
+  it('returns null when the scale is missing or unusable', () => {
+    expect(levelMet(5, null)).toBeNull()
+    expect(levelMet(null, 10)).toBeNull()
+    expect(levelMet(5, 1)).toBeNull()
   })
 })
 

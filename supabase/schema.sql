@@ -198,11 +198,19 @@ create table if not exists public.exercise_entries (
   calories integer not null default 0,
   avg_hr smallint,
   zone smallint check (zone is null or zone between 1 and 5),
+  load_lb numeric,
+  level smallint,
+  level_max smallint,
   created_at timestamptz not null default now()
 );
 -- Cardio HR zones (added later; idempotent for existing DBs).
 alter table public.exercise_entries add column if not exists avg_hr smallint;
 alter table public.exercise_entries add column if not exists zone smallint;
+-- Carried load in lb (added later; see migration_ruck_load.sql).
+alter table public.exercise_entries add column if not exists load_lb numeric;
+-- Machine resistance level (added later; see migration_cardio_level.sql).
+alter table public.exercise_entries add column if not exists level smallint;
+alter table public.exercise_entries add column if not exists level_max smallint;
 alter table public.exercise_entries drop constraint if exists exercise_entries_zone_check;
 alter table public.exercise_entries add constraint exercise_entries_zone_check
   check (zone is null or zone between 1 and 5);

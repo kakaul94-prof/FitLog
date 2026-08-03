@@ -195,6 +195,8 @@ export function WorkoutCalendarPage() {
                 const meta = [
                   e.duration_min ? `${e.duration_min} min` : null,
                   e.distance_mi ? `${e.distance_mi} mi` : null,
+                  e.load_lb ? `${e.load_lb} lb` : null,
+                  e.level ? `L${e.level}/${e.level_max}` : null,
                   `${e.calories} calories`,
                 ]
                   .filter(Boolean)

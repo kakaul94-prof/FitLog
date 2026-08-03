@@ -510,6 +510,44 @@ export function warmupRamp(workingLb: number, barbell: boolean): WarmupStep[] {
 }
 
 // ---------- exercise calories ----------
+/**
+ * Body weight plus anything you carried (ruck plate, vest, pack), in lb — the
+ * mass the estimate should actually move. Both burn formulas below scale
+ * linearly with mass, which is the accepted approximation for backpack-style
+ * loads on level ground: Pandolf's non-linear load term contributes only a few
+ * percent until you add grade or rough terrain.
+ */
+export function effectiveWeightLb(
+  bodyLb: number | null | undefined,
+  loadLb: number | null | undefined,
+): number {
+  if (!bodyLb) return 0
+  return bodyLb + Math.max(0, loadLb ?? 0)
+}
+
+/** MET at the bottom (level 1) and top of a machine's resistance scale. */
+export const LEVEL_MET_MIN = 3.5
+export const LEVEL_MET_MAX = 8.9
+
+/**
+ * MET for a machine resistance level, normalised to the FRACTION of that
+ * machine's max — "level 5" means different work on a 10-level console than on
+ * an 18-level one, so the raw number can't drive the estimate. Level 1 is the
+ * floor of the scale (not zero resistance), hence level−1 over max−1.
+ *
+ * This fixes the scale mismatch between machines, not the calibration one: one
+ * vendor's top level really is heavier than another's, and only watts would
+ * catch that. Assumes cadence stays roughly constant across levels.
+ */
+export function levelMet(
+  level: number | null | undefined,
+  levelMax: number | null | undefined,
+): number | null {
+  if (!level || !levelMax || levelMax <= 1) return null
+  const f = Math.min(1, Math.max(0, (level - 1) / (levelMax - 1)))
+  return LEVEL_MET_MIN + (LEVEL_MET_MAX - LEVEL_MET_MIN) * f
+}
+
 /** MET estimate: kcal = MET * 3.5 * kg / 200 * minutes. */
 export function metCalories(
   met: number,

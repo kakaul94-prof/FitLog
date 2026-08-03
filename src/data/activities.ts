@@ -5,21 +5,29 @@ export interface BuiltinActivity {
   name: string
   met: number
   distanceBased: boolean // walk/run/hike use distance-based kcal when available
+  // Offers a carried-load field (ruck plate, vest, pack). The load counts as
+  // extra body mass in the estimate, so the MET here is the UNLOADED effort —
+  // rucking sits at walking intensity and earns its extra burn from the load.
+  loadable?: boolean
+  // Offers a machine resistance-level field. Vendor scales differ (1–10 vs
+  // 1–18), so the estimate uses the fraction of max and the MET here is only
+  // the fallback for an entry logged without a level.
+  leveled?: boolean
 }
 
 export const ACTIVITIES: BuiltinActivity[] = [
   // The pure walk/run entries moved to RECORDER_ACTIVITIES — log those via the
   // GPS walk/run recorder. Treadmill/indoor variants stay here because GPS
   // can't measure a walk/run you do without moving through space.
-  { key: 'walking_treadmill', name: 'Walking (treadmill)', met: 4.3, distanceBased: true },
+  { key: 'walking_treadmill', name: 'Walking (treadmill)', met: 4.3, distanceBased: true, loadable: true },
   { key: 'running_treadmill', name: 'Running (treadmill)', met: 9.8, distanceBased: true },
-  { key: 'hiking', name: 'Hiking', met: 6.0, distanceBased: true },
+  { key: 'hiking', name: 'Hiking', met: 6.0, distanceBased: true, loadable: true },
   { key: 'cycling_light', name: 'Cycling (light, 10–12 mph)', met: 6.8, distanceBased: false },
   { key: 'cycling_mod', name: 'Cycling (moderate, 12–14 mph)', met: 8.0, distanceBased: false },
   { key: 'swimming', name: 'Swimming (laps, moderate)', met: 5.8, distanceBased: false },
-  { key: 'rowing', name: 'Rowing machine (moderate)', met: 7.0, distanceBased: false },
-  { key: 'elliptical', name: 'Elliptical trainer', met: 5.0, distanceBased: false },
-  { key: 'stair_climber', name: 'Stair climber', met: 9.0, distanceBased: false },
+  { key: 'rowing', name: 'Rowing machine (moderate)', met: 7.0, distanceBased: false, leveled: true },
+  { key: 'elliptical', name: 'Elliptical trainer', met: 5.0, distanceBased: false, leveled: true },
+  { key: 'stair_climber', name: 'Stair climber', met: 9.0, distanceBased: false, loadable: true, leveled: true },
   { key: 'jump_rope', name: 'Jump rope', met: 11.0, distanceBased: false },
   { key: 'hiit', name: 'HIIT / circuit training', met: 8.0, distanceBased: false },
   { key: 'weight_training', name: 'Weight training (general)', met: 3.5, distanceBased: false },
@@ -45,10 +53,13 @@ export const ACTIVITIES: BuiltinActivity[] = [
   { key: 'moving_furniture', name: 'Moving furniture / boxes', met: 5.8, distanceBased: false },
   { key: 'painting_home', name: 'Home repair / painting', met: 3.3, distanceBased: false },
   { key: 'childcare', name: 'Childcare (active)', met: 3.5, distanceBased: false },
-  { key: 'dog_walking', name: 'Walking the dog', met: 3.0, distanceBased: true },
+  { key: 'dog_walking', name: 'Walking the dog', met: 3.0, distanceBased: true, loadable: true },
 
   // Recreation & sport
-  { key: 'rucking', name: 'Rucking (walking w/ load)', met: 7.0, distanceBased: true },
+  // MET is the UNLOADED walk (brisk, ~3.5 mph); the pack's burn comes from the
+  // load field. It used to be 7.0, which double-counted the load and pushed the
+  // distance path onto the running coefficient.
+  { key: 'rucking', name: 'Rucking (walking w/ load)', met: 4.5, distanceBased: true, loadable: true },
   { key: 'table_tennis', name: 'Table tennis (ping pong)', met: 4.0, distanceBased: false },
   { key: 'pickleball', name: 'Pickleball', met: 4.5, distanceBased: false },
   { key: 'badminton', name: 'Badminton (social)', met: 4.5, distanceBased: false },
@@ -67,8 +78,8 @@ export const ACTIVITIES: BuiltinActivity[] = [
 // these, you don't hand-pick them. Calories are pace-aware at log time, so the
 // MET here only sets the entry's stored MET + the label-based fallback estimate.
 export const RECORDER_ACTIVITIES: BuiltinActivity[] = [
-  { key: 'walking', name: 'Walking', met: 4.3, distanceBased: true },
+  { key: 'walking', name: 'Walking', met: 4.3, distanceBased: true, loadable: true },
   { key: 'running', name: 'Running', met: 9.8, distanceBased: true },
   { key: 'jogging', name: 'Jogging', met: 8.3, distanceBased: true },
-  { key: 'hiking', name: 'Hiking', met: 6.0, distanceBased: true },
+  { key: 'hiking', name: 'Hiking', met: 6.0, distanceBased: true, loadable: true },
 ]

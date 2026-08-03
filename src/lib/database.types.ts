@@ -333,6 +333,13 @@ export interface ExerciseEntry {
   // Cardio HR zone (1–5) + the avg heart rate it was derived from; both optional.
   avg_hr: number | null
   zone: number | null
+  // Weight carried (ruck plate/vest/pack), lb. Counts as extra body mass in the
+  // calorie estimate; null = unloaded.
+  load_lb: number | null
+  // Machine resistance as read off the console — level 12 of 18. Kept as the raw
+  // pair for display; the burn it implies is snapshotted into `met` at save.
+  level: number | null
+  level_max: number | null
   created_at: string
 }
 

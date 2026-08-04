@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Activity, Pencil } from 'lucide-react'
+import { Activity, ChevronDown, Pencil } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
 import { RING_GREEN, RING_OVER } from '@/components/CalorieRing'
@@ -745,11 +745,13 @@ function NutritionView() {
           </Card>
 
           {macros && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Avg macros</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-3 gap-3">
+            <CollapsibleCard
+              title="Avg macros"
+              summary={MACROS.map(
+                (m) => `${m.label} ${avgMacro(m.key)}g`,
+              ).join(' · ')}
+            >
+              <div className="grid grid-cols-3 gap-3">
                 {MACROS.map((m) => (
                   <MacroBar
                     key={m.key}
@@ -758,8 +760,8 @@ function NutritionView() {
                     target={macros[m.key].grams}
                   />
                 ))}
-              </CardContent>
-            </Card>
+              </div>
+            </CollapsibleCard>
           )}
 
           <NutritionReportCard days={days} />
@@ -770,6 +772,48 @@ function NutritionView() {
         </>
       )}
     </>
+  )
+}
+
+/**
+ * Card whose body opens on tapping the header. Always starts collapsed — the
+ * nutrition tab stacks four of these, and landing on a wall of charts buried
+ * the calorie summary. `summary` is the one-line "is this worth opening?" hint.
+ */
+function CollapsibleCard({
+  title,
+  summary,
+  children,
+}: {
+  title: string
+  summary?: ReactNode
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Card>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 p-4 text-left"
+      >
+        <span className="flex flex-col gap-1">
+          <span className="font-semibold leading-none tracking-tight">
+            {title}
+          </span>
+          {summary && (
+            <span className="text-xs text-muted-foreground">{summary}</span>
+          )}
+        </span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      {open && <CardContent>{children}</CardContent>}
+    </Card>
   )
 }
 
@@ -804,16 +848,26 @@ function NutritionReportCard({ days }: { days: number }) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
 
+  const flagSummary =
+    low.length === 0 && over.length === 0
+      ? 'Nothing flagged'
+      : [
+          low.length > 0 && `${low.length} running low`,
+          over.length > 0 && `${over.length} running over`,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{days === 7 ? 'Weekly' : 'Monthly'} report</CardTitle>
+    <CollapsibleCard
+      title={`${days === 7 ? 'Weekly' : 'Monthly'} report`}
+      summary={flagSummary}
+    >
+      <div className="space-y-4">
         <p className="text-xs text-muted-foreground">
           {shortDate(addDaysISO(today, -(days - 1)))} – {shortDate(today)} ·{' '}
           {data.loggedCount} of {days} days logged
         </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
         {low.length === 0 && over.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Nothing flagged — you’re on track with your nutrient targets this{' '}
@@ -841,8 +895,8 @@ function NutritionReportCard({ days }: { days: number }) {
           General information, not medical advice. Foods without micronutrient
           data count as 0, so amounts can read low.
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   )
 }
 
@@ -914,13 +968,16 @@ function MicronutrientCard({ days }: { days: number }) {
   const low = data.stats.filter((s) => s.direction === 'floor' && s.flagged)
   const over = data.stats.filter((s) => s.direction === 'limit' && s.flagged)
   const shown = showAll ? data.stats : [...low, ...over]
+  const flagged = low.length + over.length
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Micronutrients</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <CollapsibleCard
+      title="Micronutrients"
+      summary={`${data.stats.length} tracked · ${
+        flagged > 0 ? `${flagged} off target` : 'all on target'
+      }`}
+    >
+      <div className="space-y-3">
         {shown.length > 0 && (
           <div className="space-y-2">
             {shown.map((s) => (
@@ -947,8 +1004,8 @@ function MicronutrientCard({ days }: { days: number }) {
             </>
           )}
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   )
 }
 
@@ -1002,11 +1059,11 @@ function TopSourcesCard({ days }: { days: number }) {
   const restPct = rest.reduce((s, c) => s + c.pct, 0)
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Top sources</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <CollapsibleCard
+      title="Top sources"
+      summary="Where a nutrient came from"
+    >
+      <div className="space-y-3">
         <Select
           value={key}
           onChange={(e) => setKey(e.target.value as NutrientKey)}
@@ -1058,8 +1115,8 @@ function TopSourcesCard({ days }: { days: number }) {
           Total over the last {days} days · share of your {name}. Foods without{' '}
           {name} data count as 0.
         </p>
-      </CardContent>
-    </Card>
+      </div>
+    </CollapsibleCard>
   )
 }
 

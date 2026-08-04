@@ -22,7 +22,9 @@ import {
   useUpdateExercise,
   useExerciseEntry,
   useLastCardioField,
+  useRecentExerciseEntries,
 } from '@/features/exercise/useExercise'
+import type { ExerciseEntry } from '@/lib/database.types'
 import {
   useCustomActivities,
   useCreateCustomActivity,
@@ -41,7 +43,7 @@ import {
 } from '@/lib/calc'
 import { zoneColor } from '@/data/zones'
 import { useProfile } from '@/features/profile/useProfile'
-import { todayISO } from '@/lib/date'
+import { dateLabel, todayISO } from '@/lib/date'
 
 interface PickActivity {
   key: string
@@ -77,6 +79,7 @@ export function ExerciseAddPage() {
   const { data: weight, isPending: weightPending } = useLatestWeight()
   const { data: entry } = useExerciseEntry(id)
   const { data: custom } = useCustomActivities()
+  const { data: recent, isPending: recentPending } = useRecentExerciseEntries()
   const { data: profile } = useProfile()
   const log = useLogExercise()
   const update = useUpdateExercise()
@@ -158,6 +161,9 @@ export function ExerciseAddPage() {
   const filtered = q
     ? allActivities.filter((a) => a.name.toLowerCase().includes(q))
     : allActivities
+  // Empty query shows the 5 most recent activities; the full library is behind
+  // search only (or up front for a brand-new account with no history yet).
+  const showRecents = !q && !recentPending && !!recent?.length
 
   const w = weight ?? null
   const maxHr = resolveMaxHr(profile)
@@ -286,6 +292,53 @@ export function ExerciseAddPage() {
     )
   }
 
+  // Tap a Recent row: select that activity with the whole last session prefilled
+  // — tweak anything, then save. Mirrors the editing prefill's flag fallbacks so
+  // renamed/deleted activities still open sensibly.
+  const pickRecent = (e: ExerciseEntry) => {
+    const match = allActivities.find((a) => a.name === e.name)
+    setName(e.name)
+    // A levelled entry snapshotted its resolved MET — trust it over the generic.
+    setMet(
+      e.level != null ? e.met ?? 0 : match ? match.met : e.met ?? 0,
+    )
+    setDistanceBased(match ? match.distanceBased : e.distance_mi != null)
+    setLoadable((match ? match.loadable : false) || e.load_lb != null)
+    setLeveled((match ? match.leveled : false) || e.level != null)
+    setDuration(e.duration_min != null ? String(e.duration_min) : '')
+    setDistance(e.distance_mi != null ? String(e.distance_mi) : '')
+    setLoad(e.load_lb != null ? String(e.load_lb) : '')
+    setLevel(e.level != null ? String(e.level) : '')
+    if (e.level_max != null) setLevelMax(String(e.level_max))
+    setAvgHr(e.avg_hr != null ? String(e.avg_hr) : '')
+    setZone(e.zone ?? null)
+    // The last-used prefill effects must not clobber what this session recorded.
+    loadPrefilledFor.current = e.name
+    maxPrefilledFor.current = e.name
+    setSearch('')
+    setChanging(false)
+    setActiveTile(null)
+  }
+
+  // "Log again": save a copy of the last session to the current diary date.
+  // Calories are copied verbatim — a watch override was that session's truth.
+  const logAgain = async (e: ExerciseEntry) => {
+    await log.mutateAsync({
+      entry_date: date,
+      name: e.name,
+      met: e.met,
+      duration_min: e.duration_min,
+      distance_mi: e.distance_mi,
+      load_lb: e.load_lb,
+      level: e.level,
+      level_max: e.level_max,
+      calories: e.calories,
+      avg_hr: e.avg_hr,
+      zone: e.zone,
+    })
+    nav(-1)
+  }
+
   const openCreate = () => {
     setEditId(null)
     setCname(search.trim())
@@ -391,6 +444,7 @@ export function ExerciseAddPage() {
         <div className="space-y-4 p-4">
           <Card>
             <CardContent className="space-y-3 p-4">
+              {(!changing || !!name) && (
               <div className="flex items-center justify-between gap-2">
                 {renaming ? (
                   <Input
@@ -435,13 +489,13 @@ export function ExerciseAddPage() {
                   {changing ? 'Cancel' : 'Change'}
                 </Button>
               </div>
+              )}
               {changing && (
               <div className="space-y-1.5">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="actsearch"
-                    autoFocus
                     className="pl-9"
                     placeholder="Search activities (e.g. mowing)"
                     value={search}
@@ -449,60 +503,113 @@ export function ExerciseAddPage() {
                   />
                 </div>
 
-                {!adding && (
-                  <Card className="max-h-60 divide-y divide-border overflow-y-auto">
-                    <button
-                      type="button"
-                      onClick={openCreate}
-                      className="flex w-full items-center gap-2 p-3 text-left text-sm font-medium text-primary active:bg-accent"
-                    >
-                      <Plus className="h-4 w-4" />
-                      {q
-                        ? `New custom activity "${search.trim()}"`
-                        : 'New custom activity'}
-                    </button>
-                    {filtered.map((a) => {
-                      const customId = a.key.startsWith('custom:')
-                        ? a.key.slice('custom:'.length)
-                        : null
-                      return (
-                        <div key={a.key} className="flex items-center">
+                {!adding && showRecents && (
+                  <div className="space-y-1.5 pt-1">
+                    <div className="text-xs text-muted-foreground">Recent</div>
+                    <Card className="divide-y divide-border overflow-hidden">
+                      {recent!.map((e) => (
+                        <div key={e.id} className="flex items-center">
                           <button
                             type="button"
-                            onClick={() => pickActivity(a)}
+                            onClick={() => pickRecent(e)}
                             className="block min-w-0 flex-1 p-3 text-left active:bg-accent"
                           >
-                            <div className="text-sm font-medium">{a.name}</div>
+                            <div className="truncate text-sm font-medium">
+                              {e.name}
+                            </div>
                             <div className="text-xs text-muted-foreground">
-                              {a.met} MET
-                              {a.distanceBased ? ' · distance' : ''}
-                              {customId ? ' · custom' : ''}
+                              {[
+                                e.distance_mi != null
+                                  ? `${e.distance_mi} mi`
+                                  : e.duration_min
+                                    ? `${e.duration_min} min`
+                                    : null,
+                                e.zone != null ? `Z${e.zone}` : null,
+                                `${e.calories} cal`,
+                                dateLabel(e.entry_date),
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
                             </div>
                           </button>
-                          {customId && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => openEdit(a, customId)}
-                                className="shrink-0 p-3 text-muted-foreground active:text-primary"
-                                aria-label={`Edit ${a.name}`}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => removeCustom(a, customId)}
-                                className="shrink-0 p-3 text-muted-foreground active:text-destructive"
-                                aria-label={`Delete ${a.name}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => logAgain(e)}
+                            disabled={log.isPending}
+                            className="mr-3 shrink-0 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary active:bg-primary/20 disabled:opacity-50"
+                          >
+                            Log again
+                          </button>
                         </div>
-                      )
-                    })}
-                  </Card>
+                      ))}
+                    </Card>
+                  </div>
+                )}
+
+                {!adding &&
+                  !showRecents &&
+                  (q || !recentPending) &&
+                  filtered.length > 0 && (
+                    <Card className="divide-y divide-border overflow-hidden">
+                      {filtered.map((a) => {
+                        const customId = a.key.startsWith('custom:')
+                          ? a.key.slice('custom:'.length)
+                          : null
+                        return (
+                          <div key={a.key} className="flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => pickActivity(a)}
+                              className="block min-w-0 flex-1 p-3 text-left active:bg-accent"
+                            >
+                              <div className="text-sm font-medium">{a.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {w != null
+                                  ? `~${Math.round(
+                                      metCalories(a.met, 30, w),
+                                    )} cal / 30 min`
+                                  : `${a.met} MET`}
+                                {a.distanceBased ? ' · distance' : ''}
+                                {customId ? ' · custom' : ''}
+                              </div>
+                            </button>
+                            {customId && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(a, customId)}
+                                  className="shrink-0 p-3 text-muted-foreground active:text-primary"
+                                  aria-label={`Edit ${a.name}`}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeCustom(a, customId)}
+                                  className="shrink-0 p-3 text-muted-foreground active:text-destructive"
+                                  aria-label={`Delete ${a.name}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </Card>
+                  )}
+
+                {!adding && (
+                  <button
+                    type="button"
+                    onClick={openCreate}
+                    className="flex items-center gap-2 pt-1 text-sm font-medium text-primary"
+                  >
+                    <Plus className="h-4 w-4" />
+                    {q
+                      ? `New custom activity "${search.trim()}"`
+                      : 'New custom activity'}
+                  </button>
                 )}
 
                 {adding && (
@@ -570,6 +677,8 @@ export function ExerciseAddPage() {
             </CardContent>
           </Card>
 
+          {!changing && (
+          <>
           <Card>
             <CardContent className="space-y-3 p-4">
               <div className="text-center">
@@ -948,6 +1057,8 @@ export function ExerciseAddPage() {
           >
             {pending ? 'Saving…' : editing ? 'Save changes' : 'Add exercise'}
           </Button>
+          </>
+          )}
         </div>
       )}
     </div>

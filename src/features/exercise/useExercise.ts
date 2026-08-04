@@ -34,6 +34,34 @@ export function useExerciseEntriesRange(start: string, end: string) {
   })
 }
 
+/**
+ * Latest entry per distinct activity name — the add-exercise picker's "Recent"
+ * list. Each row carries the full last session so it can be re-logged as-is.
+ */
+export function useRecentExerciseEntries(limit = 5) {
+  return useQuery({
+    queryKey: ['exercise', 'recentNames', limit],
+    queryFn: async (): Promise<ExerciseEntry[]> => {
+      const { data, error } = await supabase
+        .from('exercise_entries')
+        .select('*')
+        .order('entry_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(60)
+      if (error) throw error
+      const seen = new Set<string>()
+      const out: ExerciseEntry[] = []
+      for (const e of (data ?? []) as ExerciseEntry[]) {
+        if (seen.has(e.name)) continue
+        seen.add(e.name)
+        out.push(e)
+        if (out.length >= limit) break
+      }
+      return out
+    },
+  })
+}
+
 export interface NewExercise {
   entry_date: string
   name: string

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { todayISO, addDaysISO } from '@/lib/date'
 import { paceMinPerMi } from '@/lib/cardio'
+import { MACHINE_DISTANCE_NAMES } from '@/data/activities'
 
 // Type alias (not interface) so it satisfies LineChartSvg's Record row type
 // via TS's implicit index signature on inferred/aliased object types.
@@ -25,7 +26,7 @@ export function useCardioPaceTrends(zone: number, days = 90) {
       const since = addDaysISO(todayISO(), -(days - 1))
       const { data, error } = await supabase
         .from('exercise_entries')
-        .select('entry_date,duration_min,distance_mi,zone')
+        .select('entry_date,duration_min,distance_mi,zone,name')
         .gte('entry_date', since)
         .eq('zone', zone)
         .order('entry_date')
@@ -35,7 +36,10 @@ export function useCardioPaceTrends(zone: number, days = 90) {
         entry_date: string
         duration_min: number | null
         distance_mi: number | null
+        name: string
       }[]) {
+        // Machine "miles" (elliptical) aren't ground pace — keep them out.
+        if (MACHINE_DISTANCE_NAMES.has(r.name)) continue
         const pace = paceMinPerMi(r.duration_min, r.distance_mi)
         if (pace != null)
           pts.push({

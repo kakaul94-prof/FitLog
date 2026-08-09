@@ -34,6 +34,7 @@ import {
 import {
   metCalories,
   distanceCalories,
+  cadenceAdjustedMet,
   effectiveWeightLb,
   levelMet,
   resolveMaxHr,
@@ -52,6 +53,7 @@ interface PickActivity {
   distanceBased: boolean
   loadable: boolean
   leveled: boolean
+  machineDistance: boolean
 }
 
 /** Fallback console scale when we've never seen one for this activity. */
@@ -70,6 +72,10 @@ const loadableByName = (n: string): boolean =>
 /** Same, for the machine resistance-level field. */
 const leveledByName = (n: string): boolean =>
   ACTIVITIES.some((a) => a.name === n && a.leveled)
+
+/** Same, for machine-distance (cadence-scaled) activities. */
+const machineDistanceByName = (n: string): boolean =>
+  ACTIVITIES.some((a) => a.name === n && a.machineDistance)
 
 export function ExerciseAddPage() {
   const nav = useNavigate()
@@ -110,6 +116,9 @@ export function ExerciseAddPage() {
   const [leveled, setLeveled] = useState(
     pf.name ? leveledByName(pf.name) : false,
   )
+  const [machineDistance, setMachineDistance] = useState(
+    pf.name ? machineDistanceByName(pf.name) : false,
+  )
   const [duration, setDuration] = useState(pf.dur ?? '')
   const [distance, setDistance] = useState(pf.dist ?? '')
   const [load, setLoad] = useState('')
@@ -147,6 +156,7 @@ export function ExerciseAddPage() {
       // No resistance dial by default — most custom activities are chores or
       // classes, and a stray tile on those is worse than a missing one.
       leveled: false,
+      machineDistance: false,
     })),
     ...ACTIVITIES.map((a) => ({
       key: a.key,
@@ -155,6 +165,7 @@ export function ExerciseAddPage() {
       distanceBased: a.distanceBased,
       loadable: !!a.loadable,
       leveled: !!a.leveled,
+      machineDistance: !!a.machineDistance,
     })),
   ]
   const q = search.trim().toLowerCase()
@@ -176,8 +187,12 @@ export function ExerciseAddPage() {
   const lvl = leveled ? parseInt(level) || 0 : 0
   const lvlMax = parseInt(levelMax) || 0
   // A resistance level, once set, replaces the activity's generic MET — it says
-  // far more about the effort than "elliptical" does.
-  const effMet = (leveled ? levelMet(lvl, lvlMax) : null) ?? met
+  // far more about the effort than "elliptical" does. On machine-distance
+  // activities a logged distance then scales that MET by measured cadence.
+  const levelBasedMet = (leveled ? levelMet(lvl, lvlMax) : null) ?? met
+  const effMet = machineDistance
+    ? cadenceAdjustedMet(levelBasedMet, dist, dur)
+    : levelBasedMet
   const est =
     w == null
       ? 0
@@ -205,9 +220,11 @@ export function ExerciseAddPage() {
     if (match) {
       setMet(match.met)
       setDistanceBased(match.distanceBased)
+      setMachineDistance(match.machineDistance)
     } else {
       setMet(entry.met ?? 0)
       setDistanceBased(entry.distance_mi != null)
+      setMachineDistance(false)
     }
     // An entry that recorded a load stays loadable even if the activity has
     // since changed, so the saved weight is still visible and editable.
@@ -226,10 +243,16 @@ export function ExerciseAddPage() {
     // don't match the formula estimate, keep them as an override. The load has
     // to be in this estimate too, or every loaded entry reopens mislabelled.
     const di = entry.distance_mi ?? 0
-    // A levelled entry snapshotted its resolved MET, so trust the stored one
-    // over the activity's generic value.
+    // A levelled or machine-distance entry snapshotted its resolved MET
+    // (level → MET, cadence-scaled), so trust the stored one over the
+    // activity's generic value — metCalories on it reproduces the saved kcal.
+    const mdb = match ? match.machineDistance : false
     const m =
-      entry.level != null ? entry.met ?? 0 : match ? match.met : entry.met ?? 0
+      entry.level != null || mdb
+        ? entry.met ?? 0
+        : match
+          ? match.met
+          : entry.met ?? 0
     const db = match ? match.distanceBased : entry.distance_mi != null
     const mv = effectiveWeightLb(w, entry.load_lb)
     const e0 =
@@ -275,6 +298,7 @@ export function ExerciseAddPage() {
     setName(a.name)
     setMet(a.met)
     setDistanceBased(a.distanceBased)
+    setMachineDistance(a.machineDistance)
     setLoadable(a.loadable)
     if (!a.loadable) setLoad('')
     setLeveled(a.leveled)
@@ -284,7 +308,7 @@ export function ExerciseAddPage() {
     // Straight into duration once an activity is chosen.
     setActiveTile((t) =>
       t == null ||
-      (t === 'distance' && !a.distanceBased) ||
+      (t === 'distance' && !(a.distanceBased || a.machineDistance)) ||
       (t === 'load' && !a.loadable) ||
       (t === 'level' && !a.leveled)
         ? 'duration'
@@ -303,6 +327,7 @@ export function ExerciseAddPage() {
       e.level != null ? e.met ?? 0 : match ? match.met : e.met ?? 0,
     )
     setDistanceBased(match ? match.distanceBased : e.distance_mi != null)
+    setMachineDistance(match ? match.machineDistance : false)
     setLoadable((match ? match.loadable : false) || e.load_lb != null)
     setLeveled((match ? match.leveled : false) || e.level != null)
     setDuration(e.duration_min != null ? String(e.duration_min) : '')
@@ -381,6 +406,7 @@ export function ExerciseAddPage() {
       distanceBased: next.distance_based,
       loadable: next.distance_based,
       leveled: false,
+      machineDistance: false,
     })
     closeForm()
   }
@@ -399,7 +425,7 @@ export function ExerciseAddPage() {
       // level→MET mapping is ever retuned.
       met: effMet,
       duration_min: dur || null,
-      distance_mi: distanceBased && dist ? dist : null,
+      distance_mi: (distanceBased || machineDistance) && dist ? dist : null,
       load_lb: loadLb || null,
       level: lvl || null,
       level_max: lvl ? lvlMax || null : null,
@@ -762,10 +788,15 @@ export function ExerciseAddPage() {
                   // Duration + HR are always there; distance/load/level are
                   // per-activity. 4+ wraps to two columns — a single row of four
                   // is too tight to tap.
-                  2 + [distanceBased, loadable, leveled].filter(Boolean).length >
+                  2 +
+                    [
+                      distanceBased || machineDistance,
+                      loadable,
+                      leveled,
+                    ].filter(Boolean).length >
                     3
                     ? 'grid-cols-2'
-                    : distanceBased || loadable || leveled
+                    : distanceBased || machineDistance || loadable || leveled
                       ? 'grid-cols-3'
                       : 'grid-cols-2',
                 )}
@@ -776,7 +807,7 @@ export function ExerciseAddPage() {
                     value: dur ? `${dur} min` : null,
                     label: 'Duration',
                   },
-                  ...(distanceBased
+                  ...(distanceBased || machineDistance
                     ? [
                         {
                           key: 'distance' as const,
@@ -884,7 +915,7 @@ export function ExerciseAddPage() {
             </Card>
           )}
 
-          {activeTile === 'distance' && distanceBased && (
+          {activeTile === 'distance' && (distanceBased || machineDistance) && (
             <Card>
               <CardContent className="space-y-2 p-4">
                 <Label htmlFor="dist">Distance (mi, optional)</Label>
@@ -895,6 +926,12 @@ export function ExerciseAddPage() {
                   value={distance}
                   onChange={(e) => setDistance(e.target.value)}
                 />
+                {machineDistance && (
+                  <p className="text-xs text-muted-foreground">
+                    The console's distance — a faster pace at the same
+                    resistance scales the estimate up.
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
@@ -971,7 +1008,10 @@ export function ExerciseAddPage() {
                       )}% of max · ${Math.round(effMet * 10) / 10} MET. `
                     : ''}
                   Level scales differ by machine, so the estimate uses your share
-                  of max — assuming you hold the same cadence.
+                  of max —{' '}
+                  {machineDistance && dist && dur
+                    ? 'scaled by the pace your distance shows.'
+                    : 'assuming you hold the same cadence.'}
                 </p>
               </CardContent>
             </Card>

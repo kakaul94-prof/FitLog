@@ -548,6 +548,31 @@ export function levelMet(
   return LEVEL_MET_MIN + (LEVEL_MET_MAX - LEVEL_MET_MIN) * f
 }
 
+/** Neutral machine cadence in console-mph — the pace at which the level MET
+ *  applies unscaled. Console "miles" aren't standardized across vendors, so
+ *  retune this if estimates drift from a machine's reality. */
+export const MACHINE_REF_MPH = 6
+
+/**
+ * Cadence-adjusted MET for machine cardio (elliptical). levelMet assumes a
+ * constant cadence; when the console reports a distance, the measured pace
+ * scales the WORK portion of the MET — at a fixed resistance, work is
+ * force × strides, so kcal track distance — while the 1-MET resting floor
+ * stays fixed. The factor is clamped because vendor "miles" vary wildly;
+ * without distance or duration this is a no-op, preserving the plain
+ * level/MET estimate.
+ */
+export function cadenceAdjustedMet(
+  met: number,
+  distanceMi: number,
+  durationMin: number,
+): number {
+  if (!met || !distanceMi || !durationMin) return met
+  const mph = distanceMi / (durationMin / 60)
+  const factor = Math.min(1.4, Math.max(0.7, mph / MACHINE_REF_MPH))
+  return 1 + (met - 1) * factor
+}
+
 /** MET estimate: kcal = MET * 3.5 * kg / 200 * minutes. */
 export function metCalories(
   met: number,

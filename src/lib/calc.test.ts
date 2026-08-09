@@ -5,6 +5,7 @@ import {
   bmrMifflin,
   caloriesForRate,
   cmToFtIn,
+  cadenceAdjustedMet,
   distanceCalories,
   distanceCoef,
   effectiveWeightLb,
@@ -503,6 +504,39 @@ describe('levelMet', () => {
     expect(levelMet(5, null)).toBeNull()
     expect(levelMet(null, 10)).toBeNull()
     expect(levelMet(5, 1)).toBeNull()
+  })
+})
+
+describe('cadenceAdjustedMet', () => {
+  // Level 6 of 18 → ~5.09 MET at neutral cadence (6 machine-mph).
+  const met = levelMet(6, 18)!
+
+  it('leaves the MET alone at the neutral pace', () => {
+    // 3 mi / 30 min = 6 mph — exactly the reference.
+    expect(cadenceAdjustedMet(met, 3, 30)).toBeCloseTo(met, 5)
+  })
+
+  it('scales the work portion with distance at a fixed level', () => {
+    // Same 30 min at the same level, 4 mi vs 3 mi: the work (MET − the
+    // resting 1) is exactly 4:3 — machine kcal track resistance × distance.
+    const m3 = cadenceAdjustedMet(met, 3, 30)
+    const m4 = cadenceAdjustedMet(met, 4, 30)
+    expect((m4 - 1) / (m3 - 1)).toBeCloseTo(4 / 3, 5)
+    // At 180 lb that's 218 vs 277 kcal — the faster session earns ~59 more.
+    expect(metCalories(m3, 30, 180)).toBe(218)
+    expect(metCalories(m4, 30, 180)).toBe(277)
+  })
+
+  it('clamps implausible machine paces', () => {
+    // 20 mph reads as bad console data — capped at 1.4× the work.
+    expect(cadenceAdjustedMet(5, 10, 30)).toBeCloseTo(6.6, 5)
+    // A 1 mph crawl floors at 0.7×.
+    expect(cadenceAdjustedMet(5, 1, 60)).toBeCloseTo(3.8, 5)
+  })
+
+  it('is a no-op without distance or duration', () => {
+    expect(cadenceAdjustedMet(5, 0, 30)).toBe(5)
+    expect(cadenceAdjustedMet(5, 3, 0)).toBe(5)
   })
 })
 

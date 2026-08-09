@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { todayISO, addDaysISO } from '@/lib/date'
+import { MACHINE_DISTANCE_NAMES } from '@/data/activities'
 
 export interface DistanceBin {
   /** ISO first day of the bin. */
@@ -35,7 +36,7 @@ export function useDistanceTrends(days: number) {
       const since = addDaysISO(today, -(days - 1))
       const { data, error } = await supabase
         .from('exercise_entries')
-        .select('entry_date,distance_mi')
+        .select('entry_date,distance_mi,name')
         .gte('entry_date', since)
         .lte('entry_date', today)
       if (error) throw error
@@ -46,7 +47,10 @@ export function useDistanceTrends(days: number) {
       for (const r of (data ?? []) as {
         entry_date: string
         distance_mi: number | null
+        name: string
       }[]) {
+        // Machine "miles" (elliptical) aren't ground distance — keep them out.
+        if (MACHINE_DISTANCE_NAMES.has(r.name)) continue
         const mi = r.distance_mi ?? 0
         if (mi <= 0) continue
         perDay.set(r.entry_date, (perDay.get(r.entry_date) ?? 0) + mi)

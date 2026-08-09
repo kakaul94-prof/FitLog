@@ -13,6 +13,11 @@ export interface BuiltinActivity {
   // 1–18), so the estimate uses the fraction of max and the MET here is only
   // the fallback for an entry logged without a level.
   leveled?: boolean
+  // Offers the distance field on a machine whose "miles" are synthetic (stride
+  // count × an assumed stride length, no vendor standard). Distance here scales
+  // the MET by measured cadence (calc.ts cadenceAdjustedMet) instead of pricing
+  // miles like ground travel the way distanceBased does.
+  machineDistance?: boolean
 }
 
 export const ACTIVITIES: BuiltinActivity[] = [
@@ -26,7 +31,7 @@ export const ACTIVITIES: BuiltinActivity[] = [
   { key: 'cycling_mod', name: 'Cycling (moderate, 12–14 mph)', met: 8.0, distanceBased: false },
   { key: 'swimming', name: 'Swimming (laps, moderate)', met: 5.8, distanceBased: false },
   { key: 'rowing', name: 'Rowing machine (moderate)', met: 7.0, distanceBased: false, leveled: true },
-  { key: 'elliptical', name: 'Elliptical trainer', met: 5.0, distanceBased: false, leveled: true },
+  { key: 'elliptical', name: 'Elliptical trainer', met: 5.0, distanceBased: false, leveled: true, machineDistance: true },
   { key: 'stair_climber', name: 'Stair climber', met: 9.0, distanceBased: false, loadable: true, leveled: true },
   { key: 'jump_rope', name: 'Jump rope', met: 11.0, distanceBased: false },
   { key: 'hiit', name: 'HIIT / circuit training', met: 8.0, distanceBased: false },
@@ -77,6 +82,12 @@ export const ACTIVITIES: BuiltinActivity[] = [
 // separate from ACTIVITIES so they don't clutter the manual picker — you record
 // these, you don't hand-pick them. Calories are pace-aware at log time, so the
 // MET here only sets the entry's stored MET + the label-based fallback estimate.
+/** Names whose logged miles are machine-synthetic — the distance/pace trend
+ *  charts skip these so elliptical "miles" don't pool with ground miles. */
+export const MACHINE_DISTANCE_NAMES = new Set(
+  ACTIVITIES.filter((a) => a.machineDistance).map((a) => a.name),
+)
+
 export const RECORDER_ACTIVITIES: BuiltinActivity[] = [
   { key: 'walking', name: 'Walking', met: 4.3, distanceBased: true, loadable: true },
   { key: 'running', name: 'Running', met: 9.8, distanceBased: true },

@@ -21,8 +21,10 @@ import {
   Minus,
   Target,
   Sparkles,
+  Brain,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { TrainerChat } from '@/components/TrainerChat'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -134,6 +136,10 @@ export function WorkoutPage() {
   const { id } = useParams()
   const nav = useNavigate()
   const [showCompleted, setShowCompleted] = useState(false)
+  // Mid-workout trainer chat. Rendered as an overlay rather than a route so the
+  // workout underneath stays mounted — asking a question between sets must not
+  // cost you your scroll position or a half-typed set.
+  const [askOpen, setAskOpen] = useState(false)
   const updateWorkout = useUpdateWorkout()
   const { data } = useWorkout(id)
   const workout = data?.workout
@@ -377,19 +383,28 @@ export function WorkoutPage() {
           </Button>
         }
         action={
-          <button
-            onClick={() => updateProfile.mutate({ coach_enabled: !coachEnabled })}
-            aria-pressed={coachEnabled}
-            className={cn(
-              'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold',
-              coachEnabled
-                ? 'border-primary/40 bg-primary/15 text-primary'
-                : 'border-border text-muted-foreground',
-            )}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Coach
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setAskOpen(true)}
+              aria-label="Ask a trainer"
+              className="flex items-center justify-center rounded-full border border-border p-1.5 text-muted-foreground"
+            >
+              <Brain className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => updateProfile.mutate({ coach_enabled: !coachEnabled })}
+              aria-pressed={coachEnabled}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold',
+                coachEnabled
+                  ? 'border-primary/40 bg-primary/15 text-primary'
+                  : 'border-border text-muted-foreground',
+              )}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Coach
+            </button>
+          </div>
         }
       />
       <div className="space-y-4 p-4 pb-32">
@@ -445,6 +460,27 @@ export function WorkoutPage() {
           )}
         </Button>
       </div>
+      {askOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-50 mx-auto flex w-full max-w-md flex-col bg-background">
+            <PageHeader
+              title="Ask"
+              subtitle={workout?.name || 'Mid-workout'}
+              left={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setAskOpen(false)}
+                  aria-label="Close"
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              }
+            />
+            <TrainerChat workoutId={workout?.id} />
+          </div>,
+          document.body,
+        )}
       {showExit &&
         createPortal(
           <div

@@ -96,7 +96,11 @@ function ageFrom(birth: string | null): number | null {
   return years > 0 && years < 120 ? Math.floor(years) : null
 }
 
-export async function buildTrainerContext(): Promise<string> {
+export async function buildTrainerContext(
+  /** `workoutId` = the chat was opened from inside a live workout, which adds a
+   *  "right now" section and tells the model to keep answers short. */
+  opts: { workoutId?: string } = {},
+): Promise<string> {
   const today = todayISO()
   const liftSince = addDaysISO(today, -LIFT_WINDOW_DAYS)
   const cardioSince = addDaysISO(today, -CARDIO_WINDOW_DAYS)
@@ -199,6 +203,58 @@ export async function buildTrainerContext(): Promise<string> {
   const working = sets.filter((s) => !s.is_warmup)
 
   const out: string[] = [`Today is ${today}.`]
+
+  // --- The live workout ---------------------------------------------------
+  // Goes first: when the chat is opened mid-session this is the most relevant
+  // thing in the whole snapshot, and putting it up top also keeps it clear of
+  // the endpoint's context cap.
+  if (opts.workoutId) {
+    const current = workouts.find((w) => w.id === opts.workoutId)
+    const { data: wexData } = await supabase
+      .from('workout_exercises')
+      .select('exercise_key,exercise_name,position')
+      .eq('workout_id', opts.workoutId)
+      .order('position')
+    const planned = (wexData ?? []) as {
+      exercise_key: string
+      exercise_name: string
+      position: number
+    }[]
+
+    const todaySets = working.filter((s) => s.workout_id === opts.workoutId)
+    const doneByKey = new Map<string, SetRow[]>()
+    for (const s of todaySets) {
+      const arr = doneByKey.get(s.exercise_key) ?? []
+      arr.push(s)
+      doneByKey.set(s.exercise_key, arr)
+    }
+
+    const lines = [
+      `MID-WORKOUT RIGHT NOW: "${current?.name ?? 'Workout'}". They are in the gym, between sets — keep the answer short.`,
+    ]
+    // Walk the template order so "what's next" is answerable.
+    const order = planned.length
+      ? planned
+      : [...doneByKey.keys()].map((k, i) => ({
+          exercise_key: k,
+          exercise_name: doneByKey.get(k)![0].exercise_name,
+          position: i,
+        }))
+    const done: string[] = []
+    const todo: string[] = []
+    for (const ex of order) {
+      const rows = doneByKey.get(ex.exercise_key)
+      if (rows?.length) done.push(`    ${ex.exercise_name}: ${describeSets(rows)}`)
+      else todo.push(ex.exercise_name)
+    }
+    lines.push(
+      done.length
+        ? `Logged so far this session:\n${done.join('\n')}`
+        : 'Nothing logged this session yet.',
+    )
+    if (todo.length) lines.push(`Still to do on today's list: ${todo.join(', ')}.`)
+    out.push(lines.join('\n'))
+  }
 
   // --- Who they are -------------------------------------------------------
   const bio: string[] = []

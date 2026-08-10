@@ -216,7 +216,11 @@ export const onRequestPost = async (context: {
   env: Env
 }): Promise<Response> => {
   const { request, env } = context
-  const key = env.ANTHROPIC_API_KEY
+  // Trim: a trailing newline or space survives a copy-paste into the Cloudflare
+  // secrets field and makes an otherwise-valid key fail as authentication_error,
+  // which is indistinguishable from a revoked key until you look at the bytes.
+  const raw = env.ANTHROPIC_API_KEY ?? ''
+  const key = raw.trim()
   if (!key)
     return json({ error: 'The trainer is not configured (no API key).' }, 503)
 
@@ -264,7 +268,24 @@ export const onRequestPost = async (context: {
 
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => '')
-    return json({ error: upstreamMessage(res.status, detail), detail: detail.slice(0, 400) }, 502)
+    return json(
+      {
+        error: upstreamMessage(res.status, detail),
+        detail: detail.slice(0, 400),
+        // On an auth failure only, describe the stored secret WITHOUT revealing
+        // it: the prefix is identical across all Anthropic keys, and a length
+        // plus a whitespace flag is what actually tells you whether the value is
+        // malformed, truncated, or something else pasted by mistake.
+        ...(res.status === 401 || /authentication_error/.test(detail)
+          ? {
+              keyShape: `starts "${key.slice(0, 8)}", ${key.length} chars${
+                raw !== key ? ', HAD surrounding whitespace (now trimmed)' : ''
+              }`,
+            }
+          : {}),
+      },
+      502,
+    )
   }
 
   return new Response(res.body.pipeThrough(sseToText()), {

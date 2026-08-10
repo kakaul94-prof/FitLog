@@ -194,6 +194,23 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
   })
 }
 
+/**
+ * Turn an upstream failure into a message that says what to DO about it. This
+ * is a single-user app, so a diagnostic beats a polite one — a bare "the
+ * trainer is unavailable" sent us hunting through app code once when the real
+ * problem was a stale API key in the Cloudflare dashboard.
+ */
+function upstreamMessage(status: number, body: string): string {
+  if (status === 401 || /authentication_error/.test(body))
+    return "The trainer can't sign in to Claude. The ANTHROPIC_API_KEY secret on this Cloudflare Pages project is missing, invalid or expired — check Settings → Variables and secrets."
+  if (/credit balance/i.test(body))
+    return 'The Claude account is out of credits — top it up at console.anthropic.com.'
+  if (status === 429)
+    return 'Too many requests just now. Wait a few seconds and ask again.'
+  if (status >= 500) return 'Claude is having a moment. Try again shortly.'
+  return 'The trainer is unavailable right now.'
+}
+
 export const onRequestPost = async (context: {
   request: Request
   env: Env
@@ -247,13 +264,7 @@ export const onRequestPost = async (context: {
 
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => '')
-    return json(
-      {
-        error: 'The trainer is unavailable right now.',
-        detail: detail.slice(0, 400),
-      },
-      502,
-    )
+    return json({ error: upstreamMessage(res.status, detail), detail: detail.slice(0, 400) }, 502)
   }
 
   return new Response(res.body.pipeThrough(sseToText()), {

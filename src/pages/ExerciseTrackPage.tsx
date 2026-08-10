@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, MapPin, Play, Square } from 'lucide-react'
+import { ChevronLeft, MapPin, Pause, Play, Square } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,6 +23,7 @@ import {
 } from '@/lib/geo'
 import { paceAwareCalories } from '@/lib/calc'
 import { todayISO } from '@/lib/date'
+import { cn } from '@/lib/utils'
 
 const DIST_ACTS = RECORDER_ACTIVITIES
 const DEFAULT_ACT = 'walking'
@@ -52,7 +53,7 @@ export function ExerciseTrackPage() {
   // ?activity=<key> preselects the activity (programmed cardio deep-links here).
   const [params] = useSearchParams()
   const requestedAct = params.get('activity')
-  const [phase, setPhase] = useState<'idle' | 'recording'>('idle')
+  const [phase, setPhase] = useState<'idle' | 'recording' | 'paused'>('idle')
   const [actKey, setActKey] = useState(
     requestedAct && DIST_ACTS.some((a) => a.key === requestedAct)
       ? requestedAct
@@ -67,7 +68,22 @@ export function ExerciseTrackPage() {
   const watcherRef = useRef<GeoWatcher | null>(null)
   const recordingRef = useRef(false)
   const startRef = useRef(0)
+  /** Total milliseconds spent in finished pauses. */
+  const pausedMsRef = useRef(0)
+  /** Epoch ms the current pause began, or 0 when not paused. */
+  const pausedAtRef = useRef(0)
   const wakeRef = useRef<{ release: () => Promise<void> } | null>(null)
+
+  /**
+   * Wall-clock since start minus every paused stretch, including one still in
+   * progress — so the clock freezes while paused.
+   */
+  const activeMs = () => {
+    const paused =
+      pausedMsRef.current +
+      (pausedAtRef.current ? Date.now() - pausedAtRef.current : 0)
+    return Math.max(0, Date.now() - startRef.current - paused)
+  }
 
   const activity = DIST_ACTS.find((a) => a.key === actKey) ?? DIST_ACTS[0]
 
@@ -98,10 +114,11 @@ export function ExerciseTrackPage() {
     releaseWakeLock()
   }
 
-  // Live clock while recording.
+  // Live clock while recording. Paused ticks aren't scheduled at all, so the
+  // last value written by pause() stays on screen.
   useEffect(() => {
     if (phase !== 'recording') return
-    const id = setInterval(() => setElapsedMs(Date.now() - startRef.current), 500)
+    const id = setInterval(() => setElapsedMs(activeMs()), 500)
     return () => clearInterval(id)
   }, [phase])
 
@@ -115,12 +132,15 @@ export function ExerciseTrackPage() {
     setMovingMs(0)
     setElapsedMs(0)
     startRef.current = Date.now()
+    pausedMsRef.current = 0
+    pausedAtRef.current = 0
     recordingRef.current = true
     setPhase('recording')
     requestWakeLock()
     try {
       const watcher = await startGeoWatch({
         onFix: (fix) => {
+          if (pausedAtRef.current) return // paused — no distance, no moving time
           const next = addFix(trackRef.current, fix)
           trackRef.current = next
           setMeters(next.meters)
@@ -136,13 +156,30 @@ export function ExerciseTrackPage() {
     }
   }
 
+  /**
+   * Pause. The GPS watcher keeps running (restarting it risks a re-prompt and a
+   * slow re-acquire) but its fixes are dropped, and dropping the last fix means
+   * the walk resumes from a fresh anchor — so wherever you go while paused, the
+   * gap never lands in your distance.
+   */
+  const pause = () => {
+    pausedAtRef.current = Date.now()
+    setElapsedMs(activeMs())
+    trackRef.current = { ...trackRef.current, last: null }
+    setPhase('paused')
+  }
+
+  const resume = () => {
+    if (pausedAtRef.current)
+      pausedMsRef.current += Date.now() - pausedAtRef.current
+    pausedAtRef.current = 0
+    setPhase('recording')
+  }
+
   const stopAndReview = () => {
+    const durationMin = Math.max(0, Math.round(activeMs() / 60000))
     teardown()
     const distanceMi = metersToMiles(trackRef.current.meters)
-    const durationMin = Math.max(
-      0,
-      Math.round((Date.now() - startRef.current) / 60000),
-    )
     const movingMin = trackRef.current.movingMs / 60000
     const kcal = w ? paceAwareCalories(distanceMi, movingMin, w) : 0
 
@@ -159,17 +196,24 @@ export function ExerciseTrackPage() {
   }
 
   const discard = () => {
-    if (phase === 'recording' && !confirm('Discard this walk/run?')) return
+    if (phase !== 'idle' && !confirm('Discard this walk/run?')) return
     teardown()
     nav(-1)
   }
 
   const distanceMi = metersToMiles(meters)
+  const paused = phase === 'paused'
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
-        title={phase === 'recording' ? 'Recording' : 'Record a walk/run'}
+        title={
+          phase === 'idle'
+            ? 'Record a walk/run'
+            : paused
+              ? 'Paused'
+              : 'Recording'
+        }
         left={
           <Button variant="ghost" size="icon" onClick={discard}>
             <ChevronLeft className="h-5 w-5" />
@@ -227,15 +271,32 @@ export function ExerciseTrackPage() {
           <>
             <Card>
               <CardContent className="space-y-4 p-6">
-                <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <div
+                  className={cn(
+                    'flex items-center justify-center gap-2 text-sm',
+                    paused ? 'text-warning' : 'text-muted-foreground',
+                  )}
+                >
                   <span className="relative flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+                    {!paused && (
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                    )}
+                    <span
+                      className={cn(
+                        'relative inline-flex h-2.5 w-2.5 rounded-full',
+                        paused ? 'bg-warning' : 'bg-primary',
+                      )}
+                    />
                   </span>
-                  {activity.name} · Recording
+                  {activity.name} · {paused ? 'Paused' : 'Recording'}
                 </div>
 
-                <div className="flex items-baseline justify-center gap-2">
+                <div
+                  className={cn(
+                    'flex items-baseline justify-center gap-2',
+                    paused && 'opacity-55',
+                  )}
+                >
                   <span className="text-6xl font-bold tabular-nums tracking-tight">
                     {distanceMi.toFixed(2)}
                   </span>
@@ -244,7 +305,9 @@ export function ExerciseTrackPage() {
                   </span>
                 </div>
 
-                <div className="flex items-stretch">
+                <div
+                  className={cn('flex items-stretch', paused && 'opacity-55')}
+                >
                   <div className="flex-1 text-center">
                     <div className="text-xl font-semibold tabular-nums">
                       {fmtClock(elapsedMs)}
@@ -279,15 +342,33 @@ export function ExerciseTrackPage() {
               </Card>
             )}
 
-            <Button
-              className="w-full"
-              size="lg"
-              variant="destructive"
-              onClick={stopAndReview}
-            >
-              <Square className="mr-2 h-5 w-5" />
-              Stop &amp; review
-            </Button>
+            <div className="flex gap-3">
+              {paused ? (
+                <Button className="flex-1" size="lg" onClick={resume}>
+                  <Play className="mr-2 h-5 w-5" />
+                  Resume
+                </Button>
+              ) : (
+                <Button
+                  className="flex-1"
+                  size="lg"
+                  variant="outline"
+                  onClick={pause}
+                >
+                  <Pause className="mr-2 h-5 w-5" />
+                  Pause
+                </Button>
+              )}
+              <Button
+                className="flex-1"
+                size="lg"
+                variant="destructive"
+                onClick={stopAndReview}
+              >
+                <Square className="mr-2 h-5 w-5" />
+                Stop
+              </Button>
+            </div>
           </>
         )}
       </div>

@@ -139,6 +139,9 @@ export function ExerciseAddPage() {
     max: number | null
     zoneSeconds: number[]
   } | null>(null)
+  // Why the save didn't take. Without this a failed insert just un-presses the
+  // button — the entry silently never lands.
+  const [saveErr, setSaveErr] = useState<string | null>(null)
 
   // Activity search / custom-create UI
   const [search, setSearch] = useState('')
@@ -485,8 +488,21 @@ export function ExerciseAddPage() {
       hr_samples: hrRec?.samples ?? null,
       zone_seconds: hrRec?.zoneSeconds ?? null,
     }
-    if (editing && id) await update.mutateAsync({ id, ...payload })
-    else await log.mutateAsync(payload)
+    try {
+      setSaveErr(null)
+      if (editing && id) await update.mutateAsync({ id, ...payload })
+      else await log.mutateAsync(payload)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      // A missing column means the app is ahead of the database — say so
+      // plainly instead of leaving a Postgres error on screen.
+      setSaveErr(
+        /does not exist|schema cache/i.test(msg)
+          ? `Your database is missing a column this version needs (${msg}). Run the latest migration in Supabase.`
+          : `Couldn't save: ${msg}`,
+      )
+      return
+    }
     clearHrSession()
     nav(-1)
   }
@@ -1206,6 +1222,14 @@ export function ExerciseAddPage() {
               )}
             </CardContent>
           </Card>
+          )}
+
+          {saveErr && (
+            <Card className="border-destructive/40">
+              <CardContent className="p-4">
+                <p className="text-sm text-destructive">{saveErr}</p>
+              </CardContent>
+            </Card>
           )}
 
           <Button

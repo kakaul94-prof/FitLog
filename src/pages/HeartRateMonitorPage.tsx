@@ -278,11 +278,13 @@ export function HeartRateMonitorPage() {
         {/* Only once something has actually gone wrong — enough runtime detail
             to tell a stale APK from a strap that won't answer. */}
         {hr.error && (
-          <p className="px-1 font-mono text-[11px] text-muted-foreground">
-            {Object.entries(hrDiagnostics())
-              .map(([k, v]) => `${k}=${v}`)
-              .join(' · ')}
-          </p>
+          <div className="space-y-1 px-1 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            {Object.entries(hrDiagnostics()).map(([k, v]) => (
+              <p key={k} className="break-all">
+                {k}={String(v)}
+              </p>
+            ))}
+          </div>
         )}
       </div>
     </div>

@@ -100,26 +100,38 @@ export function hrSupported(): boolean {
   )
 }
 
-/** What the runtime actually reports, for the "why won't it pair" footer. A
- * stale APK should be obvious rather than mysterious. */
+/** Whatever the last failure actually said, before we turned it into advice. */
+let lastRawError: string | null = null
+
+/**
+ * What the runtime actually reports, for the "why won't it pair" footer.
+ *
+ * `plugins` is the list the native bridge injected. If it's populated but has
+ * no BluetoothLe, the installed APK predates the plugin — which is a very
+ * different problem from an empty list (no bridge at all) or a strap that won't
+ * answer, and guessing between those cost real time once already.
+ */
 export function hrDiagnostics() {
+  const headers = (
+    window as unknown as { Capacitor?: { PluginHeaders?: { name: string }[] } }
+  ).Capacitor?.PluginHeaders
   return {
     platform: Capacitor.getPlatform(),
-    native: Capacitor.isNativePlatform(),
-    pluginHeader: Capacitor.isPluginAvailable('BluetoothLe'),
+    ble: Capacitor.isPluginAvailable('BluetoothLe'),
     webBluetooth:
       typeof navigator !== 'undefined' &&
       !!(navigator as { bluetooth?: unknown }).bluetooth,
+    plugins: headers ? headers.map((h) => h.name).join(',') : 'none',
+    lastError: lastRawError ?? '—',
   }
 }
 
 /** A missing native implementation reads very differently from "the strap is
- * off" — say which so the fix is obvious. */
+ * off" — say which so the fix is obvious. Capacitor's own wording for a plugin
+ * the bridge never registered is `... is not implemented on android`. */
 function isMissingImplementation(e: unknown): boolean {
   const msg = String((e as Error)?.message ?? e)
-  return /unimplemented|not implemented|no web implementation|is not a function|undefined/i.test(
-    msg,
-  )
+  return /unimplemented|not implemented|no web implementation/i.test(msg)
 }
 
 /** A saved strap can only be reconnected silently on native — Web Bluetooth
@@ -234,6 +246,7 @@ export async function connectHr(): Promise<boolean> {
     await attach(dev.id, dev.name)
     return true
   } catch (e) {
+    lastRawError = String((e as Error)?.message ?? e).slice(0, 160)
     set({
       status: 'idle',
       error: isMissingImplementation(e)
@@ -264,6 +277,7 @@ export async function pairHrMonitor(): Promise<boolean> {
     return true
   } catch (e) {
     const msg = String((e as Error)?.message ?? e)
+    lastRawError = msg.slice(0, 160)
     set({
       status: 'idle',
       // The picker's own cancel isn't worth an error banner.

@@ -13,6 +13,7 @@ import {
   disconnectHr,
   forgetHrMonitor,
   hrAutoConnect,
+  hrDiagnostics,
   hrSupported,
   pairHrMonitor,
   setHrAutoConnect,
@@ -273,6 +274,16 @@ export function HeartRateMonitorPage() {
           {!canAutoReconnect() &&
             ' In a browser you have to pick the strap again each visit; the installed app remembers it.'}
         </p>
+
+        {/* Only once something has actually gone wrong — enough runtime detail
+            to tell a stale APK from a strap that won't answer. */}
+        {hr.error && (
+          <p className="px-1 font-mono text-[11px] text-muted-foreground">
+            {Object.entries(hrDiagnostics())
+              .map(([k, v]) => `${k}=${v}`)
+              .join(' · ')}
+          </p>
+        )}
       </div>
     </div>
   )

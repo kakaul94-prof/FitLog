@@ -80,14 +80,45 @@ export function setHrAutoConnect(on: boolean) {
   }
 }
 
-/** BLE is reachable: the native plugin, or Web Bluetooth in a Chromium browser. */
+/**
+ * Whether it's worth offering to pair at all.
+ *
+ * On native this deliberately does NOT consult
+ * `Capacitor.isPluginAvailable('BluetoothLe')`. That reads `PluginHeaders`,
+ * which the bridge injects into the page — and this app loads a remote
+ * `server.url`, so a header that never arrives is indistinguishable from a
+ * plugin that isn't installed. Asking the plugin (BleClient.initialize) is the
+ * real capability test, so we let the connect attempt fail loudly instead of
+ * hiding the button on a guess.
+ */
 export function hrSupported(): boolean {
-  if (Capacitor.isNativePlatform())
-    return Capacitor.isPluginAvailable('BluetoothLe')
+  if (Capacitor.isNativePlatform()) return true
   return (
     typeof navigator !== 'undefined' &&
     'bluetooth' in navigator &&
     !!(navigator as { bluetooth?: unknown }).bluetooth
+  )
+}
+
+/** What the runtime actually reports, for the "why won't it pair" footer. A
+ * stale APK should be obvious rather than mysterious. */
+export function hrDiagnostics() {
+  return {
+    platform: Capacitor.getPlatform(),
+    native: Capacitor.isNativePlatform(),
+    pluginHeader: Capacitor.isPluginAvailable('BluetoothLe'),
+    webBluetooth:
+      typeof navigator !== 'undefined' &&
+      !!(navigator as { bluetooth?: unknown }).bluetooth,
+  }
+}
+
+/** A missing native implementation reads very differently from "the strap is
+ * off" — say which so the fix is obvious. */
+function isMissingImplementation(e: unknown): boolean {
+  const msg = String((e as Error)?.message ?? e)
+  return /unimplemented|not implemented|no web implementation|is not a function|undefined/i.test(
+    msg,
   )
 }
 
@@ -205,11 +236,12 @@ export async function connectHr(): Promise<boolean> {
   } catch (e) {
     set({
       status: 'idle',
-      error: canAutoReconnect()
-        ? 'Couldn’t reach the strap. Is it on and worn?'
-        : 'Reconnect the strap to keep reading it in the browser.',
+      error: isMissingImplementation(e)
+        ? 'This build of the app has no Bluetooth support — install the latest APK from the dev-latest release.'
+        : canAutoReconnect()
+          ? 'Couldn’t reach the strap. Is it on and worn?'
+          : 'Reconnect the strap to keep reading it in the browser.',
     })
-    void e
     return false
   }
 }
@@ -235,9 +267,11 @@ export async function pairHrMonitor(): Promise<boolean> {
     set({
       status: 'idle',
       // The picker's own cancel isn't worth an error banner.
-      error: /cancel|user|abort/i.test(msg)
+      error: /cancel|user|abort|denied|chooser/i.test(msg)
         ? null
-        : 'Couldn’t pair. Make sure the strap is worn and not connected to another app.',
+        : isMissingImplementation(e)
+          ? 'This build of the app has no Bluetooth support — install the latest APK from the dev-latest release.'
+          : 'Couldn’t pair. Make sure the strap is worn and not connected to another app.',
     })
     return false
   }

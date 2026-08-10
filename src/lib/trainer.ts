@@ -6,6 +6,8 @@
 // Anthropic's SSE into text) and JSON on failure, so the content-type tells the
 // two apart.
 
+import { supabase } from './supabase'
+
 export interface TrainerTurn {
   role: 'user' | 'assistant'
   content: string
@@ -53,9 +55,19 @@ export async function askTrainer(opts: {
   /** Called with the accumulated display text on every chunk. */
   onText: (text: string) => void
 }): Promise<TrainerReply> {
+  // The endpoint spends real money per call, so it only answers signed-in
+  // users. Every caller is already behind the app's auth gate, so this is just
+  // forwarding the session we have.
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  if (!token) throw new Error('Sign in to use the trainer.')
+
   const res = await fetch('/api/trainer', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({
       messages: opts.messages,
       context: opts.context,

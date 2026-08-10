@@ -14,13 +14,20 @@
 
 interface Env {
   ANTHROPIC_API_KEY?: string
+  // Already set on both Pages projects for the browser build. The VITE_ prefix
+  // is only a Vite convention for client-side inlining — Functions read the same
+  // variables at runtime, so gating on a Supabase session costs no new secrets.
+  VITE_SUPABASE_URL?: string
+  VITE_SUPABASE_ANON_KEY?: string
 }
 
 const MODEL = 'claude-haiku-4-5'
 
-// Roughly a page of text. Chat answers should be short; this is a ceiling, not
-// a target (the prompt asks for brevity).
-const MAX_TOKENS = 1200
+// A ceiling, NOT a target — the model can't see it, so lowering it truncates
+// mid-sentence rather than producing a shorter answer. Length is steered by the
+// prompt (~120 tokens); this is only a backstop against a runaway reply, set
+// with enough headroom that a normal answer never hits it.
+const MAX_TOKENS = 700
 
 // Input caps. The client already trims, but this endpoint is the trust boundary
 // — a runaway history is what turns a $0.003 question into a $0.05 one.
@@ -42,7 +49,8 @@ const SYSTEM = `You are the training coach inside FitLog, a personal workout and
 
 How to answer:
 - Be direct and specific. Open with the answer, then the reasoning. No preamble, no restating the question.
-- Keep it short: a few sentences for a simple question, and at most a couple of short paragraphs or a tight list for a complex one. This is read on a phone.
+- Keep it SHORT. Aim for about 80 words — three or four sentences. A simple question deserves one or two. Only go past that when the question genuinely cannot be answered otherwise, and never by much. This is read on a phone, one-handed.
+- Do not end with a follow-up question or an offer to help further. Answer what was asked and stop.
 - Ground advice in their actual numbers whenever the data supports it — name the lift, the weight, the date, the trend. "Your squat has sat at 225 for three sessions" beats "progress can stall".
 - If the data needed to answer well isn't there, say so plainly and give the general answer instead. Never invent sessions, weights, or dates that are not in the snapshot.
 - Give a concrete next action: a weight, a rep range, a number of sets, a change to make next session.
@@ -195,6 +203,43 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
 }
 
 /**
+ * Is the caller a signed-in FitLog user? Every real request comes from behind
+ * the app's auth gate, so this costs nothing in normal use — it exists because
+ * the endpoint is otherwise open to anyone who learns the URL, and each call
+ * spends real money on the Anthropic account.
+ *
+ * Validates against Supabase rather than checking the signature locally: it is
+ * a single extra round trip, but it needs no JWT secret and it honours expiry
+ * and sign-out for free.
+ *
+ * Returns a reason string on failure so a misconfigured deploy is obvious
+ * instead of looking like "you're logged out".
+ */
+async function authFailure(env: Env, request: Request): Promise<string | null> {
+  const url = env.VITE_SUPABASE_URL
+  const anon = env.VITE_SUPABASE_ANON_KEY
+  // Fail CLOSED: an unconfigured gate that waves everyone through is worse than
+  // a broken feature, and this message says exactly what to fix.
+  if (!url || !anon)
+    return 'The trainer cannot verify sign-ins (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not readable by this Pages project).'
+
+  const header = request.headers.get('authorization') ?? ''
+  const token = /^bearer /i.test(header) ? header.slice(7).trim() : ''
+  if (!token) return 'Sign in to use the trainer.'
+
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, '')}/auth/v1/user`, {
+      headers: { authorization: `Bearer ${token}`, apikey: anon },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!res.ok) return 'Your session has expired. Sign in again.'
+  } catch {
+    return 'Could not verify your session. Check your connection and try again.'
+  }
+  return null
+}
+
+/**
  * Turn an upstream failure into a message that says what to DO about it. This
  * is a single-user app, so a diagnostic beats a polite one — a bare "the
  * trainer is unavailable" sent us hunting through app code once when the real
@@ -219,6 +264,10 @@ export const onRequestPost = async (context: {
   // Trim: a trailing newline or space survives a copy-paste into the Cloudflare
   // secrets field and makes an otherwise-valid key fail as authentication_error,
   // which is indistinguishable from a revoked key until you look at the bytes.
+  // Gate first: never spend a token on an unauthenticated caller.
+  const denied = await authFailure(env, request)
+  if (denied) return json({ error: denied }, 401)
+
   const raw = env.ANTHROPIC_API_KEY ?? ''
   const key = raw.trim()
   if (!key)

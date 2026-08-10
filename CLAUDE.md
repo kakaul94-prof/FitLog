@@ -12,7 +12,7 @@ Pointers only; the mechanics live in **Domain logic** / **Data model** below.
 - **Food & diary:** barcode scan (`barcode.ts` — native BarcodeDetector → Open Food Facts + USDA Branded, names source & flags disagreements), AI meal-photo scan (`scanPlate.ts`/`ScanMealPage`), nutrition-label OCR (`scanLabel.ts`), USDA search import (`usda.ts`/`UsdaSearchPage`), recipes + web-URL import (`importRecipe.ts`), reusable meals, daily supplements (`useDailySupplements`), food streak.
 - **Nutrition insight:** adaptive/data-driven TDEE from logged intake + weigh-ins (`useAdaptiveTDEE` + `estimateAdaptiveTDEE`), 31-micronutrient + macro tracking, non-retroactive calorie-goal history, nutrition/micronutrient trend charts (`features/insights`).
 - **Cardio:** MET / distance / manual logging, GPS distance recorder (`geo.ts`/`geoWatch.ts`/`ExerciseTrackPage`), HR zones 1–5 + time-in-zone (`zones.ts`, `hrZones` in `calc.ts`), distance & zone trends.
-- **Strength:** workouts/sets/supersets, routines + `/program` rotation, est 1RM + progression, per-exercise form-video upload (`useFormVideos`), exercise notes, custom exercises, muscle-volume + body heatmap (`MuscleVolumePage`/`BodyHeatmap`), muscle & strength goals, workout calendar, rest timer (native notification).
+- **Strength:** workouts/sets/supersets, routines + `/program` rotation, est 1RM + progression, per-exercise form-video upload (`useFormVideos`), exercise notes, custom exercises, muscle-volume + body heatmap (`MuscleVolumePage`/`BodyHeatmap`), muscle & strength goals, workout calendar, rest timer (native notification), **Ask-a-trainer chat** (`/lift/trainer` — streaming Claude Haiku via `functions/api/trainer.ts`, grounded in a snapshot of your own log built by `trainerContext.ts` plus saved trainer memory).
 - **Body:** weight + body measurements, BMI.
 - **Platform:** installable PWA, Capacitor Android (native rest-timer, meal-reminder + streak-nudge notifications (`reminders.ts`), read-only Health Connect passive steps + smart-scale weight sync (`useWeightSync`/`weightSync.ts`), biometric app-lock (`biometric.ts`/`LockGate` + native `BiometricAuthPlugin.kt`), session auto-refresh across backgrounding (`authRefresh.ts`)), offline read, data export/import, More → Patch Notes.
 
@@ -52,7 +52,7 @@ Pointers only; the mechanics live in **Domain logic** / **Data model** below.
 
 ## Data model (all RLS owner-only; `user_id` defaults to `auth.uid()`)
 
-- `profiles` (1/user, auto-created on signup): sex, birth_date, height_cm, activity_level, goal_rate_lb_per_week, calorie_goal_mode + manual_calorie_goal, `macro_targets` jsonb, eat_back_exercise, units.
+- `profiles` (1/user, auto-created on signup): sex, birth_date, height_cm, activity_level, goal_rate_lb_per_week, calorie_goal_mode + manual_calorie_goal, `macro_targets` jsonb, eat_back_exercise, units, `trainer_memory` jsonb (facts the Ask chat carries between sessions).
 - `foods` — unified library (copy-on-save). `nutrients` jsonb = **per serving**, keyed by codes in nutrients.ts. **Recipes are foods** (`source='recipe'` + `recipe_servings`); ingredients in `recipe_ingredients`; per-serving nutrients recomputed + stored on the food.
 - `diary_entries` — logged food; **snapshots** nutrients (per serving) + servings so past days don't change.
 - `exercise_entries` — cardio. Built-in activities: `src/data/activities.ts` (MET); custom: `custom_activities`.

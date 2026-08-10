@@ -85,6 +85,15 @@ export interface GoalHistoryEntry {
   goal: number
 }
 
+// One durable fact the Ask-a-trainer chat carries between sessions ("left knee
+// gets cranky above 80% on squats"). Stored on the profile, editable by hand,
+// and proposed by the trainer itself after a conversation.
+export interface TrainerFact {
+  id: string
+  text: string
+  created_at: string
+}
+
 export interface Profile {
   id: string
   sex: Sex | null
@@ -129,6 +138,9 @@ export interface Profile {
   // chips, today's plan line, the last-session warning and the coach card are
   // all hidden; saved feel/pain rows stay in the database either way.
   coach_enabled: boolean
+  // Facts the Ask-a-trainer chat remembers between sessions (see TrainerFact).
+  // Empty = the trainer sees only your live training stats.
+  trainer_memory: TrainerFact[]
   created_at: string
   updated_at: string
 }

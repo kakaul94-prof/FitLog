@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus,
+  Brain,
   Dumbbell,
   Play,
   Pencil,
@@ -91,9 +92,19 @@ export function StrengthPage() {
       <PageHeader
         title="Exercise"
         action={
-          <Button size="icon" onClick={() => setMenuOpen(true)} aria-label="Add">
-            <Plus className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => nav('/lift/trainer')}
+              aria-label="Ask a trainer"
+            >
+              <Brain className="h-5 w-5" />
+            </Button>
+            <Button size="icon" onClick={() => setMenuOpen(true)} aria-label="Add">
+              <Plus className="h-5 w-5" />
+            </Button>
+          </div>
         }
       />
       <div className="flex flex-1 flex-col px-4 pb-2">

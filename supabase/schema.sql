@@ -69,6 +69,8 @@ alter table public.profiles add column if not exists cardio_goal jsonb;
 alter table public.profiles add column if not exists step_goal integer;
 -- Next-set coach opt-in (see migration_coach_enabled.sql). Off by default.
 alter table public.profiles add column if not exists coach_enabled boolean not null default false;
+-- Trainer chat memory (see migration_trainer_memory.sql). [] = nothing saved.
+alter table public.profiles add column if not exists trainer_memory jsonb not null default '[]'::jsonb;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles

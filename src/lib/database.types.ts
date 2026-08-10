@@ -333,6 +333,18 @@ export interface CustomActivity {
   created_at: string
 }
 
+/**
+ * A recorded heart-rate curve, stored on the entry as jsonb. `bpm` holds one
+ * mean reading per `interval_s` seconds of the session (0 = the strap dropped
+ * out there); the math that builds and reads it lives in lib/hr.ts.
+ */
+export interface HrSamples {
+  /** ISO timestamp the recording started. */
+  start: string
+  interval_s: number
+  bpm: number[]
+}
+
 export interface ExerciseEntry {
   id: string
   user_id: string
@@ -343,8 +355,16 @@ export interface ExerciseEntry {
   distance_mi: number | null
   calories: number
   // Cardio HR zone (1–5) + the avg heart rate it was derived from; both optional.
+  // A strap-recorded session fills both in from the recording (zone = whichever
+  // zone it spent longest in), so everything reading them keeps working.
   avg_hr: number | null
   zone: number | null
+  // Recorded chest-strap session (migration_hr_session.sql); null when the entry
+  // was logged by hand. Shape + math live in lib/hr.ts.
+  max_hr: number | null
+  hr_samples: HrSamples | null
+  /** Seconds spent in zones 1–5, index 0 = zone 1. */
+  zone_seconds: number[] | null
   // Weight carried (ruck plate/vest/pack), lb. Counts as extra body mass in the
   // calorie estimate; null = unloaded.
   load_lb: number | null

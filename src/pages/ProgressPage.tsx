@@ -40,6 +40,7 @@ import { NUTRIENT_SYMPTOMS } from '@/data/nutrientSymptoms'
 import { NUTRIENTS, NUTRIENT_BY_KEY, formatNutrient } from '@/lib/nutrients'
 import type { NutrientKey } from '@/lib/database.types'
 import { useCardioZoneTrends } from '@/features/insights/useCardioZoneTrends'
+import { useHrTrends } from '@/features/insights/useHrTrends'
 import { useDistanceTrends } from '@/features/insights/useDistanceTrends'
 import { ZoneBars } from '@/components/ZoneBars'
 import { DistanceBars } from '@/components/DistanceBars'
@@ -182,7 +183,96 @@ function CardioView() {
       </Card>
 
       <PaceTrendCard />
+
+      <HrTrendCard />
     </div>
+  )
+}
+
+// Heart rate per session. Every entry with an avg HR is a point; the peak line
+// needs a strap recording, so it only appears once there are a couple of those.
+function HrTrendCard() {
+  const { data, isLoading } = useHrTrends()
+  const pts = data?.points ?? []
+  const recorded = pts.filter((p) => p.max != null)
+  // LineChartSvg has no concept of a hole in a series, so the peak line is
+  // drawn over recorded sessions only rather than plotting nulls as zeroes.
+  const withPeak = recorded.length >= 2
+  const rows: Record<string, string | number>[] = withPeak
+    ? recorded.map((p) => ({ date: p.date, avg: p.avg, max: p.max! }))
+    : pts.map((p) => ({ date: p.date, avg: p.avg }))
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-baseline justify-between">
+          <CardTitle className="text-base">Heart rate</CardTitle>
+          <span className="text-xs text-muted-foreground">last 90 days</span>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : rows.length < 2 ? (
+          <p className="text-sm text-muted-foreground">
+            Not enough data yet. Record a couple of sessions with a chest strap
+            — or enter an average HR when you log cardio — and the trend appears
+            here.
+          </p>
+        ) : (
+          <>
+            <div className="flex gap-6">
+              <div>
+                <div className="text-2xl font-bold tabular-nums">
+                  {data?.avg ?? '—'}
+                </div>
+                <div className="text-xs text-muted-foreground">Avg bpm</div>
+              </div>
+              {data?.peak != null && (
+                <div>
+                  <div
+                    className="text-2xl font-bold tabular-nums"
+                    style={{ color: zoneColor(5) }}
+                  >
+                    {data.peak}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Peak bpm</div>
+                </div>
+              )}
+            </div>
+            <LineChartSvg
+              data={rows}
+              xKey="date"
+              series={[
+                {
+                  key: 'avg',
+                  color: zoneColor(2),
+                  strokeWidth: 2,
+                  dotRadius: 3,
+                  name: 'Avg',
+                },
+                ...(withPeak
+                  ? [
+                      {
+                        key: 'max',
+                        color: zoneColor(5),
+                        strokeWidth: 2,
+                        dotRadius: 3,
+                        name: 'Max',
+                      },
+                    ]
+                  : []),
+              ]}
+              height={180}
+            />
+            <p className="text-xs text-muted-foreground">
+              {withPeak
+                ? `Avg and peak per recorded session (${recorded.length} of ${pts.length} came off a strap).`
+                : 'Average HR per session. Record with a chest strap to add session peaks.'}
+            </p>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

@@ -213,6 +213,10 @@ alter table public.exercise_entries add column if not exists load_lb numeric;
 -- Machine resistance level (added later; see migration_cardio_level.sql).
 alter table public.exercise_entries add column if not exists level smallint;
 alter table public.exercise_entries add column if not exists level_max smallint;
+-- Recorded chest-strap session (added later; see migration_hr_session.sql).
+alter table public.exercise_entries add column if not exists max_hr smallint;
+alter table public.exercise_entries add column if not exists hr_samples jsonb;
+alter table public.exercise_entries add column if not exists zone_seconds int[];
 alter table public.exercise_entries drop constraint if exists exercise_entries_zone_check;
 alter table public.exercise_entries add constraint exercise_entries_zone_check
   check (zone is null or zone between 1 and 5);

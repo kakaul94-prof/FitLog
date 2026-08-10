@@ -15,6 +15,7 @@ import {
   Volume2,
   Bell,
   AlarmClock,
+  HeartPulse,
   Fingerprint,
   Sparkles,
 } from 'lucide-react'
@@ -240,6 +241,19 @@ export function MorePage() {
         </Card>
 
         <Card className="divide-y divide-border overflow-hidden">
+          <Link
+            to="/heart-rate"
+            className="flex items-center gap-3 p-4 active:bg-accent"
+          >
+            <HeartPulse className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Heart rate monitor</p>
+              <p className="text-xs text-muted-foreground">
+                Pair a chest strap for live HR + zones
+              </p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
           <Link
             to="/reminders"
             className="flex items-center gap-3 p-4 active:bg-accent"

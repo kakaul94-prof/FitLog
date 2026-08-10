@@ -1,13 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, MapPin, Pause, Play, Square } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  ChevronLeft,
+  HeartPulse,
+  MapPin,
+  Pause,
+  Play,
+  Square,
+} from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
-import { RECORDER_ACTIVITIES } from '@/data/activities'
+import { ACTIVITIES, RECORDER_ACTIVITIES } from '@/data/activities'
 import { useLatestWeight } from '@/features/measurements/useMeasurements'
+import { useProfile } from '@/features/profile/useProfile'
+import { useHrMonitor } from '@/features/hr/useHrMonitor'
 import {
   startGeoWatch,
   openLocationSettings,
@@ -21,12 +30,40 @@ import {
   paceSecPerMile,
   type TrackState,
 } from '@/lib/geo'
-import { paceAwareCalories } from '@/lib/calc'
+import {
+  paceAwareCalories,
+  resolveHrZones,
+  resolveMaxHr,
+  resolveZoneForHr,
+} from '@/lib/calc'
+import {
+  addHrSample,
+  dominantZone,
+  downsampleBpm,
+  newHrTrack,
+  summarizeHr,
+  HR_SAMPLE_INTERVAL_S,
+} from '@/lib/hr'
+import { stashHrSession } from '@/lib/hrHandoff'
+import {
+  connectHr,
+  disconnectHr,
+  hrAutoConnect,
+  hrSupported,
+  pairHrMonitor,
+  savedHrDevice,
+} from '@/lib/hrWatch'
+import { zoneColor } from '@/data/zones'
 import { todayISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
 
 const DIST_ACTS = RECORDER_ACTIVITIES
+const ALL_ACTS = [...ACTIVITIES].sort((a, b) => a.name.localeCompare(b.name))
 const DEFAULT_ACT = 'walking'
+
+/** GPS measures a route; HR-only is a stopwatch for machines and classes, where
+ * the strap is the only thing worth measuring. */
+type Mode = 'gps' | 'hr'
 
 function fmtClock(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -48,21 +85,37 @@ function fmtPace(sec: number): string {
 export function ExerciseTrackPage() {
   const nav = useNavigate()
   const { data: weight } = useLatestWeight()
+  const { data: profile } = useProfile()
   const w = weight ?? null
 
   // ?activity=<key> preselects the activity (programmed cardio deep-links here).
   const [params] = useSearchParams()
   const requestedAct = params.get('activity')
+  // A requested activity GPS can't measure (elliptical, rower) opens in HR mode
+  // rather than silently falling back to walking.
+  const requestedIsDist =
+    !!requestedAct && DIST_ACTS.some((a) => a.key === requestedAct)
+  const requestedIsAny =
+    !!requestedAct && ALL_ACTS.some((a) => a.key === requestedAct)
   const [phase, setPhase] = useState<'idle' | 'recording' | 'paused'>('idle')
+  const [mode, setMode] = useState<Mode>(
+    requestedIsAny && !requestedIsDist ? 'hr' : 'gps',
+  )
   const [actKey, setActKey] = useState(
-    requestedAct && DIST_ACTS.some((a) => a.key === requestedAct)
-      ? requestedAct
-      : DEFAULT_ACT,
+    requestedIsAny ? requestedAct! : DEFAULT_ACT,
   )
   const [meters, setMeters] = useState(0)
   const [movingMs, setMovingMs] = useState(0)
   const [elapsedMs, setElapsedMs] = useState(0)
   const [err, setErr] = useState<string | null>(null)
+
+  const hr = useHrMonitor()
+  const [paired, setPaired] = useState(() => !!savedHrDevice())
+  const hrTrackRef = useRef(newHrTrack())
+  const hrStartRef = useRef(0)
+  /** Whether this recording actually saw a beat — a paired-but-dead strap
+   * shouldn't stamp an empty curve onto the entry. */
+  const hrSeenRef = useRef(false)
 
   const trackRef = useRef<TrackState>(newTrack())
   const watcherRef = useRef<GeoWatcher | null>(null)
@@ -85,7 +138,17 @@ export function ExerciseTrackPage() {
     return Math.max(0, Date.now() - startRef.current - paused)
   }
 
-  const activity = DIST_ACTS.find((a) => a.key === actKey) ?? DIST_ACTS[0]
+  const acts = mode === 'gps' ? DIST_ACTS : ALL_ACTS
+  const activity = acts.find((a) => a.key === actKey) ?? acts[0]
+
+  const maxHr = resolveMaxHr(profile)
+  const restingHr = profile?.resting_hr ?? null
+  const zones = resolveHrZones(profile)
+  const liveZone = hr.bpm ? resolveZoneForHr(hr.bpm, profile) : null
+  const liveColor = liveZone != null ? zoneColor(liveZone) : undefined
+  const hrSummary = summarizeHr(hrTrackRef.current.bpm, maxHr, restingHr)
+  /** True once the strap has fed this recording at least one beat. */
+  const hrLive = hr.status === 'connected' && hr.bpm != null && !hr.stale
 
   const requestWakeLock = () => {
     // Best-effort: keeps the screen on for the browser/foreground fallback. The
@@ -107,11 +170,19 @@ export function ExerciseTrackPage() {
     wakeRef.current = null
   }
 
+  /** Set when this page opened the strap connection, so leaving here doesn't
+   * hang up on a connection the settings screen was holding. */
+  const hrOwnedRef = useRef(false)
+
   const teardown = () => {
     recordingRef.current = false
     watcherRef.current?.stop()
     watcherRef.current = null
     releaseWakeLock()
+    if (hrOwnedRef.current) {
+      hrOwnedRef.current = false
+      void disconnectHr()
+    }
   }
 
   // Live clock while recording. Paused ticks aren't scheduled at all, so the
@@ -125,9 +196,33 @@ export function ExerciseTrackPage() {
   // Stop the watcher if the page unmounts mid-recording.
   useEffect(() => () => teardown(), [])
 
+  /**
+   * Bank each strap reading against the session clock. Keyed on `hr.at` so one
+   * reading records once; paused seconds never advance activeMs(), so a pause
+   * leaves no gap in the curve rather than a hole.
+   */
+  useEffect(() => {
+    if (phase !== 'recording' || pausedAtRef.current) return
+    if (!hr.bpm || !hr.at) return
+    addHrSample(hrTrackRef.current, hr.bpm, activeMs() / 1000)
+    hrSeenRef.current = true
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hr.at, phase])
+
+  /** Reach for a paired strap. Never blocks the recording — a session that
+   * starts without HR is still a session. */
+  const attachStrap = async () => {
+    if (!paired || !hrAutoConnect() || hr.status !== 'idle') return
+    // Only "ours" to hang up on if we're the one who got it connected.
+    hrOwnedRef.current = await connectHr()
+  }
+
   const start = async () => {
     setErr(null)
     trackRef.current = newTrack()
+    hrTrackRef.current = newHrTrack()
+    hrSeenRef.current = false
+    hrStartRef.current = Date.now()
     setMeters(0)
     setMovingMs(0)
     setElapsedMs(0)
@@ -137,6 +232,9 @@ export function ExerciseTrackPage() {
     recordingRef.current = true
     setPhase('recording')
     requestWakeLock()
+    void attachStrap()
+    // HR-only mode is a stopwatch — nothing to watch but the strap.
+    if (mode === 'hr') return
     try {
       const watcher = await startGeoWatch({
         onFix: (fix) => {
@@ -178,27 +276,55 @@ export function ExerciseTrackPage() {
 
   const stopAndReview = () => {
     const durationMin = Math.max(0, Math.round(activeMs() / 60000))
+    const gps = mode === 'gps'
     teardown()
-    const distanceMi = metersToMiles(trackRef.current.meters)
+    const distanceMi = gps ? metersToMiles(trackRef.current.meters) : 0
     const movingMin = trackRef.current.movingMs / 60000
-    const kcal = w ? paceAwareCalories(distanceMi, movingMin, w) : 0
+    const kcal = gps && w ? paceAwareCalories(distanceMi, movingMin, w) : 0
 
     const p = new URLSearchParams()
     p.set('name', activity.name)
     p.set('met', String(activity.met))
-    p.set('distanceBased', '1')
-    if (distanceMi >= 0.01) p.set('dist', distanceMi.toFixed(2))
+    if (gps) {
+      p.set('distanceBased', '1')
+      if (distanceMi >= 0.01) p.set('dist', distanceMi.toFixed(2))
+      if (kcal > 0) p.set('kcal', String(kcal))
+    }
     if (durationMin > 0) p.set('dur', String(durationMin))
-    if (kcal > 0) p.set('kcal', String(kcal))
     p.set('date', todayISO())
+
+    // Hand the curve over out-of-band — it's far too big for the query string.
+    const s = summarizeHr(hrTrackRef.current.bpm, maxHr, restingHr)
+    if (hrSeenRef.current && s.avg != null) {
+      stashHrSession({
+        samples: {
+          start: new Date(hrStartRef.current).toISOString(),
+          interval_s: HR_SAMPLE_INTERVAL_S,
+          bpm: downsampleBpm(hrTrackRef.current.bpm),
+        },
+        avg: s.avg,
+        max: s.max,
+        zoneSeconds: s.zoneSeconds,
+        zone: dominantZone(s.zoneSeconds),
+      })
+      p.set('hr', '1')
+    }
     // replace: the recorder shouldn't sit in the back stack behind the review.
     nav(`/exercise/add?${p.toString()}`, { replace: true })
   }
 
   const discard = () => {
-    if (phase !== 'idle' && !confirm('Discard this walk/run?')) return
+    if (phase !== 'idle' && !confirm('Discard this session?')) return
     teardown()
     nav(-1)
+  }
+
+  const switchMode = (m: Mode) => {
+    setMode(m)
+    // Every GPS activity is in the full list, but not the reverse — coming back
+    // to GPS from "Rowing machine" needs a valid selection again.
+    if (m === 'gps' && !DIST_ACTS.some((a) => a.key === actKey))
+      setActKey(DEFAULT_ACT)
   }
 
   const distanceMi = metersToMiles(meters)
@@ -209,7 +335,9 @@ export function ExerciseTrackPage() {
       <PageHeader
         title={
           phase === 'idle'
-            ? 'Record a walk/run'
+            ? mode === 'gps'
+              ? 'Record a walk/run'
+              : 'Record a session'
             : paused
               ? 'Paused'
               : 'Recording'
@@ -226,6 +354,28 @@ export function ExerciseTrackPage() {
           <>
             <Card>
               <CardContent className="space-y-3 p-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      { key: 'gps' as const, label: 'GPS route' },
+                      { key: 'hr' as const, label: 'Heart rate' },
+                    ] satisfies { key: Mode; label: string }[]
+                  ).map((m) => (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => switchMode(m.key)}
+                      className={cn(
+                        'rounded-lg border py-2 text-sm font-medium transition-colors',
+                        mode === m.key
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-transparent bg-muted text-muted-foreground',
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="act">Activity</Label>
                   <Select
@@ -233,21 +383,31 @@ export function ExerciseTrackPage() {
                     value={actKey}
                     onChange={(e) => setActKey(e.target.value)}
                   >
-                    {DIST_ACTS.map((a) => (
+                    {acts.map((a) => (
                       <option key={a.key} value={a.key}>
                         {a.name}
                       </option>
                     ))}
                   </Select>
                 </div>
-                <div className="flex items-start gap-2 rounded-lg bg-primary/10 p-3 text-sm text-foreground">
-                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <span>
-                    Uses GPS to measure your distance. Calories scale to your
-                    actual pace. You can edit everything before saving.
-                  </span>
-                </div>
-                {!canBackgroundGeo() && (
+                {mode === 'gps' ? (
+                  <div className="flex items-start gap-2 rounded-lg bg-primary/10 p-3 text-sm text-foreground">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span>
+                      Uses GPS to measure your distance. Calories scale to your
+                      actual pace. You can edit everything before saving.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-lg bg-primary/10 p-3 text-sm text-foreground">
+                    <HeartPulse className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span>
+                      A stopwatch plus your strap — for machines and classes
+                      where the effort matters and the distance doesn’t.
+                    </span>
+                  </div>
+                )}
+                {mode === 'gps' && !canBackgroundGeo() && (
                   <p className="text-xs text-muted-foreground">
                     Screen-off recording needs the installed app. In a browser
                     this tracks only while the screen stays on.
@@ -255,6 +415,49 @@ export function ExerciseTrackPage() {
                 )}
               </CardContent>
             </Card>
+
+            {hrSupported() && (
+              <Card>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <HeartPulse
+                    className={cn(
+                      'h-5 w-5 shrink-0',
+                      hrLive ? 'text-primary' : 'text-muted-foreground',
+                    )}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {paired ? hr.deviceName : 'No strap paired'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {hrLive
+                        ? `${hr.bpm} bpm`
+                        : paired
+                          ? 'Connects when you start'
+                          : 'Record heart rate, zones and a peak'}
+                    </p>
+                  </div>
+                  {paired ? (
+                    <Link
+                      to="/heart-rate"
+                      className="shrink-0 text-sm font-medium text-primary"
+                    >
+                      Manage
+                    </Link>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        void pairHrMonitor().then((ok) => ok && setPaired(true))
+                      }
+                    >
+                      Pair
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {w == null && (
               <p className="text-xs text-warning">
@@ -291,37 +494,124 @@ export function ExerciseTrackPage() {
                   {activity.name} · {paused ? 'Paused' : 'Recording'}
                 </div>
 
+                {(hr.status !== 'idle' || hrSeenRef.current) && (
+                  <div
+                    className="rounded-lg border p-3 text-center"
+                    style={
+                      liveColor
+                        ? {
+                            borderColor: liveColor,
+                            background: `color-mix(in srgb, ${liveColor} 8%, transparent)`,
+                          }
+                        : undefined
+                    }
+                  >
+                    <div className="flex items-baseline justify-center gap-2">
+                      <HeartPulse
+                        className={cn(
+                          'h-5 w-5 self-center',
+                          !hrLive && 'opacity-40',
+                        )}
+                        style={liveColor ? { color: liveColor } : undefined}
+                      />
+                      <span
+                        className={cn(
+                          'text-4xl font-bold tabular-nums leading-none',
+                          !hrLive && 'opacity-40',
+                        )}
+                        style={liveColor ? { color: liveColor } : undefined}
+                      >
+                        {hr.bpm ?? '—'}
+                      </span>
+                      <span className="text-sm font-semibold text-muted-foreground">
+                        bpm
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {hr.status === 'connecting'
+                        ? 'Connecting to your strap…'
+                        : hr.status === 'idle'
+                          ? 'Strap disconnected'
+                          : hr.stale
+                            ? 'No signal — check the strap'
+                            : liveZone != null && zones
+                              ? `Zone ${liveZone} · ${zones[liveZone - 1].name}`
+                              : 'Reading'}
+                    </p>
+                  </div>
+                )}
+
                 <div
                   className={cn(
                     'flex items-baseline justify-center gap-2',
                     paused && 'opacity-55',
                   )}
                 >
-                  <span className="text-6xl font-bold tabular-nums tracking-tight">
-                    {distanceMi.toFixed(2)}
-                  </span>
-                  <span className="text-lg font-semibold text-muted-foreground">
-                    mi
-                  </span>
+                  {mode === 'gps' ? (
+                    <>
+                      <span className="text-6xl font-bold tabular-nums tracking-tight">
+                        {distanceMi.toFixed(2)}
+                      </span>
+                      <span className="text-lg font-semibold text-muted-foreground">
+                        mi
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-6xl font-bold tabular-nums tracking-tight">
+                      {fmtClock(elapsedMs)}
+                    </span>
+                  )}
                 </div>
 
                 <div
                   className={cn('flex items-stretch', paused && 'opacity-55')}
                 >
-                  <div className="flex-1 text-center">
-                    <div className="text-xl font-semibold tabular-nums">
-                      {fmtClock(elapsedMs)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Time</div>
-                  </div>
-                  <div className="w-px bg-border" />
-                  <div className="flex-1 text-center">
-                    <div className="text-xl font-semibold tabular-nums">
-                      {fmtPace(paceSecPerMile(meters, movingMs))}
-                    </div>
-                    <div className="text-xs text-muted-foreground">Pace /mi</div>
-                  </div>
+                  {mode === 'gps' ? (
+                    <>
+                      <div className="flex-1 text-center">
+                        <div className="text-xl font-semibold tabular-nums">
+                          {fmtClock(elapsedMs)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">Time</div>
+                      </div>
+                      <div className="w-px bg-border" />
+                      <div className="flex-1 text-center">
+                        <div className="text-xl font-semibold tabular-nums">
+                          {fmtPace(paceSecPerMile(meters, movingMs))}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Pace /mi
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex-1 text-center">
+                        <div className="text-xl font-semibold tabular-nums">
+                          {hrSummary.avg ?? '—'}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Avg HR
+                        </div>
+                      </div>
+                      <div className="w-px bg-border" />
+                      <div className="flex-1 text-center">
+                        <div className="text-xl font-semibold tabular-nums">
+                          {hrSummary.max ?? '—'}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Max HR
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
+
+                {mode === 'gps' && hrSummary.avg != null && (
+                  <p className="text-center text-xs text-muted-foreground">
+                    Avg {hrSummary.avg} · Max {hrSummary.max} bpm
+                  </p>
+                )}
               </CardContent>
             </Card>
 

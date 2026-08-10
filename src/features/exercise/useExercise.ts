@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { ExerciseEntry } from '@/lib/database.types'
+import type { ExerciseEntry, HrSamples } from '@/lib/database.types'
 
 export function useExerciseEntries(date: string) {
   return useQuery({
@@ -74,6 +74,9 @@ export interface NewExercise {
   calories: number
   avg_hr: number | null
   zone: number | null
+  max_hr: number | null
+  hr_samples: HrSamples | null
+  zone_seconds: number[] | null
 }
 
 /**

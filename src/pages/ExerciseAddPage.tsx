@@ -24,7 +24,7 @@ import {
   useLastCardioField,
   useRecentExerciseEntries,
 } from '@/features/exercise/useExercise'
-import type { ExerciseEntry } from '@/lib/database.types'
+import type { ExerciseEntry, HrSamples } from '@/lib/database.types'
 import {
   useCustomActivities,
   useCreateCustomActivity,
@@ -42,6 +42,11 @@ import {
   resolveZoneForHr,
   HR_ZONE_BANDS,
 } from '@/lib/calc'
+import { ageFromBirthDate } from '@/lib/calc'
+import { hrCalories, hasHrCurve } from '@/lib/hr'
+import { clearHrSession, peekHrSession } from '@/lib/hrHandoff'
+import { HrCurve } from '@/components/HrCurve'
+import { ZoneBars } from '@/components/ZoneBars'
 import { zoneColor } from '@/data/zones'
 import { useProfile } from '@/features/profile/useProfile'
 import { dateLabel, todayISO } from '@/lib/date'
@@ -127,6 +132,13 @@ export function ExerciseAddPage() {
   const [override, setOverride] = useState(pf.kcal ?? '')
   const [avgHr, setAvgHr] = useState('')
   const [zone, setZone] = useState<number | null>(null)
+  // A recorded strap session: the curve, its peak, and real time-in-zone. Null
+  // on a hand-logged entry, which keeps the plain avg-HR + zone-chip editor.
+  const [hrRec, setHrRec] = useState<{
+    samples: HrSamples
+    max: number | null
+    zoneSeconds: number[]
+  } | null>(null)
 
   // Activity search / custom-create UI
   const [search, setSearch] = useState('')
@@ -200,8 +212,32 @@ export function ExerciseAddPage() {
         ? distanceCalories(dist, movedLb, effMet)
         : metCalories(effMet, dur, movedLb)
   const calories = override ? parseInt(override) || 0 : est
+  // Keytel burn from the recorded average — offered, never forced, so nothing
+  // silently rewrites the diary's eat-back number.
+  const hrKcal = hrCalories(
+    parseInt(avgHr) || null,
+    dur || null,
+    movedLb || null,
+    ageFromBirthDate(profile?.birth_date ?? null),
+    profile?.sex ?? null,
+  )
 
   const date = entry?.entry_date ?? params.get('date') ?? todayISO()
+
+  // A session just handed over by the recorder (?hr=1). It rides in
+  // sessionStorage, not the query string — see lib/hrHandoff.ts.
+  const hrPrefilled = useRef(false)
+  useEffect(() => {
+    if (editing || params.get('hr') !== '1' || hrPrefilled.current) return
+    const h = peekHrSession()
+    if (!h) return
+    hrPrefilled.current = true
+    if (h.avg != null) setAvgHr(String(h.avg))
+    if (h.zone != null) setZone(h.zone)
+    setHrRec({ samples: h.samples, max: h.max, zoneSeconds: h.zoneSeconds })
+    setActiveTile('hr')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Prefill once when editing (after weight + custom activities have settled so
   // the name match and override-detection below are reliable).
@@ -239,6 +275,12 @@ export function ExerciseAddPage() {
     setLoad(entry.load_lb != null ? String(entry.load_lb) : '')
     setAvgHr(entry.avg_hr != null ? String(entry.avg_hr) : '')
     setZone(entry.zone ?? null)
+    if (hasHrCurve(entry.hr_samples))
+      setHrRec({
+        samples: entry.hr_samples!,
+        max: entry.max_hr,
+        zoneSeconds: entry.zone_seconds ?? [0, 0, 0, 0, 0],
+      })
     // Preserve a manual override (e.g. from a watch): if the stored calories
     // don't match the formula estimate, keep them as an override. The load has
     // to be in this estimate too, or every loaded entry reopens mislabelled.
@@ -337,6 +379,9 @@ export function ExerciseAddPage() {
     if (e.level_max != null) setLevelMax(String(e.level_max))
     setAvgHr(e.avg_hr != null ? String(e.avg_hr) : '')
     setZone(e.zone ?? null)
+    // Reusing an old session as a template copies its numbers, never its
+    // recorded curve — that trace belongs to the day it was measured.
+    setHrRec(null)
     // The last-used prefill effects must not clobber what this session recorded.
     loadPrefilledFor.current = e.name
     maxPrefilledFor.current = e.name
@@ -360,6 +405,10 @@ export function ExerciseAddPage() {
       calories: e.calories,
       avg_hr: e.avg_hr,
       zone: e.zone,
+      // The old session's trace isn't this session's — only the numbers copy.
+      max_hr: null,
+      hr_samples: null,
+      zone_seconds: null,
     })
     nav(-1)
   }
@@ -432,9 +481,13 @@ export function ExerciseAddPage() {
       calories,
       avg_hr: avgHr.trim() ? parseInt(avgHr) || null : null,
       zone,
+      max_hr: hrRec?.max ?? null,
+      hr_samples: hrRec?.samples ?? null,
+      zone_seconds: hrRec?.zoneSeconds ?? null,
     }
     if (editing && id) await update.mutateAsync({ id, ...payload })
     else await log.mutateAsync(payload)
+    clearHrSession()
     nav(-1)
   }
 
@@ -1021,6 +1074,72 @@ export function ExerciseAddPage() {
 
           <Card>
             <CardContent className="space-y-3 p-4">
+              {hrRec && (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Avg', value: avgHr || '—', color: undefined },
+                      {
+                        label: 'Max',
+                        value: hrRec.max ?? '—',
+                        color: zoneColor(5),
+                      },
+                      {
+                        label: 'Zone',
+                        value: zone != null ? `Z${zone}` : '—',
+                        color: zone != null ? zoneColor(zone) : undefined,
+                      },
+                    ].map((s) => (
+                      <div
+                        key={s.label}
+                        className="rounded-lg bg-muted p-2 text-center"
+                      >
+                        <div
+                          className="text-lg font-semibold tabular-nums"
+                          style={s.color ? { color: s.color } : undefined}
+                        >
+                          {s.value}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {s.label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <HrCurve bpm={hrRec.samples.bpm} zones={zones} />
+
+                  {hrRec.zoneSeconds.some((s) => s > 0) && (
+                    <ZoneBars
+                      data={hrRec.zoneSeconds.map((s, i) => ({
+                        zone: i + 1,
+                        // A zone you touched for 20 seconds still gets a bar, so
+                        // it shouldn't read "0 min" next to one.
+                        minutes: s > 0 ? Math.max(1, Math.round(s / 60)) : 0,
+                      }))}
+                    />
+                  )}
+
+                  {hrKcal != null && hrKcal !== calories && (
+                    <div className="flex items-center gap-3 rounded-lg bg-primary/10 p-3">
+                      <p className="flex-1 text-xs">
+                        From your heart rate this is about{' '}
+                        <span className="font-semibold">{hrKcal} kcal</span> —
+                        usually closer than the {distanceBased ? '' : 'MET '}
+                        estimate on a machine.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => setOverride(String(hrKcal))}
+                      >
+                        Use
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="avghr">Avg HR (bpm)</Label>
                 <Input

@@ -1,4 +1,7 @@
 ext {
+    // Plugin subprojects read this; keep it in step with the kotlin-gradle-plugin
+    // classpath in build.gradle, or their stdlib and the compiler disagree.
+    kotlin_version = '2.2.20'
     minSdkVersion = 26
     compileSdkVersion = 36
     targetSdkVersion = 36

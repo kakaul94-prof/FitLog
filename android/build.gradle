@@ -9,7 +9,11 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:8.13.0'
         classpath 'com.google.gms:google-services:4.4.4'
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21'
+        // Must match kotlin_version in variables.gradle. Every bundled Capacitor
+        // plugin now ships Kotlin built for 2.2.x; the 2.0.21 compiler died with
+        // an internal compiler error on bluetooth-le's source. Literal, not the
+        // variable — variables.gradle is applied after this buildscript block.
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files

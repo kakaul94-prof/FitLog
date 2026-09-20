@@ -71,8 +71,18 @@ import {
   type Suggestion,
 } from '@/lib/progression'
 import { EXERCISES, isHoldKind } from '@/data/exercises'
+import {
+  PAIN_SITES,
+  formatPain,
+  injuriesWarningFor,
+  injuryDay,
+  injuryLabel,
+  isPaired,
+  painLabel,
+} from '@/lib/rehab'
+import { useRehab } from '@/features/rehab/useRehab'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
-import { dateLabel, timeLabel } from '@/lib/date'
+import { dateLabel, timeLabel, todayISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import type {
   RoutineExercise,
@@ -941,6 +951,16 @@ function ExerciseCard({
     })
   }
 
+  // Open injuries that name this lift as aggravating. Deliberately NOT gated on
+  // coach_enabled like the progression warning above it: an injury you're
+  // actively rehabbing matters whether or not you've opted into the coach.
+  // Reads the cached profile, so this costs no round trip.
+  const { state: rehabState } = useRehab()
+  const rehabWarn = useMemo(
+    () => injuriesWarningFor(rehabState, ex.exercise_key),
+    [rehabState, ex.exercise_key],
+  )
+
   // Whole-exercise timing: Start stamps the beginning of the first set, Done
   // stamps the end (and rolls the exercise into "Completed"). Tapping the
   // filled Done again clears ended_at and reopens the exercise.
@@ -1054,6 +1074,20 @@ function ExerciseCard({
               stamp({ ended_at: done ? null : new Date().toISOString() })
             }
           />
+        )}
+        {!done && rehabWarn.length > 0 && (
+          <div className="mb-1.5 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>
+              {rehabWarn
+                .map(
+                  (i) =>
+                    `${injuryLabel(i)} is in rehab (day ${injuryDay(i, todayISO())})`,
+                )
+                .join('; ')}
+              {' — you flagged this lift as aggravating.'}
+            </span>
+          </div>
         )}
         {!done && plan?.warning && (
           <div
@@ -1270,17 +1304,6 @@ function CoachCard({
 
 // Pain-site options for the post-set feedback strip (stored lowercase on
 // workout_sets.pain; null = no pain).
-const PAIN_SITES = [
-  'shoulder',
-  'elbow',
-  'wrist',
-  'low back',
-  'hip',
-  'knee',
-  'other',
-]
-const painLabel = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-
 function SetRow({
   set,
   index,
@@ -1315,7 +1338,9 @@ function SetRow({
   const save = (patch: Partial<WorkoutSet>) =>
     update.mutate({ id: set.id, workout_id: workoutId, ...patch })
   // Pain chip tapped but no site picked yet — the site row is open.
-  const [painPick, setPainPick] = useState(false)
+  // null = closed, 'sites' = choosing a site, a site string = that paired
+  // joint is chosen and we're asking which side.
+  const [painPick, setPainPick] = useState<null | string>(null)
   // Answers already saved on this set stay hidden while the coach is off; the
   // rows themselves are untouched, so turning it back on brings them back.
   const coachEnabled = useCoachEnabled()
@@ -1455,8 +1480,8 @@ function SetRow({
               onClick={() => {
                 if (set.pain != null) {
                   save({ pain: null })
-                  setPainPick(false)
-                } else setPainPick((p) => !p)
+                  setPainPick(null)
+                } else setPainPick((p) => (p ? null : 'sites'))
               }}
               className={cn(
                 'rounded-full px-2.5 py-0.5 text-xs',
@@ -1468,20 +1493,50 @@ function SetRow({
               {set.pain != null ? `Pain · ${painLabel(set.pain)}` : 'Pain'}
             </button>
           </div>
-          {painPick && set.pain == null && (
+          {painPick === 'sites' && set.pain == null && (
             <div className="mt-1 flex flex-wrap gap-1">
               {PAIN_SITES.map((site) => (
                 <button
                   key={site}
                   onClick={() => {
-                    save({ pain: site })
-                    setPainPick(false)
+                    // Paired joints ask which side first — a side-less shoulder
+                    // flag can't be told apart from the other shoulder later.
+                    if (isPaired(site)) setPainPick(site)
+                    else {
+                      save({ pain: site })
+                      setPainPick(null)
+                    }
                   }}
                   className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs text-destructive"
                 >
                   {painLabel(site)}
                 </button>
               ))}
+            </div>
+          )}
+          {painPick != null && painPick !== 'sites' && set.pain == null && (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <span className="mr-0.5 text-[11px] text-muted-foreground">
+                {painLabel(painPick)}
+              </span>
+              {(['left', 'right', 'both'] as const).map((side) => (
+                <button
+                  key={side}
+                  onClick={() => {
+                    save({ pain: formatPain(painPick, side) })
+                    setPainPick(null)
+                  }}
+                  className="rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs capitalize text-destructive"
+                >
+                  {side}
+                </button>
+              ))}
+              <button
+                onClick={() => setPainPick('sites')}
+                className="px-1 text-[11px] text-muted-foreground"
+              >
+                Back
+              </button>
             </div>
           )}
         </div>

@@ -138,6 +138,9 @@ export interface Profile {
   // chips, today's plan line, the last-session warning and the coach card are
   // all hidden; saved feel/pain rows stay in the database either way.
   coach_enabled: boolean
+  // Rehab centre: open/resolved injuries, their plans, the rehab log and pain
+  // check-ins (see RehabState). null/absent = nothing set up yet.
+  rehab: RehabState | null
   // Facts the Ask-a-trainer chat remembers between sessions (see TrainerFact).
   // Empty = the trainer sees only your live training stats.
   trainer_memory: TrainerFact[]
@@ -231,6 +234,70 @@ export interface ProgramState {
   // snapshots the live `sequence` here first, so nothing is ever overwritten;
   // switching back restores the saved copy rather than rebuilding it.
   saved?: Record<string, SavedProgram>
+}
+
+// ---------------------------------------------------------------- Rehab
+// Which side of the body a flag or injury is on. null = not recorded (every
+// pain row logged before sides existed reads back this way) — deliberately not
+// the same thing as 'both'.
+export type BodySide = 'left' | 'right' | 'both' | null
+
+// One exercise in an injury's rehab plan. The target is SESSIONS per week, not
+// minutes: rehab work is "did you do your band sets today", where Mobility's is
+// "bank 25 minutes across the week".
+export interface RehabPlanItem {
+  id: string
+  name: string
+  /** Library key from data/rehabExercises.ts; absent for a hand-typed row. */
+  key?: string | null
+  /** Sessions per week. 0 = no target (the row just tracks that you did it). */
+  targetPerWeek: number
+  /** Per-sitting hold length in seconds for isometrics; null/absent = reps. */
+  holdSec?: number | null
+}
+
+export interface Injury {
+  id: string
+  /** Pain site, matching PAIN_SITES in lib/rehab.ts ('shoulder', 'low back'…). */
+  site: string
+  side: BodySide
+  /** Free-text detail, e.g. 'aches on overhead press'. */
+  note?: string | null
+  /** 'YYYY-MM-DD' it started. */
+  started: string
+  status: 'active' | 'resolved'
+  /** 'YYYY-MM-DD' it was closed; null while active. */
+  resolved?: string | null
+  /** exercise_keys you've flagged as aggravating — drives the pre-lift warning. */
+  aggravates: string[]
+  plan: RehabPlanItem[]
+}
+
+/** One session of one plan item. Presence = done; there's no partial credit. */
+export interface RehabLogEntry {
+  id: string
+  injuryId: string
+  itemId: string
+  /** 'YYYY-MM-DD'. */
+  date: string
+  /** Seconds held, for isometrics; null for rep-based work. */
+  seconds?: number | null
+}
+
+/** A 0-10 "how is it today". Optional and never prompted — it's just the only
+ *  thing that can answer "am I getting better?". One per injury per day. */
+export interface RehabCheckin {
+  id: string
+  injuryId: string
+  date: string
+  pain: number
+}
+
+export interface RehabState {
+  injuries: Injury[]
+  /** Pruned to the last REHAB_LOG_WEEKS on every save. */
+  log: RehabLogEntry[]
+  checkins: RehabCheckin[]
 }
 
 export interface SavedProgram {

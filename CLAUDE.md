@@ -13,6 +13,7 @@ Pointers only; the mechanics live in **Domain logic** / **Data model** below.
 - **Nutrition insight:** adaptive/data-driven TDEE from logged intake + weigh-ins (`useAdaptiveTDEE` + `estimateAdaptiveTDEE`), 31-micronutrient + macro tracking, non-retroactive calorie-goal history, nutrition/micronutrient trend charts (`features/insights`).
 - **Cardio:** MET / distance / manual logging, GPS distance recorder (`geo.ts`/`geoWatch.ts`/`ExerciseTrackPage`), BLE chest-strap recording (`hr.ts`/`hrWatch.ts`/`HeartRateMonitorPage` — live bpm, session avg/max/curve/time-in-zone, Keytel calorie offer), HR zones 1–5 (`zones.ts`, `hrZones` in `calc.ts`), distance, zone & HR trends.
 - **Strength:** workouts/sets/supersets, routines + `/program` rotation, est 1RM + progression, per-exercise form-video upload (`useFormVideos`), exercise notes, custom exercises, muscle-volume + body heatmap (`MuscleVolumePage`/`BodyHeatmap`), muscle & strength goals, workout calendar, rest timer (native notification), **Ask-a-trainer chat** (`/lift/trainer` — streaming Claude Haiku via `functions/api/trainer.ts`, grounded in a snapshot of your own log built by `trainerContext.ts` — lifts, pain flags, program, goals **and nutrition** (calorie goal, adaptive TDEE, intake/protein averages, micro %DV) — plus saved trainer memory).
+- **Rehab:** `/rehab` centre — injuries (site + side, start date, active/resolved), optional 0-10 pain check-ins + trend, a weekly rehab plan built from a 35-movement library / 8 starter protocols (`data/rehabExercises.ts`), a pain dashboard rolled up from `workout_sets.pain`, and a pre-lift warning when an open injury flags that lift (`lib/rehab.ts`, `features/rehab/*`).
 - **Body:** weight + body measurements, BMI.
 - **Platform:** installable PWA, Capacitor Android (native rest-timer, meal-reminder + streak-nudge notifications (`reminders.ts`), read-only Health Connect passive steps + smart-scale weight sync (`useWeightSync`/`weightSync.ts`), biometric app-lock (`biometric.ts`/`LockGate` + native `BiometricAuthPlugin.kt`), session auto-refresh across backgrounding (`authRefresh.ts`)), offline read, data export/import, More → Patch Notes.
 
@@ -58,6 +59,7 @@ Pointers only; the mechanics live in **Domain logic** / **Data model** below.
 - `exercise_entries` — cardio. Built-in activities: `src/data/activities.ts` (MET); custom: `custom_activities`.
 - Strength: `workouts` → `workout_exercises` (notes, superset_group) → `workout_sets` (reps, weight_lb, effort 1–5). Built-in lifts: `src/data/exercises.ts`; custom: `custom_exercises` (key `custom:<uuid>`). Templates: `routines` + `routine_exercises` (target sets/reps + superset_group).
 - `measurements` — weight + optional body metrics, one row per reading; `source`='healthconnect' marks synced weigh-ins (null = manual).
+- `profiles.rehab` jsonb — `{ injuries, log, checkins }` for the rehab centre. Its **own** column, not `program` (that's the lift rotation + mobility list). Log pruned to 52 weeks.
 
 ## Domain logic
 
@@ -66,6 +68,7 @@ Pointers only; the mechanics live in **Domain logic** / **Data model** below.
 - **Streak (food only):** `useStreak` computes live from distinct food dates — consecutive run ending today (or yesterday = morning grace). NOT stored, so backfilling a missed day **heals** the gap. Shown 🔥 next to the diary date.
 - **Cardio calories:** MET estimate or distance-based (walk/run/hike) or manual override; `eat_back_exercise` adds burned kcal to the diary's "remaining."
 - **Strength:** sets grouped by workout_exercise; supersets = shared `superset_group` (linked block); est 1RM = Epley; progression = max weight / total volume / avg weight per session (`useExerciseHistory`); "last time" prefill on add.
+- **Rehab:** `workout_sets.pain` is free text and now stores a side (`'left shoulder'`); `parsePain`/`formatPain` split it, and a row with no prefix reads as `side: null` = "not recorded", **not** "both". Rehab work is logged as sessions-per-week against an injury's plan and deliberately never touches `workouts`, so it can't reach the volume heatmap or muscle targets. The pre-lift warning is **not** gated on `coach_enabled`.
 - **Nutrient breakdown:** full panel, `—` for missing data (≠ 0), %DV, macro pie (calories/grams toggle). Reused for entry / day-total / food / recipe.
 
 ## Gotchas

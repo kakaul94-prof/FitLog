@@ -64,6 +64,8 @@ const WorkoutHistoryPage = lazyPage(() => import('@/pages/WorkoutHistoryPage'), 
 const TrainerPage = lazyPage(() => import('@/pages/TrainerPage'), 'TrainerPage')
 const TrainerMemoryPage = lazyPage(() => import('@/pages/TrainerMemoryPage'), 'TrainerMemoryPage')
 const ProgramPage = lazyPage(() => import('@/pages/ProgramPage'), 'ProgramPage')
+const RehabPage = lazyPage(() => import('@/pages/RehabPage'), 'RehabPage')
+const InjuryDetailPage = lazyPage(() => import('@/pages/InjuryDetailPage'), 'InjuryDetailPage')
 const ProgramBrowsePage = lazyPage(() => import('@/pages/ProgramBrowsePage'), 'ProgramBrowsePage')
 const ProgramPreviewPage = lazyPage(() => import('@/pages/ProgramPreviewPage'), 'ProgramPreviewPage')
 const CardioGoalPage = lazyPage(() => import('@/pages/CardioGoalPage'), 'CardioGoalPage')
@@ -169,6 +171,8 @@ const router = createBrowserRouter(
       <Route path="/lift/history" element={<WorkoutHistoryPage />} />
       <Route path="/lift/trainer" element={<TrainerPage />} />
       <Route path="/lift/trainer/memory" element={<TrainerMemoryPage />} />
+      <Route path="/rehab" element={<RehabPage />} />
+      <Route path="/rehab/:id" element={<InjuryDetailPage />} />
       <Route path="/program" element={<ProgramPage />} />
       <Route path="/program/browse" element={<ProgramBrowsePage />} />
       <Route path="/program/browse/:presetId" element={<ProgramPreviewPage />} />

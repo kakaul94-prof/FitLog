@@ -12,6 +12,7 @@ import {
   ClipboardList,
   List,
   Target,
+  HeartPulse,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -23,6 +24,8 @@ import {
 } from '@/features/strength/useStrength'
 import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
 import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
+import { useRehab } from '@/features/rehab/useRehab'
+import { activeInjuries } from '@/lib/rehab'
 import { useProfile } from '@/features/profile/useProfile'
 import { nextRoutineId } from '@/lib/progression'
 import { nextProgramRoutineId } from '@/lib/program'
@@ -49,6 +52,10 @@ export function StrengthPage() {
   const create = useCreateWorkout()
   const startFrom = useStartFromRoutine()
   const [menuOpen, setMenuOpen] = useState(false)
+  // Rehab lives in the Tools sheet; the header only grows an icon while
+  // something is actually open, so it's a live signal rather than chrome.
+  const { state: rehab } = useRehab()
+  const openInjuries = activeInjuries(rehab)
   const [toolsOpen, setToolsOpen] = useState(false)
 
   // Next template in the rotation: the one after your most recently trained
@@ -125,6 +132,17 @@ export function StrengthPage() {
         title="Exercise"
         action={
           <div className="flex items-center gap-1">
+            {openInjuries.length > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => nav('/rehab')}
+                aria-label={`Rehab — ${openInjuries.length} open`}
+                className="text-destructive"
+              >
+                <HeartPulse className="h-5 w-5" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -346,6 +364,21 @@ export function StrengthPage() {
                 >
                   <CalendarDays className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium">Calendar</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setToolsOpen(false)
+                    nav('/rehab')
+                  }}
+                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left active:bg-accent"
+                >
+                  <HeartPulse className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Rehab</span>
+                  {openInjuries.length > 0 && (
+                    <span className="ml-auto rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive tabular-nums">
+                      {openInjuries.length}
+                    </span>
+                  )}
                 </button>
               </Card>
               <button

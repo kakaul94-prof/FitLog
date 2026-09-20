@@ -609,19 +609,46 @@ export function useDiaryEntry(id: string | undefined) {
  * Food-logging streak: consecutive days (ending today, or yesterday if today
  * isn't logged yet) that have >=1 food entry. Computed fresh from the data each
  * time, so backfilling a missed day heals the gap and the streak resumes.
+ *
+ * PostgREST caps every response at 1000 rows. An unordered fetch hands back the
+ * OLDEST 1000 entries (index order on user_id, entry_date), which for a daily
+ * logger stop long before today — so the streak silently read 0. Page backwards
+ * from today instead, newest first, and only ask for another page while the run
+ * is still unbroken at the edge of the one we have.
  */
+const STREAK_PAGE = 1000
+
 export function useStreak() {
   return useQuery({
     queryKey: ['streak'],
     queryFn: async (): Promise<number> => {
-      const since = addDaysISO(todayISO(), -800)
-      const { data, error } = await supabase
-        .from('diary_entries')
-        .select('entry_date')
-        .gte('entry_date', since)
-      if (error) throw error
-      const logged = new Set((data ?? []).map((r) => r.entry_date as string))
-      return computeStreak(logged, todayISO())
+      const today = todayISO()
+      const floor = addDaysISO(today, -800)
+      const logged = new Set<string>()
+      let until = today
+      for (;;) {
+        const { data, error } = await supabase
+          .from('diary_entries')
+          .select('entry_date')
+          .gte('entry_date', floor)
+          .lte('entry_date', until)
+          .order('entry_date', { ascending: false })
+          .limit(STREAK_PAGE)
+        if (error) throw error
+        const rows = (data ?? []) as { entry_date: string }[]
+        if (rows.length === 0) break
+        for (const r of rows) logged.add(r.entry_date)
+        const oldest = rows[rows.length - 1].entry_date
+        if (oldest <= floor) break
+        // Where the run currently starts. If it stops short of the oldest day
+        // we fetched, the gap is real and an older page cannot extend it.
+        const count = computeStreak(logged, today)
+        const anchor = logged.has(today) ? today : addDaysISO(today, -1)
+        const earliest = count > 0 ? addDaysISO(anchor, -(count - 1)) : null
+        if (earliest !== oldest) break
+        until = addDaysISO(oldest, -1)
+      }
+      return computeStreak(logged, today)
     },
   })
 }

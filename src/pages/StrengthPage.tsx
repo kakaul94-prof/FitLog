@@ -16,13 +16,17 @@ import {
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { useWorkouts, useCreateWorkout } from '@/features/strength/useStrength'
+import {
+  useWorkouts,
+  useWorkout,
+  useCreateWorkout,
+} from '@/features/strength/useStrength'
 import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
 import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
 import { useProfile } from '@/features/profile/useProfile'
 import { nextRoutineId } from '@/lib/progression'
 import { nextProgramRoutineId } from '@/lib/program'
-import { todayISO, daysBetweenISO } from '@/lib/date'
+import { todayISO, daysBetweenISO, timeLabel } from '@/lib/date'
 
 /** Compact "last done" label so the hero meta line stays on one row:
  *  today / yesterday / weekday within the week, else a short date. */
@@ -58,6 +62,34 @@ export function StrengthPage() {
         : nextRoutineId(routines ?? [], workouts ?? [])
     return (routines ?? []).find((r) => r.id === id) ?? null
   }, [profile, routines, workouts])
+
+  // The session you walked away from: today's workout that you never marked
+  // as done. `completed` only flips on Mark as done, so backgrounding the app
+  // mid-workout leaves the row resumable. useWorkouts is already sorted newest
+  // first, so find() picks the latest if you somehow started two.
+  const inProgress = useMemo(
+    () =>
+      (workouts ?? []).find(
+        (w) => !w.completed && w.workout_date === todayISO(),
+      ) ?? null,
+    [workouts],
+  )
+  // Fetching it here doubles as a prefetch: WorkoutPage reads the same
+  // ['workout', id] cache entry, so Continue lands on a filled-in page.
+  const { data: live } = useWorkout(inProgress?.id)
+
+  const progressLine = useMemo(() => {
+    const exercises = live?.exercises ?? []
+    if (exercises.length === 0) return 'Pick up where you left off'
+    const done = exercises.filter((e) => e.ended_at != null).length
+    const started = exercises
+      .map((e) => e.started_at)
+      .filter((t): t is string => t != null)
+      .sort()[0]
+    const parts = [`${done} of ${exercises.length} exercises`]
+    if (started) parts.push(`started ${timeLabel(started)}`)
+    return parts.join(' · ')
+  }, [live])
 
   const { data: meta } = useRoutineMeta(nextRoutine?.id)
 
@@ -109,7 +141,30 @@ export function StrengthPage() {
       />
       <div className="flex flex-1 flex-col px-4 pb-2">
         <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
-          {routines === undefined ? null : nextRoutine ? (
+          {inProgress ? (
+            <>
+              <span className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                </span>
+                In progress
+              </span>
+              <h2 className="max-w-full truncate px-2 text-3xl font-bold">
+                {inProgress.name || 'Workout'}
+              </h2>
+              <p className="mt-2 min-h-5 text-sm text-muted-foreground">
+                {progressLine}
+              </p>
+              <Button
+                size="lg"
+                className="mt-8 w-full max-w-xs"
+                onClick={() => nav(`/workout/${inProgress.id}`)}
+              >
+                <Play className="h-4 w-4" /> Continue workout
+              </Button>
+            </>
+          ) : routines === undefined ? null : nextRoutine ? (
             <>
               <button
                 type="button"

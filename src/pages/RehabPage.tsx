@@ -46,7 +46,7 @@ export function RehabPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => nav('/lift')}
+            onClick={() => nav('/strength')}
             aria-label="Back"
           >
             <ChevronLeft className="h-5 w-5" />

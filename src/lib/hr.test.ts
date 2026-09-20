@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   addHrSample,
+  belowZoneSeconds,
+  recordedSeconds,
   dominantZone,
   downsampleBpm,
   hasHrCurve,
@@ -119,6 +121,49 @@ describe('hasHrCurve', () => {
     expect(hasHrCurve(null)).toBe(false)
     expect(hasHrCurve({ start: '', interval_s: 5, bpm: [0, 0] })).toBe(false)
     expect(hasHrCurve({ start: '', interval_s: 5, bpm: [0, 120] })).toBe(true)
+  })
+})
+
+describe('recordedSeconds', () => {
+  const samples = (bpm: number[], interval_s = 5) => ({
+    start: '',
+    interval_s,
+    bpm,
+  })
+
+  it('counts only the buckets that carry a reading', () => {
+    expect(recordedSeconds(samples([120, 0, 130, 130]))).toBe(15)
+  })
+
+  it('honours the stored interval', () => {
+    expect(recordedSeconds(samples([120, 130], 10))).toBe(20)
+  })
+
+  it('is zero for a missing or empty curve', () => {
+    expect(recordedSeconds(null)).toBe(0)
+    expect(recordedSeconds(samples([]))).toBe(0)
+  })
+})
+
+describe('belowZoneSeconds', () => {
+  const samples = (bpm: number[]) => ({ start: '', interval_s: 5, bpm })
+
+  it('is the recorded time that reached no zone', () => {
+    // 6 buckets x 5s = 30s recorded, 10s of it banked in zones.
+    const s = samples([100, 100, 100, 130, 130, 100])
+    expect(belowZoneSeconds(s, [4, 6, 0, 0, 0])).toBe(20)
+  })
+
+  it('is everything when an easy session never reached Zone 1', () => {
+    expect(belowZoneSeconds(samples([100, 100, 100]), [0, 0, 0, 0, 0])).toBe(15)
+  })
+
+  it('never goes negative when rounding overshoots', () => {
+    expect(belowZoneSeconds(samples([130]), [9, 0, 0, 0, 0])).toBe(0)
+  })
+
+  it('is zero without a curve to measure', () => {
+    expect(belowZoneSeconds(null, [5, 0, 0, 0, 0])).toBe(0)
   })
 })
 

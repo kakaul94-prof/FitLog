@@ -45,7 +45,12 @@ import {
   HR_ZONE_BANDS,
 } from '@/lib/calc'
 import { ageFromBirthDate } from '@/lib/calc'
-import { hrCalories, hasHrCurve } from '@/lib/hr'
+import {
+  belowZoneSeconds,
+  hasHrCurve,
+  hrCalories,
+  recordedSeconds,
+} from '@/lib/hr'
 import { clearHrSession, peekHrSession } from '@/lib/hrHandoff'
 import { hrSupported } from '@/lib/hrWatch'
 import { HrCurve } from '@/components/HrCurve'
@@ -231,6 +236,20 @@ export function ExerciseAddPage() {
     ageFromBirthDate(profile?.birth_date ?? null),
     profile?.sex ?? null,
   )
+  // Time the strap recorded that no zone claims — see belowZoneSeconds. Without
+  // it the bars silently drop most of an easy session.
+  const belowZ1Min = hrRec
+    ? Math.round(belowZoneSeconds(hrRec.samples, hrRec.zoneSeconds) / 60)
+    : 0
+  const hrCoverageMin = hrRec
+    ? Math.round(recordedSeconds(hrRec.samples) / 60)
+    : 0
+  // Keytel is fitted to steady work around 90–150 bpm. Under the Zone 1 floor
+  // it prices an easy walk like a jog, so the offer says so instead of
+  // presenting itself as the better number.
+  const z1Floor = zones?.[0]?.loBpm ?? null
+  const avgHrNum = parseInt(avgHr) || 0
+  const hrKcalShaky = z1Floor != null && avgHrNum > 0 && avgHrNum < z1Floor
 
   const date = entry?.entry_date ?? params.get('date') ?? todayISO()
 
@@ -1161,8 +1180,9 @@ export function ExerciseAddPage() {
 
                   <HrCurve bpm={hrRec.samples.bpm} zones={zones} />
 
-                  {hrRec.zoneSeconds.some((s) => s > 0) && (
+                  {(hrRec.zoneSeconds.some((s) => s > 0) || belowZ1Min > 0) && (
                     <ZoneBars
+                      below={belowZ1Min}
                       data={hrRec.zoneSeconds.map((s, i) => ({
                         zone: i + 1,
                         // A zone you touched for 20 seconds still gets a bar, so
@@ -1172,21 +1192,45 @@ export function ExerciseAddPage() {
                     />
                   )}
 
+                  {dur > 0 && hrCoverageMin > 0 && hrCoverageMin < dur - 1 && (
+                    <p className="text-xs text-muted-foreground">
+                      The strap only read {hrCoverageMin} of {dur} min — the rest
+                      dropped out.
+                    </p>
+                  )}
+
                   {hrKcal != null && hrKcal !== calories && (
-                    <div className="flex items-center gap-3 rounded-lg bg-primary/10 p-3">
+                    <div
+                      className={cn(
+                        'flex items-center gap-3 rounded-lg p-3',
+                        hrKcalShaky ? 'bg-muted' : 'bg-primary/10',
+                      )}
+                    >
                       <p className="flex-1 text-xs">
-                        From your heart rate this is about{' '}
-                        <span className="font-semibold">{hrKcal} kcal</span> —
-                        usually closer than the {distanceBased ? '' : 'MET '}
-                        estimate on a machine.
+                        {hrKcalShaky ? (
+                          <>
+                            Heart rate says{' '}
+                            <span className="font-semibold">{hrKcal} kcal</span>,
+                            but below Zone 1 that runs high — it prices an easy
+                            walk like a jog. The {calories} kcal estimate fits.
+                          </>
+                        ) : (
+                          <>
+                            From your heart rate this is about{' '}
+                            <span className="font-semibold">{hrKcal} kcal</span>{' '}
+                            — usually closer than the{' '}
+                            {distanceBased ? '' : 'MET '}
+                            estimate on a machine.
+                          </>
+                        )}
                       </p>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="shrink-0"
+                        className="shrink-0 whitespace-nowrap"
                         onClick={() => setOverride(String(hrKcal))}
                       >
-                        Use
+                        {hrKcalShaky ? 'Use anyway' : 'Use'}
                       </Button>
                     </div>
                   )}

@@ -176,6 +176,29 @@ export function hasHrCurve(s: HrSamples | null | undefined): boolean {
   return !!s?.bpm?.some((b) => b > 0)
 }
 
+/** Seconds the strap was actually reading, from a stored curve. Buckets sit
+ * interval_s apart and a 0 marks a dropout, so this is real coverage — compare
+ * it with the entry's duration to spot a strap that stopped answering. */
+export function recordedSeconds(s: HrSamples | null | undefined): number {
+  if (!s?.bpm?.length) return 0
+  const step = s.interval_s > 0 ? s.interval_s : HR_SAMPLE_INTERVAL_S
+  return s.bpm.filter((b) => b > 0).length * step
+}
+
+/**
+ * Seconds recorded below the Zone 1 floor. Zones only begin at 50% intensity
+ * (of heart-rate reserve, once a resting HR is set), so easy walking lands
+ * under all of them and belongs to no zone. It's still time you spent working,
+ * and without counting it a 30-minute walk reads as 6 minutes of exercise.
+ */
+export function belowZoneSeconds(
+  samples: HrSamples | null | undefined,
+  zoneSeconds: number[] | null | undefined,
+): number {
+  const zoned = (zoneSeconds ?? []).reduce((a, b) => a + b, 0)
+  return Math.max(0, recordedSeconds(samples) - zoned)
+}
+
 // ---------- energy ----------
 
 /**

@@ -7,6 +7,7 @@ import {
   resolveMacroTargets,
 } from './calc'
 import { NUTRIENT_BY_KEY, scaleNutrients, sumNutrients } from './nutrients'
+import { injuryDay, injuryLabel, painTrend, rehabWeek } from './rehab'
 import type {
   Food,
   Nutrients,
@@ -375,6 +376,45 @@ export async function buildTrainerContext(
       `Pain flagged on logged sets in the last ${PAIN_WINDOW_DAYS} days: ${notes.join('; ')}.`,
     )
   }
+
+  // --- Rehab --------------------------------------------------------------
+  // Open injuries are the sharpest context there is for "should I train this
+  // today?", so they sit right after the raw pain flags. Comes free: the
+  // profile is already fetched with select('*').
+  const rehab = profile?.rehab
+  const open = (rehab?.injuries ?? []).filter((i) => i.status === 'active')
+  if (open.length) {
+    const lines = open.map((inj) => {
+      const bits = [
+        `${injuryLabel(inj)} — day ${injuryDay(inj, today)}, started ${inj.started}`,
+      ]
+      if (inj.note) bits.push(`described as "${inj.note}"`)
+      const trend = painTrend(rehab?.checkins ?? [], inj.id)
+      if (trend.latest != null)
+        bits.push(
+          trend.delta != null
+            ? `self-rated pain ${trend.latest}/10 (was ${trend.first}/10 ${trend.days}d ago)`
+            : `self-rated pain ${trend.latest}/10`,
+        )
+      if (inj.aggravates.length)
+        bits.push(`aggravated by: ${inj.aggravates.join(', ')}`)
+      const week = rehabWeek(inj, rehab?.log ?? [], today)
+      if (week.targetCount)
+        bits.push(
+          `rehab this week: ${week.doneCount}/${week.targetCount} exercises on target (${inj.plan
+            .map((p) => p.name)
+            .join(', ')})`,
+        )
+      else if (inj.plan.length === 0) bits.push('no rehab plan set up yet')
+      return `  ${bits.join('; ')}.`
+    })
+    out.push(`OPEN INJURIES (in rehab right now):\n${lines.join('\n')}`)
+  }
+  const recentlyClosed = (rehab?.injuries ?? [])
+    .filter((i) => i.status === 'resolved' && (i.resolved ?? '') >= painSince)
+    .map((i) => `${injuryLabel(i)} (closed ${i.resolved})`)
+  if (recentlyClosed.length)
+    out.push(`Recently resolved: ${recentlyClosed.join(', ')}.`)
 
   // --- Goals --------------------------------------------------------------
   const openGoals = goals.filter((g) => !g.achieved_at)

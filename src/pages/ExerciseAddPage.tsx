@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft,
+  ChevronRight,
+  HeartPulse,
   Search,
   Plus,
   Pencil,
@@ -45,6 +47,7 @@ import {
 import { ageFromBirthDate } from '@/lib/calc'
 import { hrCalories, hasHrCurve } from '@/lib/hr'
 import { clearHrSession, peekHrSession } from '@/lib/hrHandoff'
+import { hrSupported } from '@/lib/hrWatch'
 import { HrCurve } from '@/components/HrCurve'
 import { ZoneBars } from '@/components/ZoneBars'
 import { zoneColor } from '@/data/zones'
@@ -81,6 +84,10 @@ const leveledByName = (n: string): boolean =>
 /** Same, for machine-distance (cadence-scaled) activities. */
 const machineDistanceByName = (n: string): boolean =>
   ACTIVITIES.some((a) => a.name === n && a.machineDistance)
+
+/** The recorder is deep-linked by key, but this page only tracks the name. */
+const keyByName = (n: string): string | null =>
+  ACTIVITIES.find((a) => a.name === n)?.key ?? null
 
 export function ExerciseAddPage() {
   const nav = useNavigate()
@@ -238,7 +245,9 @@ export function ExerciseAddPage() {
     if (h.avg != null) setAvgHr(String(h.avg))
     if (h.zone != null) setZone(h.zone)
     setHrRec({ samples: h.samples, max: h.max, zoneSeconds: h.zoneSeconds })
-    setActiveTile('hr')
+    // On a machine the console numbers are what's still missing — open on those
+    // rather than the curve, which is already recorded and one tap away.
+    setActiveTile(leveled ? 'level' : 'hr')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -506,6 +515,14 @@ export function ExerciseAddPage() {
     clearHrSession()
     nav(-1)
   }
+
+  // A machine session is the strap's home turf: GPS has nothing to measure and
+  // the generic MET barely tries. Offer the recorder there — but not while
+  // editing a past entry, and not once a session is already in hand.
+  const strapKey =
+    !distanceBased && (leveled || machineDistance) && hrSupported()
+      ? keyByName(name)
+      : null
 
   const pending = log.isPending || update.isPending
 
@@ -950,6 +967,25 @@ export function ExerciseAddPage() {
               </div>
             </CardContent>
           </Card>
+
+          {!editing && !changing && !hrRec && strapKey && (
+            <button
+              type="button"
+              onClick={() => nav(`/exercise/track?activity=${strapKey}`)}
+              className="flex w-full items-center gap-3 rounded-xl border border-primary/40 bg-primary/5 p-3 text-left active:bg-primary/10"
+            >
+              <HeartPulse className="h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-primary">
+                  Record with strap
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Live bpm, zones and time
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </button>
+          )}
 
           {activeTile === 'duration' && (
             <Card>

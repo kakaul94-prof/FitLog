@@ -271,9 +271,13 @@ create table if not exists public.routine_exercises (
   exercise_name text not null,
   position integer not null default 0,
   target_sets integer,
-  target_reps integer
+  target_reps integer,
+  -- Droppable when you start the session with a time budget (false = core).
+  is_optional boolean not null default false
 );
 create index if not exists routine_ex_routine_idx on public.routine_exercises(routine_id);
+alter table public.routine_exercises
+  add column if not exists is_optional boolean not null default false;
 alter table public.routine_exercises enable row level security;
 drop policy if exists routine_ex_rw_own on public.routine_exercises;
 create policy routine_ex_rw_own on public.routine_exercises

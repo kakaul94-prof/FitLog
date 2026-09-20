@@ -60,6 +60,7 @@ const GoalsOverviewPage = lazyPage(() => import('@/pages/GoalsOverviewPage'), 'G
 const CustomExercisesPage = lazyPage(() => import('@/pages/CustomExercisesPage'), 'CustomExercisesPage')
 const RoutineEditPage = lazyPage(() => import('@/pages/RoutineEditPage'), 'RoutineEditPage')
 const TemplatesPage = lazyPage(() => import('@/pages/TemplatesPage'), 'TemplatesPage')
+const RoutineStartPage = lazyPage(() => import('@/pages/RoutineStartPage'), 'RoutineStartPage')
 const WorkoutHistoryPage = lazyPage(() => import('@/pages/WorkoutHistoryPage'), 'WorkoutHistoryPage')
 const TrainerPage = lazyPage(() => import('@/pages/TrainerPage'), 'TrainerPage')
 const TrainerMemoryPage = lazyPage(() => import('@/pages/TrainerMemoryPage'), 'TrainerMemoryPage')
@@ -177,6 +178,7 @@ const router = createBrowserRouter(
       <Route path="/program/browse" element={<ProgramBrowsePage />} />
       <Route path="/program/browse/:presetId" element={<ProgramPreviewPage />} />
       <Route path="/cardio/goal" element={<CardioGoalPage />} />
+      <Route path="/routines/:id/start" element={<RoutineStartPage />} />
       <Route path="/routines/:id" element={<RoutineEditPage />} />
       <Route path="/recipes/:id" element={<RecipeEditPage />} />
       <Route path="/reminders" element={<RemindersPage />} />

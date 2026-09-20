@@ -58,6 +58,9 @@ type DraftEx = {
   target_distance_mi: number | null
   target_zone: number | null
   intervals: IntervalsTarget | null
+  // Set on the start screen, not here — carried through so saving a template
+  // can't wipe it (the save deletes and re-inserts every row).
+  is_optional: boolean
 }
 
 const uid = () => Math.random().toString(36).slice(2)
@@ -76,6 +79,7 @@ const serialize = (name: string, d: DraftEx[]) =>
       target_distance_mi: e.target_distance_mi,
       target_zone: e.target_zone,
       intervals: e.intervals,
+      is_optional: e.is_optional,
     })),
   })
 
@@ -154,6 +158,7 @@ export function RoutineEditPage() {
         target_distance_mi: e.target_distance_mi ?? null,
         target_zone: e.target_zone ?? null,
         intervals: e.intervals ?? null,
+        is_optional: !!e.is_optional,
       }))
       setName(data.routine.name)
       setDraft(d)
@@ -249,6 +254,7 @@ export function RoutineEditPage() {
           target_distance_mi: null,
           target_zone: null,
           intervals: null,
+          is_optional: false,
         },
       ]
     })
@@ -268,6 +274,7 @@ export function RoutineEditPage() {
         target_distance_mi: null,
         target_zone: null,
         intervals: null,
+        is_optional: false,
       },
     ])
     setAddingCardio(false)

@@ -208,6 +208,14 @@ export function StrengthPage() {
                 <Play className="h-4 w-4" />
                 {startFrom.isPending ? 'Starting…' : 'Start workout'}
               </Button>
+              {/* Full session stays one tap; the budget screen is opt-in. */}
+              <button
+                type="button"
+                className="mt-3 text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
+                onClick={() => nav(`/routines/${nextRoutine.id}/start`)}
+              >
+                Short on time?
+              </button>
             </>
           ) : (
             <>

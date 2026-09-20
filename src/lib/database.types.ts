@@ -507,6 +507,9 @@ export interface RoutineExercise {
   target_sets: number | null
   target_reps: number | null
   superset_group: number | null
+  // Droppable first when a session is started with a time budget. Undefined on
+  // a DB that predates migration_routine_time_budget.sql — read as false.
+  is_optional?: boolean | null
   // Cardio prescription (cardio rows only; lifts leave all four null).
   target_duration_min: number | null
   target_distance_mi: number | null

@@ -14,8 +14,9 @@
  *       below which it simply doesn't go (`fits: false`).
  */
 
-/** Never shave an exercise below this — one working set isn't a session. */
-export const MIN_SETS = 2
+/** Never shave an exercise below this. One hard set still counts — on a
+ *  30-minute day it's the difference between touching a lift and skipping it. */
+export const MIN_SETS = 1
 
 /** A missing target_sets counts as 3, matching `estimateRoutineMinutes`. */
 export const ASSUMED_SETS = 3

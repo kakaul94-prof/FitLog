@@ -61,21 +61,29 @@ describe('trimToBudget', () => {
 
   it('fits Push Day into 30 minutes by cutting only optional work', () => {
     const r = trimToBudget(pushDay, 30, PER)
-    // Core is untouched; all three optional lifts are gone.
+    // Core is untouched. The optional lifts go down to a single set each
+    // first, so one of them survives on the minutes the other two freed up.
     expect(kept(r)).toEqual({
       bench: 4,
       incline: 3,
       ohp: 3,
-      fly: 0,
+      fly: 1,
       lateral: 0,
       pushdown: 0,
     })
-    expect(r.totalSets).toBe(10)
-    expect(r.estMinutes).toBe(27)
+    expect(r.totalSets).toBe(11)
+    expect(r.estMinutes).toBe(30)
     expect(r.fullMinutes).toBe(51)
     expect(r.fits).toBe(true)
     expect(r.untouched).toBe(false)
-    expect(trimSummary(r)).toBe('3 exercises · 10 sets')
+    expect(trimSummary(r)).toBe('4 exercises · 11 sets')
+  })
+
+  it('shaves an optional lift to a single set rather than dropping it', () => {
+    // Room for 4 of the 6 sets: the optional lift gives up two, it doesn't go.
+    const r = trimToBudget([item('a', 3), item('b', 3, true)], 4, 1)
+    expect(kept(r)).toEqual({ a: 3, b: 1 })
+    expect(r.fits).toBe(true)
   })
 
   it('shaves optional sets before dropping anything', () => {
@@ -126,9 +134,10 @@ describe('trimToBudget', () => {
       lateral: 0,
       pushdown: 0,
     })
-    // Bottomed out and still over budget — the screen says so.
+    // Bottomed out at one set per core lift and still over budget — the
+    // screen says so rather than cutting into the lifts that matter.
     expect(r.fits).toBe(false)
-    expect(r.totalSets).toBe(6)
+    expect(r.totalSets).toBe(3)
   })
 
   it('reads a missing target as 3 sets', () => {

@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Activity, ChevronDown, Pencil } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, Pencil } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { CalorieBars } from '@/components/CalorieBars'
 import { RING_GREEN, RING_OVER } from '@/components/CalorieRing'
@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { GoalsHeadline } from '@/components/report/GoalsCard'
+import { Segmented } from '@/components/ui/segmented'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   useMeasurements,
@@ -53,6 +55,8 @@ import {
 } from '@/lib/calc'
 import { todayISO, addDaysISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
+import { lastCompletedPeriod, periodLabel } from '@/lib/report'
+import { useReportGoals } from '@/features/report/useReport'
 
 const TYPES = [
   { type: 'weight', label: 'Weight', unit: 'lb' },
@@ -78,6 +82,7 @@ export function ProgressPage() {
     <div>
       <PageHeader title="Progress" />
       <div className="space-y-4 p-4">
+        <ReportEntryCard />
         <Segmented
           value={view}
           onChange={setView}
@@ -870,6 +875,32 @@ function NutritionView() {
  * nutrition tab stacks four of these, and landing on a wall of charts buried
  * the calorie summary. `summary` is the one-line "is this worth opening?" hint.
  */
+/** Last week's goals at a glance, opening the full Week in review. Sits above
+ *  the view switcher since it rolls up food, lifting, and cardio together. */
+function ReportEntryCard() {
+  const nav = useNavigate()
+  const period = lastCompletedPeriod('week', todayISO())
+  const { report, isLoading } = useReportGoals(period)
+  if (isLoading) return <Skeleton className="h-[5.5rem] w-full rounded-xl" />
+  if (!report || report.goals.length === 0) return null
+  return (
+    <Card>
+      <button
+        onClick={() => nav('/report')}
+        className="flex w-full items-center justify-between gap-2 p-4 text-left"
+      >
+        <span className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            Last week · {periodLabel(period)}
+          </span>
+          <GoalsHeadline report={report} />
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+      </button>
+    </Card>
+  )
+}
+
 function CollapsibleCard({
   title,
   summary,
@@ -1245,35 +1276,6 @@ function SourceBar({
           style={{ width: `${width}%`, background: muted ? GRAY : RING_GREEN }}
         />
       </div>
-    </div>
-  )
-}
-
-function Segmented<T extends string>({
-  value,
-  onChange,
-  options,
-}: {
-  value: T
-  onChange: (v: T) => void
-  options: { value: T; label: string }[]
-}) {
-  return (
-    <div className="flex rounded-xl bg-muted p-1">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
-          className={cn(
-            'flex-1 rounded-lg py-1.5 text-sm font-medium transition-colors',
-            value === o.value
-              ? 'bg-card text-primary shadow-sm'
-              : 'text-muted-foreground',
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
     </div>
   )
 }

@@ -6,23 +6,28 @@ import { estimateAdaptiveTDEE, type AdaptiveTDEEResult } from '@/lib/calc'
 /**
  * Data-driven maintenance estimate over the last `windowDays`: pulls each day's
  * logged calories + weigh-ins and runs the energy-balance calc (see calc.ts).
+ * Pass `endISO` to measure the window ending on a past day (Week/Month in
+ * review); omitted, it's open-ended through today, as before.
  */
-export function useAdaptiveTDEE(windowDays = 28) {
+export function useAdaptiveTDEE(windowDays = 28, endISO?: string) {
   return useQuery({
-    queryKey: ['adaptiveTDEE', windowDays],
+    queryKey: endISO ? ['adaptiveTDEE', windowDays, endISO] : ['adaptiveTDEE', windowDays],
     queryFn: async (): Promise<AdaptiveTDEEResult> => {
-      const since = addDaysISO(todayISO(), -windowDays)
+      const since = addDaysISO(endISO ?? todayISO(), -windowDays)
+      const diaryQ = supabase
+        .from('diary_entries')
+        .select('entry_date,nutrients,servings')
+        .gte('entry_date', since)
+      const weightQ = supabase
+        .from('measurements')
+        .select('measured_on,value')
+        .eq('type', 'weight')
+        .gte('measured_on', since)
       const [diaryRes, weightRes] = await Promise.all([
-        supabase
-          .from('diary_entries')
-          .select('entry_date,nutrients,servings')
-          .gte('entry_date', since),
-        supabase
-          .from('measurements')
-          .select('measured_on,value')
-          .eq('type', 'weight')
-          .gte('measured_on', since)
-          .order('measured_on', { ascending: true }),
+        endISO ? diaryQ.lte('entry_date', endISO) : diaryQ,
+        (endISO ? weightQ.lte('measured_on', endISO) : weightQ).order('measured_on', {
+          ascending: true,
+        }),
       ])
       if (diaryRes.error) throw diaryRes.error
       if (weightRes.error) throw weightRes.error

@@ -39,6 +39,7 @@ const ProgressPage = lazyPage(() => import('@/pages/ProgressPage'), 'ProgressPag
 const MorePage = lazyPage(() => import('@/pages/MorePage'), 'MorePage')
 const ProfilePage = lazyPage(() => import('@/pages/ProfilePage'), 'ProfilePage')
 const PatchNotesPage = lazyPage(() => import('@/pages/PatchNotesPage'), 'PatchNotesPage')
+const ReportPage = lazyPage(() => import('@/pages/ReportPage'), 'ReportPage')
 const LibraryPage = lazyPage(() => import('@/pages/LibraryPage'), 'LibraryPage')
 const FoodFormPage = lazyPage(() => import('@/pages/FoodFormPage'), 'FoodFormPage')
 const FoodPickerPage = lazyPage(() => import('@/pages/FoodPickerPage'), 'FoodPickerPage')
@@ -148,6 +149,7 @@ const router = createBrowserRouter(
       </Route>
       <Route path="/diary/add" element={<FoodPickerPage />} />
       <Route path="/diary/scan" element={<ScanMealPage />} />
+      <Route path="/report" element={<ReportPage />} />
       <Route path="/foods/usda" element={<UsdaSearchPage />} />
       <Route path="/diary/entry/:id" element={<DiaryEntryPage />} />
       <Route path="/diary/nutrients" element={<DiaryNutrientsPage />} />

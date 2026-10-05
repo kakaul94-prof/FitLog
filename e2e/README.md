@@ -1,51 +1,50 @@
 # E2E tests (Playwright)
 
-Smoke-level browser tests for the critical paths. Kept deliberately small — UI is
-mainly verified on the deployed app; these guard that the app boots, auth works,
-and a real write reaches the backend.
+Browser tests for FitLog's critical user journeys, plus database-level checks
+of Row-Level Security. They run against a disposable **local** Supabase stack,
+never a hosted project.
 
-## How it works
+| Spec | Journey |
+|---|---|
+| `tests/auth.spec.ts` | Wrong password shows an error; valid sign-in lands on the diary |
+| `tests/diary.spec.ts` | Log a meal with Quick add; row saved with the right meal + calories |
+| `tests/workout.spec.ts` | Start a workout, add an exercise, log a set, mark done; set saved |
+| `tests/progress.spec.ts` | Log body weight; appears in history and in the DB |
+| `tests/rls.spec.ts` | Alice can't read, forge, update or delete Bob's rows; anon sees nothing |
 
-- Playwright boots the **dev server** (`npm run dev`, port 5173) as its
-  `webServer`. The dev build is required because `src/lib/supabase.ts` only
-  exposes `window.__supabase` under `import.meta.env.DEV`, which the specs use to
-  confirm writes and clean up after themselves.
-- `auth.setup.ts` signs in once and saves the session to `e2e/.auth/user.json`;
-  the other specs reuse it.
+## Run it
 
-## Prerequisites (one-time)
+```bash
+npm run test:e2e:docker        # everything in Docker (the CI path)
 
-1. **Point the dev build at the DEV Supabase project**, not prod — these specs
-   write real rows under the tester account. Set `VITE_SUPABASE_URL` /
-   `VITE_SUPABASE_ANON_KEY` in `.env` to the dev project.
-2. The tester account must exist in that project. Defaults:
-   `tester@fitlog.app` / `FitLogTester1!` (override with `E2E_EMAIL` /
-   `E2E_PASSWORD`).
-3. Install the browser (Chromium only). To avoid filling `C:`, cache it on `D:`:
-   ```sh
-   # PowerShell, from the repo root
-   $env:PLAYWRIGHT_BROWSERS_PATH = "D:\playwright-browsers"
-   npx playwright install chromium
-   ```
-   Set the same `PLAYWRIGHT_BROWSERS_PATH` whenever you run the suite.
-4. If NordVPN Threat Protection is on, allowlist `*.supabase.co` or sign-in will
-   fail with "Failed to fetch".
-
-## Run
-
-```sh
-npm run test:e2e        # headless
-npm run test:e2e:ui     # Playwright UI mode (watch/debug)
-npx playwright test --list   # validate config + specs without running
+# or on the host, for the debugging UI / headed browsers:
+npm run db:start
+npx playwright install chromium
+npm run test:e2e               # or: npm run test:e2e:ui
 ```
 
-## Deferred flows (next)
+Report: `npx playwright show-report`.
 
-These are multi-page and were left as follow-ups (write them once you can run the
-suite locally to confirm selectors):
+## How it's built
 
-- **Log a food** to the diary (`/` → add → food picker → save).
-- **Log a strength set** (`/strength` → start/open a workout → add set).
+- **Page Object Model.** `pages/` holds one class per screen (locators +
+  actions); specs get them from `fixtures.ts`, so selectors live in one place.
+- **Projects** (`playwright.config.ts`): `setup` signs in through the real form
+  once and saves the session; `mobile-chromium` runs the UI journeys as a
+  Pixel 7 with that session; `api` runs the RLS spec with no browser.
+- **DB assertions.** Specs check the UI *and* poll Postgres via a Supabase
+  client signed in as the same user, so a test fails if the UI looks right but
+  nothing was saved.
+- **Test data.** `supabase/seed.sql` creates Alice (the browser user) and Bob
+  (owns private rows for the RLS spec). Names are made unique per run, so the
+  suite can rerun without a reset. `npm run db:reset` restores the seed.
+- **Safety.** `support/env.ts` throws if the Supabase URL isn't local, and the
+  config passes the local URL/key to Vite explicitly (overriding any `.env`)
+  on its own port (5174) with no server reuse.
 
-Pattern to follow: drive the UI, assert via `window.__supabase`, then delete the
-rows you created (see `measurement.spec.ts`).
+## Gotcha worth knowing
+
+Workout set inputs save on blur, and "Mark as done" discards a workout whose
+sets haven't saved yet. `WorkoutPage.logSet()` waits for the e1RM badge (which
+renders from the saved set) before moving on, or the fast automated tap wins
+the race and the workout is deleted.

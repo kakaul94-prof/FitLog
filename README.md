@@ -31,7 +31,8 @@ FitLog is a single-user, cloud-synced fitness tracker designed mobile-first and 
 | Backend | Supabase — Postgres + Auth (email/password, magic-link fallback) |
 | Charts | Hand-rolled SVG (line charts + macro donut) — no charting library |
 | Icons / PWA | lucide-react, vite-plugin-pwa |
-| Hosting / CI | Cloudflare Pages (auto-deploy from `main`) |
+| Testing | Vitest (unit), Playwright (E2E, Page Object Model), Docker + Docker Compose |
+| Hosting / CI | Cloudflare Pages, GitHub Actions (tests gate every production deploy) |
 
 ## Architecture Highlights
 
@@ -52,11 +53,62 @@ npm run test:watch  # watch mode while iterating
 
 A `tsc + vite` build check is run before every commit to keep the tree type-safe.
 
+### End-to-end tests in Docker
+
+The E2E suite ([`e2e/`](e2e/README.md)) drives the real app in Chromium at a phone viewport through the key user journeys (sign in, log a meal, log a workout, log body weight). It also checks Row-Level Security directly against the database API. Everything runs in containers:
+
+- **Test database:** the Supabase CLI's local stack (Postgres, Auth, PostgREST and Storage in Docker), built from the same `supabase/schema.sql` as production, including its RLS policies. `supabase/seed.sql` adds two test users. Tests never touch a hosted project, and `e2e/support/env.ts` refuses to run against any non-local URL.
+- **Test runner:** Microsoft's official Playwright image, pinned to the exact `@playwright/test` version (`e2e/Dockerfile`). It runs the Vite dev server and the browser inside the container.
+
+With Docker running, one command runs the whole suite:
+
+```bash
+npm run test:e2e:docker   # start the test DB, build the runner image, run all tests
+```
+
+The HTML report lands in `playwright-report/` on your machine (`npx playwright show-report`). Stop the database with `npm run db:stop`, or restore it to the seed state with `npm run db:reset`.
+
+```mermaid
+flowchart LR
+  subgraph Host["Your machine or a GitHub Actions runner"]
+    subgraph Runner["Playwright container (e2e/Dockerfile)"]
+      PW[Playwright tests] --> CH[Chromium, phone viewport]
+      CH --> VITE[Vite dev server]
+      PW -. RLS + DB assertions .-> API
+    end
+    subgraph DB["Supabase local stack (supabase start)"]
+      API[API gateway :54321] --> AUTH[Auth]
+      API --> REST[PostgREST]
+      AUTH --> PG[(Postgres + RLS<br/>schema.sql + seed.sql)]
+      REST --> PG
+    end
+    CH -- host.docker.internal --> API
+    Runner -- report volume --> REPORT[playwright-report/]
+  end
+```
+
+### CI/CD pipeline
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and every push to `dev` or `main`:
+
+```mermaid
+flowchart LR
+  PUSH[Push / PR] --> UNIT[Unit: build + Vitest]
+  PUSH --> E2E[E2E: supabase start, then Playwright container]
+  E2E -- on failure --> ART[Report uploaded as artifact]
+  UNIT --> GATE{Both passed and branch is main?}
+  E2E --> GATE
+  GATE -- yes --> DEPLOY[wrangler pages deploy to fitlog-prod]
+```
+
+Production is only deployed from `main`, and only after both test jobs pass. The `dev` site still auto-deploys through Cloudflare's Git integration.
+
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20.19+ (Vite 8)
+- Docker Desktop (for the E2E suite)
 - A [Supabase](https://supabase.com) project (Postgres + Auth)
 - A [USDA FoodData Central](https://fdc.nal.usda.gov/api-key-signup.html) API key (for food import)
 
@@ -94,10 +146,23 @@ npm run dev       # http://localhost:5173
 | `npm run build` | Type-check and build for production (`tsc` + `vite`) |
 | `npm test` | Run the unit test suite |
 | `npm run test:watch` | Run tests in watch mode |
+| `npm run test:e2e:docker` | Start the local test DB and run the E2E suite in Docker |
+| `npm run test:e2e` | Run the E2E suite on the host (needs `npm run db:start`) |
+| `npm run db:start` / `db:stop` / `db:reset` | Manage the local Supabase test stack |
 
 ## Deployment
 
-FitLog deploys to **Cloudflare Pages** from the GitHub repo: build with `npm run build`, publish the `dist` directory, and set the three environment variables in the Pages project. Pushing to `main` triggers an automatic redeploy. SPA deep links are handled via `public/_redirects`.
+FitLog deploys to **Cloudflare Pages**. The `dev` branch auto-deploys to the dev site through Cloudflare's Git integration. Production (`fitlog-prod`) is deployed by the CI workflow's `deploy-prod` job with `wrangler pages deploy`, only after the unit and E2E jobs pass on `main`. SPA deep links are handled via `public/_redirects`.
+
+The deploy job reads these GitHub repository secrets and skips itself until `CLOUDFLARE_API_TOKEN` exists:
+
+| Secret | Value |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with the *Cloudflare Pages: Edit* permission |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `PROD_VITE_SUPABASE_URL` / `PROD_VITE_SUPABASE_ANON_KEY` / `PROD_VITE_USDA_API_KEY` | The production build variables (the same values set in the `fitlog-prod` Pages project) |
+
+Once the secrets are set, turn off automatic production deployments for `fitlog-prod` in Cloudflare (Settings → Build → Branch control), so the gated CI job is the only way to production.
 
 ## Project Structure
 
@@ -109,7 +174,15 @@ src/
 ├── components/    # UI primitives + layout (AppLayout, BottomNav, shared panels)
 └── data/          # built-in activities & exercises
 supabase/
-└── schema.sql     # idempotent schema + RLS policies
+├── schema.sql     # idempotent schema + RLS policies
+├── seed.sql       # E2E test users + data (local stack only)
+└── config.toml    # Supabase CLI local stack
+e2e/
+├── Dockerfile     # Playwright runner image
+├── pages/         # Page Objects
+├── tests/         # user-journey specs + RLS spec
+└── support/       # local-only env guard, Supabase API client
+compose.yaml       # `e2e` service (docker compose run e2e)
 ```
 
 ## Notes

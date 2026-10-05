@@ -1,40 +1,50 @@
 import { defineConfig, devices } from '@playwright/test'
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from './e2e/support/env'
 
-// E2E runs against the DEV server on purpose: src/lib/supabase.ts only exposes
-// `window.__supabase` under import.meta.env.DEV, and the specs use it to confirm
-// writes and clean up. The dev build MUST point at the DEV Supabase project —
-// never prod — because these specs write real rows under the tester account.
-const PORT = 5173
+// E2E runs the Vite dev server against the LOCAL Supabase stack only
+// (`npm run db:start`); e2e/support/env.ts refuses any non-local URL. The
+// VITE_* values are passed to the server explicitly, and they take priority
+// over a developer's .env, so a hosted project is never used by accident.
+// Port 5174 + no server reuse keeps it separate from a normal `npm run dev`.
+const PORT = 5174
 const baseURL = `http://localhost:${PORT}`
 
 export default defineConfig({
   testDir: './e2e',
-  // One tester account + a shared backend: keep everything serialized.
-  fullyParallel: false,
-  workers: 1,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI
-    ? [['github'], ['html', { open: 'never' }]]
-    : 'list',
+  reporter: [
+    [process.env.CI ? 'github' : 'list'],
+    ['html', { open: 'never' }],
+  ],
   use: {
     baseURL,
     trace: 'on-first-retry',
-    ...devices['Desktop Chrome'],
-    viewport: { width: 414, height: 896 }, // phone-first layout
+    screenshot: 'only-on-failure',
   },
   projects: [
     { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    // Database-level RLS checks: no browser, just the Supabase API.
+    { name: 'api', testMatch: /rls\.spec\.ts/ },
     {
-      name: 'chromium',
-      use: { storageState: 'e2e/.auth/user.json' },
+      // FitLog is phone-first, so the UI journeys run in Chromium as a phone.
+      name: 'mobile-chromium',
+      testMatch: /tests\/.*\.spec\.ts/,
+      testIgnore: /rls\.spec\.ts/,
+      use: { ...devices['Pixel 7'], storageState: 'e2e/.auth/alice.json' },
       dependencies: ['setup'],
     },
   ],
   webServer: {
-    command: 'npm run dev',
+    command: `npx vite --port ${PORT} --strictPort`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
+    env: {
+      VITE_SUPABASE_URL: SUPABASE_URL,
+      VITE_SUPABASE_ANON_KEY: SUPABASE_ANON_KEY,
+      VITE_USDA_API_KEY: '',
+    },
   },
 })

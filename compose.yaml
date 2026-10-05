@@ -1,0 +1,23 @@
+# Containerized E2E run:  npm run test:e2e:docker
+# (or, with the local Supabase stack already up:  docker compose run --rm e2e)
+#
+# The database is the Supabase CLI's local stack (`supabase start`), which runs
+# its own containers and publishes the API on the host at :54321. The test
+# container reaches it through host.docker.internal.
+services:
+  e2e:
+    build:
+      context: .
+      dockerfile: e2e/Dockerfile
+    init: true # reap the browser/dev-server child processes cleanly
+    ipc: host # Chromium needs more shared memory than Docker's 64 MB default
+    environment:
+      CI: ${CI:-}
+      E2E_SUPABASE_URL: http://host.docker.internal:54321
+    extra_hosts:
+      # Built into Docker Desktop; this line makes it work on Linux (CI) too.
+      - host.docker.internal:host-gateway
+    volumes:
+      # Reports are written straight to the host, so they outlive the container.
+      - ./playwright-report:/app/playwright-report
+      - ./test-results:/app/test-results

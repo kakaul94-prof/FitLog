@@ -6,7 +6,7 @@ import type {
   WorkoutSet,
   StrengthGoal,
 } from '@/lib/database.types'
-import { suggestNext } from '@/lib/progression'
+import { suggestNext, currentE1RM } from '@/lib/progression'
 
 export function useWorkouts() {
   return useQuery({
@@ -15,7 +15,10 @@ export function useWorkouts() {
       const { data, error } = await supabase
         .from('workouts')
         .select('*')
+        // created_at tie-break: same-date workouts otherwise sort arbitrarily,
+        // which can flip the program's "last done" between fetches.
         .order('workout_date', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(50)
       if (error) throw error
       return (data ?? []) as Workout[]
@@ -133,6 +136,197 @@ export function useUpdateWorkout() {
   })
 }
 
+/** Full snapshot of a workout's editable content, captured when the WorkoutPage
+ * opens so "Discard changes" can revert this session's edits. */
+export interface WorkoutSnapshot {
+  exercises: WorkoutExercise[]
+  sets: WorkoutSet[]
+  rest_seconds: number
+}
+
+/**
+ * Revert a workout to a snapshot taken when the page opened — the "Discard
+ * changes" path. A minimal diff, so it never mass-deletes: rows added this
+ * session are removed, rows deleted this session are re-inserted, and changed
+ * rows are restored to their snapshot values. The workout itself is never
+ * deleted here (that's long-press on the list). Exercises deleted this session
+ * come back with fresh ids, so their sets are re-created under the new id.
+ */
+export function useRestoreWorkout() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      workoutId,
+      snapshot,
+      current,
+    }: {
+      workoutId: string
+      snapshot: WorkoutSnapshot
+      current: { exercises: WorkoutExercise[]; sets: WorkoutSet[] }
+    }) => {
+      const exRow = (e: WorkoutExercise) => ({
+        workout_id: workoutId,
+        exercise_key: e.exercise_key,
+        exercise_name: e.exercise_name,
+        position: e.position,
+        notes: e.notes,
+        superset_group: e.superset_group,
+        started_at: e.started_at,
+        ended_at: e.ended_at,
+      })
+      const setRow = (s: WorkoutSet, weId: string | null) => ({
+        workout_id: workoutId,
+        workout_exercise_id: weId,
+        exercise_key: s.exercise_key,
+        exercise_name: s.exercise_name,
+        set_number: s.set_number,
+        reps: s.reps,
+        weight_lb: s.weight_lb,
+        duration_sec: s.duration_sec,
+        distance: s.distance,
+        effort: s.effort,
+        is_warmup: s.is_warmup,
+        feel: s.feel ?? null,
+        pain: s.pain ?? null,
+      })
+
+      const snapExIds = new Set(snapshot.exercises.map((e) => e.id))
+      const curById = new Map<string, WorkoutExercise>(
+        current.exercises.map((e) => [e.id, e] as const),
+      )
+
+      // 1. Exercises added this session → delete (cascade removes their sets).
+      const addedEx = current.exercises.filter((e) => !snapExIds.has(e.id))
+      if (addedEx.length) {
+        const { error } = await supabase
+          .from('workout_exercises')
+          .delete()
+          .in('id', addedEx.map((e) => e.id))
+        if (error) throw error
+      }
+
+      // 2. Surviving exercises whose fields changed → restore them.
+      for (const e of snapshot.exercises) {
+        const cur = curById.get(e.id)
+        if (!cur) continue
+        if (
+          cur.position !== e.position ||
+          cur.notes !== e.notes ||
+          cur.superset_group !== e.superset_group ||
+          cur.started_at !== e.started_at ||
+          cur.ended_at !== e.ended_at
+        ) {
+          const { error } = await supabase
+            .from('workout_exercises')
+            .update({
+              position: e.position,
+              notes: e.notes,
+              superset_group: e.superset_group,
+              started_at: e.started_at,
+              ended_at: e.ended_at,
+            })
+            .eq('id', e.id)
+          if (error) throw error
+        }
+      }
+
+      // 3. Exercises deleted this session → re-insert (fresh ids), then re-add
+      //    their snapshot sets under the new ids. PostgREST returns inserted
+      //    rows in input order, so we zip old→new by index.
+      const removedEx = snapshot.exercises.filter((e) => !curById.has(e.id))
+      const remap = new Map<string, string>()
+      if (removedEx.length) {
+        const { data: ins, error } = await supabase
+          .from('workout_exercises')
+          .insert(removedEx.map(exRow))
+          .select('id')
+        if (error) throw error
+        const rows = (ins ?? []) as { id: string }[]
+        removedEx.forEach((e, i) => remap.set(e.id, rows[i].id))
+        const reSets = snapshot.sets
+          .filter((s) => s.workout_exercise_id && remap.has(s.workout_exercise_id))
+          .map((s) => setRow(s, remap.get(s.workout_exercise_id!)!))
+        if (reSets.length) {
+          const { error: se } = await supabase.from('workout_sets').insert(reSets)
+          if (se) throw se
+        }
+      }
+
+      // 4. Sets under exercises that survived the visit — diff by set id.
+      const survived = (weId: string | null) =>
+        weId != null && curById.has(weId) && snapExIds.has(weId)
+      const snapSets = snapshot.sets.filter((s) => survived(s.workout_exercise_id))
+      const curSets = current.sets.filter((s) => survived(s.workout_exercise_id))
+      const snapSetById = new Map<string, WorkoutSet>(
+        snapSets.map((s) => [s.id, s] as const),
+      )
+      const curSetIds = new Set(curSets.map((s) => s.id))
+
+      // 4a. Sets added this session → delete.
+      const addedSets = curSets.filter((s) => !snapSetById.has(s.id))
+      if (addedSets.length) {
+        const { error } = await supabase
+          .from('workout_sets')
+          .delete()
+          .in('id', addedSets.map((s) => s.id))
+        if (error) throw error
+      }
+      // 4b. Sets deleted this session → re-insert under their (surviving) parent.
+      const removedSets = snapSets.filter((s) => !curSetIds.has(s.id))
+      if (removedSets.length) {
+        const { error } = await supabase
+          .from('workout_sets')
+          .insert(removedSets.map((s) => setRow(s, s.workout_exercise_id)))
+        if (error) throw error
+      }
+      // 4c. Sets present but changed → restore their values.
+      for (const s of snapSets) {
+        const cur = curSets.find((c) => c.id === s.id)
+        if (!cur) continue
+        if (
+          cur.set_number !== s.set_number ||
+          cur.reps !== s.reps ||
+          cur.weight_lb !== s.weight_lb ||
+          cur.duration_sec !== s.duration_sec ||
+          cur.distance !== s.distance ||
+          cur.effort !== s.effort ||
+          cur.is_warmup !== s.is_warmup ||
+          (cur.feel ?? null) !== (s.feel ?? null) ||
+          (cur.pain ?? null) !== (s.pain ?? null)
+        ) {
+          const { error } = await supabase
+            .from('workout_sets')
+            .update({
+              set_number: s.set_number,
+              reps: s.reps,
+              weight_lb: s.weight_lb,
+              duration_sec: s.duration_sec,
+              distance: s.distance,
+              effort: s.effort,
+              is_warmup: s.is_warmup,
+              feel: s.feel ?? null,
+              pain: s.pain ?? null,
+            })
+            .eq('id', s.id)
+          if (error) throw error
+        }
+      }
+
+      // 5. Restore the workout's rest timer (editable on this page).
+      const { error: we } = await supabase
+        .from('workouts')
+        .update({ rest_seconds: snapshot.rest_seconds })
+        .eq('id', workoutId)
+      if (we) throw we
+      return { workoutId }
+    },
+    onSuccess: ({ workoutId }) => {
+      qc.invalidateQueries({ queryKey: ['workout', workoutId] })
+      qc.invalidateQueries({ queryKey: ['workouts'] })
+    },
+  })
+}
+
 /** Add an exercise to a workout: matches last time's set count (blank reps/weight); optionally supersets with another. */
 export function useAddExercise() {
   const qc = useQueryClient()
@@ -212,7 +406,7 @@ export function useAddExercise() {
         const order: string[] = []
         const byWorkout = new Map<
           string,
-          { weight_lb: number | null; reps: number | null }[]
+          { weight_lb: number | null; reps: number | null; effort: number | null }[]
         >()
         for (const s of prior) {
           if (!byWorkout.has(s.workout_id)) {
@@ -221,7 +415,7 @@ export function useAddExercise() {
           }
           byWorkout
             .get(s.workout_id)!
-            .push({ weight_lb: s.weight_lb, reps: s.reps })
+            .push({ weight_lb: s.weight_lb, reps: s.reps, effort: s.effort })
         }
         const sug = suggestNext(
           goal,
@@ -411,6 +605,8 @@ export interface ExerciseSessionStat {
   max: number
   total: number
   avg: number
+  /** Best estimated 1RM (Epley) of the session — the goal-line/ETA series. */
+  e1rm: number
 }
 
 /** Per-session stats for one exercise: max weight, total volume, average weight. */
@@ -460,7 +656,8 @@ export function useExerciseHistory(key: string | undefined) {
         const avg = weights.length
           ? Math.round(weights.reduce((x, y) => x + y, 0) / weights.length)
           : 0
-        rows.push({ date, max, total, avg })
+        const e1rm = currentE1RM([arr])
+        rows.push({ date, max, total, avg, e1rm })
       }
       return rows.sort((a, b) => a.date.localeCompare(b.date))
     },
@@ -472,6 +669,9 @@ export interface ExerciseSessionSet {
   reps: number | null
   weight_lb: number | null
   effort: number | null
+  /** Post-set feedback — see workout_sets.feel / .pain. */
+  feel?: 'good' | 'off' | null
+  pain?: string | null
 }
 export interface ExerciseSession {
   workoutId: string
@@ -489,7 +689,7 @@ export function useExerciseSessions(key: string | undefined) {
     queryFn: async (): Promise<ExerciseSession[]> => {
       const { data: sets, error } = await supabase
         .from('workout_sets')
-        .select('workout_id,set_number,reps,weight_lb,effort')
+        .select('workout_id,set_number,reps,weight_lb,effort,feel,pain')
         .eq('exercise_key', key)
       if (error) throw error
       const s = (sets ?? []) as (ExerciseSessionSet & { workout_id: string })[]
@@ -529,6 +729,8 @@ export function useExerciseSessions(key: string | undefined) {
           reps: x.reps,
           weight_lb: x.weight_lb,
           effort: x.effort,
+          feel: x.feel ?? null,
+          pain: x.pain ?? null,
         })
         byW.set(x.workout_id, arr)
       }
@@ -602,6 +804,32 @@ export function useExerciseBests(
         : 0
       if (maxWeight <= 0 && maxSetVolume <= 0 && maxSessionVolume <= 0) return null
       return { maxWeight, maxSetVolume, maxSessionVolume }
+    },
+  })
+}
+
+// Total logged sets per exercise_key (built-in slug or 'custom:<uuid>'), for the
+// picker's "126 sets" hint and its duplicate-hiding rule. Paged because this is
+// the one query that scans every set row — PostgREST caps a single response.
+export function useExerciseSetCounts() {
+  return useQuery({
+    queryKey: ['exerciseSetCounts'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<Map<string, number>> => {
+      const counts = new Map<string, number>()
+      const PAGE = 1000
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+          .from('workout_sets')
+          .select('exercise_key')
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        const rows = (data ?? []) as { exercise_key: string }[]
+        for (const r of rows)
+          counts.set(r.exercise_key, (counts.get(r.exercise_key) ?? 0) + 1)
+        if (rows.length < PAGE) break
+      }
+      return counts
     },
   })
 }

@@ -48,7 +48,12 @@ export type ActivityLevel =
 export type GoalType = 'lose' | 'maintain' | 'gain'
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks'
 export type FoodSource = 'usda' | 'manual' | 'recipe'
-export type ExerciseType = 'weighted' | 'bodyweight' | 'timed' | 'cardio'
+export type ExerciseType =
+  | 'weighted'
+  | 'bodyweight'
+  | 'timed'
+  | 'mobility'
+  | 'cardio'
 // Progression style for a strength goal (see src/lib/progression.ts).
 export type ProgressionMethod = 'linear' | 'double' | '531'
 
@@ -61,6 +66,32 @@ export interface MacroTargets {
   protein: MacroTarget
   carb: MacroTarget
   fat: MacroTarget
+}
+
+// A food taken every day (e.g. a multivitamin). Its per-serving nutrients ×
+// `servings` are folded into the weekly Micronutrients rollup as if logged each
+// day — see useDailySupplements / useMicronutrientTrends. Not written to the diary.
+export interface DailySupplement {
+  food_id: string
+  servings: number
+}
+
+// A dated calorie-goal change: `goal` applies from `from` (ISO date) until the
+// next entry's date. Lets past diary days keep the goal that was in effect then
+// instead of retroactively adopting the current one — see goalForDate /
+// recordGoalChange in calc.ts. Empty history = fall back to the live goal.
+export interface GoalHistoryEntry {
+  from: string
+  goal: number
+}
+
+// One durable fact the Ask-a-trainer chat carries between sessions ("left knee
+// gets cranky above 80% on squats"). Stored on the profile, editable by hand,
+// and proposed by the trainer itself after a conversation.
+export interface TrainerFact {
+  id: string
+  text: string
+  created_at: string
 }
 
 export interface Profile {
@@ -76,13 +107,203 @@ export interface Profile {
   goal_weight_lb: number | null
   calorie_goal_mode: 'calculated' | 'manual'
   manual_calorie_goal: number | null
+  // Dated log of calorie-goal changes (see GoalHistoryEntry). Empty = nothing
+  // recorded yet, so every day uses the live goal.
+  calorie_goal_history: GoalHistoryEntry[]
   macro_targets: MacroTargets
   // Per-muscle weekly set goals (sets/week), keyed by RegionId from bodyMap.
   // Sparse/nullable; missing regions fall back to DEFAULT_GOALS. 0 = untracked.
   volume_targets: Record<string, number> | null
+  // Supplements taken daily (multivitamin, etc.). Folded into the weekly micro
+  // rollup, not the diary. Empty array = none.
+  daily_supplements: DailySupplement[]
   eat_back_exercise: boolean
+  // Heart-rate zones: user's max HR (null = estimate from age) + optional resting
+  // HR (enables Karvonen reserve zones when set).
+  max_hr: number | null
+  resting_hr: number | null
+  // Daily step goal, shown next to the Health Connect step count on the diary
+  // card. null = no goal, in which case the count renders on its own.
+  step_goal: number | null
+  // Workout program: ordered rotation of templates + rest days (sequential
+  // model). null / empty sequence = no program set up yet.
+  program: ProgramState | null
+  // Weekly cardio minutes target (Progress → Cardio "This week"). null = unset.
+  // Superseded by cardio_goal below, which seeds from it on first save.
+  weekly_cardio_min_target: number | null
+  // Per-intensity weekly cardio minutes goal (see CardioGoal). null = unset,
+  // in which case weekly_cardio_min_target still applies.
+  cardio_goal: CardioGoal | null
+  // Next-set coach opt-in (Coach pill on the workout page). false = the feedback
+  // chips, today's plan line, the last-session warning and the coach card are
+  // all hidden; saved feel/pain rows stay in the database either way.
+  coach_enabled: boolean
+  // Rehab centre: open/resolved injuries, their plans, the rehab log and pain
+  // check-ins (see RehabState). null/absent = nothing set up yet.
+  rehab: RehabState | null
+  // Facts the Ask-a-trainer chat remembers between sessions (see TrainerFact).
+  // Empty = the trainer sees only your live training stats.
+  trainer_memory: TrainerFact[]
   created_at: string
   updated_at: string
+}
+
+// Weekly cardio goal, in one of two granularities. 'simple' targets light
+// (zones 1–2) and heavy (zones 3–5) minutes; 'zones' targets each of the 5
+// zones. Both sets of numbers are kept, so switching modes is non-destructive.
+// Resolution + the week rollup live in lib/cardioGoal.ts.
+export type CardioGoalMode = 'simple' | 'zones'
+
+export interface CardioGoal {
+  mode: CardioGoalMode
+  // Minutes/week, simple mode. 0 = untracked (minutes still count in totals).
+  light: number
+  heavy: number
+  // Minutes/week per zone, index 0 = zone 1 … index 4 = zone 5.
+  zones: number[]
+}
+
+// One slot in the program rotation: a template reference or a rest day. `id` is
+// a stable local key for reordering (independent of routineId, which may repeat).
+export type ProgramItem =
+  | { id: string; kind: 'routine'; routineId: string }
+  | { id: string; kind: 'rest' }
+
+export interface DeloadState {
+  // Count of program workouts logged when the deload was started; it stays
+  // active until one cycle's worth of workouts have been logged since (then it
+  // auto-ends). See deloadActive in lib/program.ts.
+  startProgramWorkouts: number
+}
+
+// Manually pinned "next up" template. `sinceWorkoutId` marks the most recent
+// in-program workout at the moment the pin was set (null = none yet); the pin
+// stays live until any program workout is logged after it (marker mismatch =
+// consumed for good). See activeOverrideId in lib/program.ts.
+export interface NextOverride {
+  routineId: string
+  sinceWorkoutId: string | null
+}
+
+// A stretch in the Mobility list. Its target is weekly minutes chipped away at
+// across the week (see lib/mobility.ts), not a session done in one sitting.
+export interface MobilityStretch {
+  id: string
+  name: string
+  /** Weekly minutes target. */
+  targetMin: number
+  /** Per-sitting hold length in seconds: the timer counts down from here and
+   *  chimes at zero. null/absent = open-ended count-up (e.g. dead hangs). */
+  holdSec?: number | null
+}
+
+// One banking of time against a stretch. Seconds, not minutes, so a 1:24 hold
+// stores exactly — minutes are only a display rounding.
+export interface MobilityLogEntry {
+  id: string
+  stretchId: string
+  /** 'YYYY-MM-DD' the time was banked on. */
+  date: string
+  seconds: number
+}
+
+export interface MobilityState {
+  stretches: MobilityStretch[]
+  /** Banked time, pruned to the recent weeks on every save. */
+  log: MobilityLogEntry[]
+}
+
+export interface ProgramState {
+  sequence: ProgramItem[]
+  // Pinned next template; bare string = legacy save (pre-marker, active only
+  // while it differs from the last-done routine). null/absent = auto rotation.
+  nextOverride?: NextOverride | string | null
+  // Manually-started deload (advisory lighter cycle). null/absent = not deloading.
+  deload?: DeloadState | null
+  // Mobility list. Deliberately outside `sequence`: mobility is weekly/calendar
+  // based, and keeping it out means banking stretch time never advances the lift
+  // rotation (which only reads `sequence`). null/absent = not set up.
+  mobility?: MobilityState | null
+  // Which program `sequence` currently belongs to: a PROGRAMS preset id, or
+  // 'custom' for a hand-built rotation. Absent = 'custom', so every rotation
+  // that predates the picker reads as the user's own without being rewritten.
+  activeId?: string
+  // The user's label for their custom rotation. Absent = "Custom program".
+  customName?: string | null
+  // Rotations parked when switching programs, keyed by program id. Switching
+  // snapshots the live `sequence` here first, so nothing is ever overwritten;
+  // switching back restores the saved copy rather than rebuilding it.
+  saved?: Record<string, SavedProgram>
+}
+
+// ---------------------------------------------------------------- Rehab
+// Which side of the body a flag or injury is on. null = not recorded (every
+// pain row logged before sides existed reads back this way) — deliberately not
+// the same thing as 'both'.
+export type BodySide = 'left' | 'right' | 'both' | null
+
+// One exercise in an injury's rehab plan. The target is SESSIONS per week, not
+// minutes: rehab work is "did you do your band sets today", where Mobility's is
+// "bank 25 minutes across the week".
+export interface RehabPlanItem {
+  id: string
+  name: string
+  /** Library key from data/rehabExercises.ts; absent for a hand-typed row. */
+  key?: string | null
+  /** Sessions per week. 0 = no target (the row just tracks that you did it). */
+  targetPerWeek: number
+  /** Per-sitting hold length in seconds for isometrics; null/absent = reps. */
+  holdSec?: number | null
+}
+
+export interface Injury {
+  id: string
+  /** Pain site, matching PAIN_SITES in lib/rehab.ts ('shoulder', 'low back'…). */
+  site: string
+  side: BodySide
+  /** Free-text detail, e.g. 'aches on overhead press'. */
+  note?: string | null
+  /** 'YYYY-MM-DD' it started. */
+  started: string
+  status: 'active' | 'resolved'
+  /** 'YYYY-MM-DD' it was closed; null while active. */
+  resolved?: string | null
+  /** exercise_keys you've flagged as aggravating — drives the pre-lift warning. */
+  aggravates: string[]
+  plan: RehabPlanItem[]
+}
+
+/** One session of one plan item. Presence = done; there's no partial credit. */
+export interface RehabLogEntry {
+  id: string
+  injuryId: string
+  itemId: string
+  /** 'YYYY-MM-DD'. */
+  date: string
+  /** Seconds held, for isometrics; null for rep-based work. */
+  seconds?: number | null
+}
+
+/** A 0-10 "how is it today". Optional and never prompted — it's just the only
+ *  thing that can answer "am I getting better?". One per injury per day. */
+export interface RehabCheckin {
+  id: string
+  injuryId: string
+  date: string
+  pain: number
+}
+
+export interface RehabState {
+  injuries: Injury[]
+  /** Pruned to the last REHAB_LOG_WEEKS on every save. */
+  log: RehabLogEntry[]
+  checkins: RehabCheckin[]
+}
+
+export interface SavedProgram {
+  sequence: ProgramItem[]
+  // ISO date the rotation was last live, for the picker's "last used" line.
+  lastUsed?: string | null
 }
 
 // An alternate serving unit for a food (e.g. "1 cup = 240 g"). Nutrition
@@ -117,6 +338,10 @@ export interface RecipeIngredient {
   user_id: string
   recipe_food_id: string
   ingredient_food_id: string
+  // amount of `unit` ('base' = a base serving, a portion id, or g/oz/lb).
+  // `servings` is the derived base-serving multiplier (legacy / convenience).
+  amount: number | null
+  unit: string | null
   servings: number
   position: number
   created_at: string
@@ -175,6 +400,18 @@ export interface CustomActivity {
   created_at: string
 }
 
+/**
+ * A recorded heart-rate curve, stored on the entry as jsonb. `bpm` holds one
+ * mean reading per `interval_s` seconds of the session (0 = the strap dropped
+ * out there); the math that builds and reads it lives in lib/hr.ts.
+ */
+export interface HrSamples {
+  /** ISO timestamp the recording started. */
+  start: string
+  interval_s: number
+  bpm: number[]
+}
+
 export interface ExerciseEntry {
   id: string
   user_id: string
@@ -184,6 +421,24 @@ export interface ExerciseEntry {
   duration_min: number | null
   distance_mi: number | null
   calories: number
+  // Cardio HR zone (1–5) + the avg heart rate it was derived from; both optional.
+  // A strap-recorded session fills both in from the recording (zone = whichever
+  // zone it spent longest in), so everything reading them keeps working.
+  avg_hr: number | null
+  zone: number | null
+  // Recorded chest-strap session (migration_hr_session.sql); null when the entry
+  // was logged by hand. Shape + math live in lib/hr.ts.
+  max_hr: number | null
+  hr_samples: HrSamples | null
+  /** Seconds spent in zones 1–5, index 0 = zone 1. */
+  zone_seconds: number[] | null
+  // Weight carried (ruck plate/vest/pack), lb. Counts as extra body mass in the
+  // calorie estimate; null = unloaded.
+  load_lb: number | null
+  // Machine resistance as read off the console — level 12 of 18. Kept as the raw
+  // pair for display; the burn it implies is snapshotted into `met` at save.
+  level: number | null
+  level_max: number | null
   created_at: string
 }
 
@@ -206,7 +461,7 @@ export interface ExerciseNote {
   notes: string | null
   // Exact curated-cue strings the user has hidden for this exercise.
   hidden_cues: string[]
-  // Exact curated-cue strings the user has starred as especially helpful.
+  // Exact strings — curated cues or your own notes — starred as helpful.
   starred_cues: string[]
   created_at: string
   updated_at: string
@@ -234,16 +489,32 @@ export interface Routine {
   updated_at: string
 }
 
+// Interval prescription on a cardio template item: rounds × (work / rest).
+export interface IntervalsTarget {
+  workSec: number
+  restSec: number
+  rounds: number
+}
+
 export interface RoutineExercise {
   id: string
   user_id: string
   routine_id: string
+  // Lift slug, 'custom:<uuid>', or a cardio item as 'cardio:<activity_key>'.
   exercise_key: string
   exercise_name: string
   position: number
   target_sets: number | null
   target_reps: number | null
   superset_group: number | null
+  // Droppable first when a session is started with a time budget. Undefined on
+  // a DB that predates migration_routine_time_budget.sql — read as false.
+  is_optional?: boolean | null
+  // Cardio prescription (cardio rows only; lifts leave all four null).
+  target_duration_min: number | null
+  target_distance_mi: number | null
+  target_zone: number | null
+  intervals: IntervalsTarget | null
 }
 
 export interface Workout {
@@ -288,6 +559,10 @@ export interface WorkoutSet {
   distance: number | null
   effort: number | null
   is_warmup: boolean
+  /** Post-set feedback: movement quality — 'off' = form broke down. */
+  feel?: 'good' | 'off' | null
+  /** Post-set pain site ('shoulder', 'low back', …); null = no pain. */
+  pain?: string | null
   created_at: string
 }
 
@@ -298,10 +573,12 @@ export interface Measurement {
   type: string
   value: number
   unit: string
+  /** 'healthconnect' = imported by the weight sync; null/absent = logged manually. */
+  source?: string | null
   created_at: string
 }
 
-// Per-exercise strength goal (target 1RM) + progression state. The app suggests
+// Per-exercise strength goal (target weight × reps) + progression state. Suggests
 // the next session toward target_1rm_lb via `method`. Current strength is
 // derived live from workout_sets (not stored), so switching method never resets.
 // tm_lb/cycle/week hold 5/3/1 state only (ignored by the other methods).
@@ -311,6 +588,8 @@ export interface StrengthGoal {
   exercise_key: string
   exercise_name: string
   target_1rm_lb: number
+  target_weight_lb: number
+  target_reps: number
   method: ProgressionMethod
   increment_lb: number | null
   rep_low: number

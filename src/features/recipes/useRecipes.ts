@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { sumNutrients, scaleNutrients } from '@/lib/nutrients'
+import { ingredientServings, recipePerServing } from '@/lib/nutrients'
+import type { ImportedRecipe } from '@/lib/importRecipe'
 import type { Food, RecipeIngredient } from '@/lib/database.types'
 
 /** Recompute a recipe food's per-serving nutrients from its ingredients. */
@@ -14,31 +15,43 @@ async function recompute(recipeFoodId: string) {
     (food as { recipe_servings: number | null } | null)?.recipe_servings || 1
   const { data: ings } = await supabase
     .from('recipe_ingredients')
-    .select('servings,ingredient_food_id')
+    .select('servings,amount,unit,ingredient_food_id')
     .eq('recipe_food_id', recipeFoodId)
   const ingredients = (ings ?? []) as {
     servings: number
+    amount: number | null
+    unit: string | null
     ingredient_food_id: string
   }[]
   const ids = ingredients.map((i) => i.ingredient_food_id)
   const foodsRes = ids.length
-    ? await supabase.from('foods').select('id,nutrients').in('id', ids)
+    ? await supabase.from('foods').select('*').in('id', ids)
     : { data: [] }
-  const byId = new Map(
-    ((foodsRes.data ?? []) as { id: string; nutrients: Food['nutrients'] }[]).map(
-      (f) => [f.id, f.nutrients],
-    ),
-  )
-  const total = sumNutrients(
-    ingredients.map((i) =>
-      scaleNutrients(byId.get(i.ingredient_food_id) ?? {}, i.servings),
-    ),
-  )
-  const perServing = scaleNutrients(total, 1 / yieldServings)
+  const byId = new Map(((foodsRes.data ?? []) as Food[]).map((f) => [f.id, f]))
+  const perServing = recipePerServing(ingredients, byId, yieldServings)
   await supabase
     .from('foods')
     .update({ nutrients: perServing })
     .eq('id', recipeFoodId)
+}
+
+/**
+ * Recompute a recipe's stored per-serving nutrients after one of its ingredient
+ * foods was edited directly (e.g. from the recipe editor → food editor).
+ */
+export function useRecomputeRecipe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (recipeFoodId: string) => {
+      await recompute(recipeFoodId)
+      return { recipeFoodId }
+    },
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ['recipe', d.recipeFoodId] })
+      qc.invalidateQueries({ queryKey: ['recipes'] })
+      qc.invalidateQueries({ queryKey: ['foods'] })
+    },
+  })
 }
 
 export function useRecipes() {
@@ -118,6 +131,77 @@ export function useCreateRecipe() {
 }
 
 /**
+ * Build a recipe from a parsed recipe link: the recipe food + one food per
+ * ingredient + the join rows, then recompute per-serving nutrients. Returns the
+ * new recipe so the caller can open the editor to review.
+ *
+ * Each ingredient food is ARCHIVED so it stays out of the food library/search
+ * (the recipe still references it by id). It's stored as a single "serving"
+ * weighing its gram amount, and attached at that many grams (unit 'g') — so the
+ * editor shows an editable gram amount and the nutrition scales correctly.
+ */
+export function useImportRecipe() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (parsed: ImportedRecipe): Promise<Food> => {
+      const { data: recipeData, error: recipeErr } = await supabase
+        .from('foods')
+        .insert({
+          name: parsed.name,
+          source: 'recipe',
+          recipe_servings: parsed.servings,
+          serving_qty: 1,
+          serving_unit: 'serving',
+          nutrients: {},
+        })
+        .select('*')
+        .single()
+      if (recipeErr) throw recipeErr
+      const recipe = recipeData as Food
+
+      const { data: foodRows, error: foodErr } = await supabase
+        .from('foods')
+        .insert(
+          parsed.ingredients.map((ing) => ({
+            name: ing.name,
+            source: 'manual' as const,
+            serving_qty: 1,
+            serving_unit: 'serving',
+            serving_grams: ing.grams,
+            nutrients: ing.nutrients,
+            archived: true,
+          })),
+        )
+        .select('id')
+      if (foodErr) throw foodErr
+      // Bulk insert returns rows in input order; zip them back by index.
+      const ids = (foodRows ?? []) as { id: string }[]
+      if (ids.length !== parsed.ingredients.length)
+        throw new Error('Import failed while saving ingredients.')
+
+      const { error: riErr } = await supabase.from('recipe_ingredients').insert(
+        parsed.ingredients.map((ing, idx) => ({
+          recipe_food_id: recipe.id,
+          ingredient_food_id: ids[idx].id,
+          amount: ing.grams,
+          unit: 'g',
+          servings: 1, // one base serving = the ingredient's gram weight
+          position: idx,
+        })),
+      )
+      if (riErr) throw riErr
+
+      await recompute(recipe.id)
+      return recipe
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recipes'] })
+      qc.invalidateQueries({ queryKey: ['foods'] })
+    },
+  })
+}
+
+/**
  * Fork a recipe: create a new recipe food that copies the source's meta and all
  * its ingredients, so it can be renamed and tweaked independently. Per-serving
  * nutrients are recomputed from the copied ingredients.
@@ -136,13 +220,13 @@ export function useDuplicateRecipe() {
 
       const { data: risData, error: riErr } = await supabase
         .from('recipe_ingredients')
-        .select('ingredient_food_id,servings,position')
+        .select('ingredient_food_id,amount,unit,servings,position')
         .eq('recipe_food_id', sourceId)
         .order('position')
       if (riErr) throw riErr
       const ingredients = (risData ?? []) as Pick<
         RecipeIngredient,
-        'ingredient_food_id' | 'servings' | 'position'
+        'ingredient_food_id' | 'amount' | 'unit' | 'servings' | 'position'
       >[]
 
       const { data: created, error: createErr } = await supabase
@@ -169,6 +253,8 @@ export function useDuplicateRecipe() {
             ingredients.map((i, idx) => ({
               recipe_food_id: copy.id,
               ingredient_food_id: i.ingredient_food_id,
+              amount: i.amount,
+              unit: i.unit,
               servings: i.servings,
               position: i.position ?? idx,
             })),
@@ -232,17 +318,21 @@ export function useAddIngredient() {
   return useMutation({
     mutationFn: async ({
       recipeFoodId,
-      ingredientFoodId,
-      servings,
+      food,
+      amount,
+      unit,
     }: {
       recipeFoodId: string
-      ingredientFoodId: string
-      servings: number
+      food: Food
+      amount: number
+      unit: string
     }) => {
       const { error } = await supabase.from('recipe_ingredients').insert({
         recipe_food_id: recipeFoodId,
-        ingredient_food_id: ingredientFoodId,
-        servings,
+        ingredient_food_id: food.id,
+        amount,
+        unit,
+        servings: ingredientServings(food, amount, unit),
       })
       if (error) throw error
       await recompute(recipeFoodId)
@@ -261,15 +351,19 @@ export function useUpdateIngredient() {
     mutationFn: async ({
       id,
       recipeFoodId,
-      servings,
+      food,
+      amount,
+      unit,
     }: {
       id: string
       recipeFoodId: string
-      servings: number
+      food: Food
+      amount: number
+      unit: string
     }) => {
       const { error } = await supabase
         .from('recipe_ingredients')
-        .update({ servings })
+        .update({ amount, unit, servings: ingredientServings(food, amount, unit) })
         .eq('id', id)
       if (error) throw error
       await recompute(recipeFoodId)

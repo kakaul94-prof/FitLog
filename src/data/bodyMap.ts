@@ -4,6 +4,7 @@
 //   2. SVG geometry (vendored) — src/data/bodyGeometry.ts
 //   3. mapping (this file): tag/exercise -> our regions, and asset slug -> region
 import { EXERCISES } from '@/data/exercises'
+import { normalizeExerciseName } from '@/data/exerciseAliases'
 
 // Our logical muscle regions. Back is split upper-back (traps folded in) / lats / erector;
 // core is split obliques / rectus / lower abs; delts are front / side / rear.
@@ -162,7 +163,7 @@ export const EXERCISE_OVERRIDE: Record<string, Partial<Record<RegionId, number>>
   barbell_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   db_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   seated_cable_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
-  face_pull: { rear_delts: 1, upper_back: 1 },
+  face_pull: { rear_delts: 1, upper_back: 0.5 },
   // posterior chain
   deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5, upper_back: 0.5 },
   romanian_deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5 },
@@ -170,6 +171,8 @@ export const EXERCISE_OVERRIDE: Record<string, Partial<Record<RegionId, number>>
   front_squat: { quads: 1, glutes: 0.5 },
   leg_curl: { hams: 1 },
   lunge: { quads: 1, glutes: 1 },
+  // shoulders — the dumbbell press path lets the side delt work too
+  db_shoulder_press: { shoulders: 1, triceps: 0.5, side_delts: 0.5 },
   // arms
   hammer_curl: { biceps: 1, forearm: 0.5 },
   // core
@@ -195,7 +198,7 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'seated front hammer raises': { shoulders: 1 },
   // back — lats
   'wide grip pull up': { lats: 1, biceps: 0.5, upper_back: 0.5 },
-  'neutral grip pull ups': { lats: 1, biceps: 0.5, upper_back: 0.5, forearm: 0.5 },
+  'neutral grip pull ups': { lats: 1, biceps: 0.5, upper_back: 0.5, forearm: 0.5, rear_delts: 0.5 },
   'band assisted pull up': { lats: 1, biceps: 0.5, upper_back: 0.5 },
   'assisted pull ups': { lats: 1, biceps: 0.5, upper_back: 0.5 },
   'band assisted chin up': { lats: 1, biceps: 1 },
@@ -211,6 +214,9 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'chest supported rows': { upper_back: 1, lats: 0.5, rear_delts: 0.5 },
   'flexion row': { erector_spinae: 1, lats: 0.5 },
   'w raise': { upper_back: 1, rear_delts: 0.5 },
+  // prone Y — lower traps lead, rear delt assists (same shape as the W raise)
+  'inclined prone y raise': { upper_back: 1, rear_delts: 0.5 },
+  'inclined prone y raises': { upper_back: 1, rear_delts: 0.5 },
   // back — rear delt
   'rear delt rows': { rear_delts: 1, upper_back: 0.5 },
   'inclined rear delt rows': { rear_delts: 1, upper_back: 0.5 },
@@ -218,9 +224,15 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'reverse rear delt cable flys': { rear_delts: 1, upper_back: 0.5 },
   'inclined dumbbell face pulls': { rear_delts: 1, upper_back: 0.5 },
   'inclined y raises': { rear_delts: 1, upper_back: 0.5 },
+  'face pulls': { rear_delts: 1, upper_back: 0.5 },
+  // back — custom Back-tagged rows/pulldowns: generic back spread + 0.5 rear-delt accessory
+  'lat pull down': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },
+  'pull ups': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },
+  'seated row': { upper_back: 0.5, lats: 1, biceps: 0.5, rear_delts: 0.5 },
   // back — traps (folded into upper back) / erector
   'dumbbell shoulder shrug': { upper_back: 1 },
   'barbell shoulder shrugs': { upper_back: 1 },
+  shrugs: { upper_back: 1 },
   'scapula depressions': { upper_back: 1.5 },
   'farmers walk': { upper_back: 1, erector_spinae: 0.5, forearm: 0.5 },
   'back extension': { erector_spinae: 1, glutes: 0.5 },
@@ -248,6 +260,8 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'close grip dumbbell bench press': { triceps: 1, chest: 0.5 },
   'reverse grip cable pull down': { triceps: 1, chest: 0.5 },
   'cross chest dumbbell extension': { triceps: 1, chest: 0.5 },
+  // triceps — isolation
+  'overhead tricep cable extensions': { triceps: 1 },
   // chest — the bare "Cable (Chest L/R)" tag is unmappable; pin by name
   cable: { chest: 1 },
   // core — rectus (upper)
@@ -279,6 +293,13 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
 // Built-in exercise_key -> muscle tag.
 export const BUILTIN_TAG: Record<string, string> = Object.fromEntries(
   EXERCISES.map((e) => [e.key, e.muscle]),
+)
+
+// Stretches are held, not trained. Their muscle tags would otherwise resolve
+// through the tag map (Pigeon Pose → Glutes) and count holds as working sets,
+// inflating the volume heatmap — so mobility work is excluded outright.
+const MOBILITY_KEYS = new Set(
+  EXERCISES.filter((e) => e.kind === 'mobility').map((e) => e.key),
 )
 
 // --- Weekly set goals -------------------------------------------------------
@@ -352,4 +373,24 @@ export function volumeStatus(sets: number, goal: number): string {
   if (p < 1.0) return 'near goal'
   if (p < 1.3) return 'at goal'
   return 'over goal'
+}
+
+/** Resolve one exercise's fractional muscle-region contribution, in priority
+ *  order: per-key override → normalized-name match → tag (a built-in's muscle,
+ *  or a custom exercise's `muscle`). undefined = unmapped. Shared by logged
+ *  volume (useMuscleVolume) and planned volume (the program). `customTag` maps
+ *  `custom:<id>` → its muscle. */
+export function resolveContrib(
+  exerciseKey: string,
+  exerciseName: string | null,
+  customTag: Map<string, string | null>,
+): Partial<Record<RegionId, number>> | undefined {
+  if (MOBILITY_KEYS.has(exerciseKey)) return undefined
+  const tag = exerciseKey.startsWith('custom:')
+    ? customTag.get(exerciseKey) ?? null
+    : BUILTIN_TAG[exerciseKey] ?? null
+  const nameContrib = exerciseName
+    ? NAME_CONTRIB[normalizeExerciseName(exerciseName)]
+    : undefined
+  return EXERCISE_OVERRIDE[exerciseKey] ?? nameContrib ?? contribForTag(tag)
 }

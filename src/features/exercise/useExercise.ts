@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import type { ExerciseEntry } from '@/lib/database.types'
+import type { ExerciseEntry, HrSamples } from '@/lib/database.types'
 
 export function useExerciseEntries(date: string) {
   return useQuery({
@@ -34,13 +34,76 @@ export function useExerciseEntriesRange(start: string, end: string) {
   })
 }
 
+/**
+ * Latest entry per distinct activity name — the add-exercise picker's "Recent"
+ * list. Each row carries the full last session so it can be re-logged as-is.
+ */
+export function useRecentExerciseEntries(limit = 5) {
+  return useQuery({
+    queryKey: ['exercise', 'recentNames', limit],
+    queryFn: async (): Promise<ExerciseEntry[]> => {
+      const { data, error } = await supabase
+        .from('exercise_entries')
+        .select('*')
+        .order('entry_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(60)
+      if (error) throw error
+      const seen = new Set<string>()
+      const out: ExerciseEntry[] = []
+      for (const e of (data ?? []) as ExerciseEntry[]) {
+        if (seen.has(e.name)) continue
+        seen.add(e.name)
+        out.push(e)
+        if (out.length >= limit) break
+      }
+      return out
+    },
+  })
+}
+
 export interface NewExercise {
   entry_date: string
   name: string
   met: number | null
   duration_min: number | null
   distance_mi: number | null
+  load_lb: number | null
+  level: number | null
+  level_max: number | null
   calories: number
+  avg_hr: number | null
+  zone: number | null
+  max_hr: number | null
+  hr_samples: HrSamples | null
+  zone_seconds: number[] | null
+}
+
+/**
+ * The value you last used for this activity — the ruck weight you carried, or
+ * how many resistance levels your machine has. Prefills the add form the way
+ * strength prefills "last time". Null name = disabled, so it costs nothing on
+ * an ordinary cardio entry.
+ */
+export function useLastCardioField(
+  name: string | null,
+  field: 'load_lb' | 'level_max',
+) {
+  return useQuery({
+    queryKey: ['exerciseLastField', field, name],
+    enabled: !!name,
+    queryFn: async (): Promise<number | null> => {
+      const { data, error } = await supabase
+        .from('exercise_entries')
+        .select(field)
+        .eq('name', name)
+        .not(field, 'is', null)
+        .order('entry_date', { ascending: false })
+        .limit(1)
+      if (error) throw error
+      return (data?.[0] as Record<string, number> | undefined)?.[field] ?? null
+    },
+  })
 }
 
 export function useLogExercise() {
@@ -50,8 +113,13 @@ export function useLogExercise() {
       const { error } = await supabase.from('exercise_entries').insert(e)
       if (error) throw error
     },
-    onSuccess: (_d, v) =>
-      qc.invalidateQueries({ queryKey: ['exercise', v.entry_date] }),
+    // Whole prefix, not just the day: the weekly cardio-goal rollup reads the
+    // ['exercise','range',…] key, which a date-specific key doesn't match.
+    // nutritionTrends folds burn into each day's calorie budget, so it moves too.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['exercise'] })
+      qc.invalidateQueries({ queryKey: ['nutritionTrends'] })
+    },
   })
 }
 
@@ -65,7 +133,10 @@ export function useDeleteExercise() {
         .eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['exercise'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['exercise'] })
+      qc.invalidateQueries({ queryKey: ['nutritionTrends'] })
+    },
   })
 }
 
@@ -96,8 +167,9 @@ export function useUpdateExercise() {
       if (error) throw error
     },
     onSuccess: (_d, v) => {
-      qc.invalidateQueries({ queryKey: ['exercise', v.entry_date] })
+      qc.invalidateQueries({ queryKey: ['exercise'] })
       qc.invalidateQueries({ queryKey: ['exerciseEntry', v.id] })
+      qc.invalidateQueries({ queryKey: ['nutritionTrends'] })
     },
   })
 }

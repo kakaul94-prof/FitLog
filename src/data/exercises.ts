@@ -1,5 +1,12 @@
 // Built-in strength exercise library. Custom exercises are stored per-user.
-export type ExKind = 'weighted' | 'bodyweight' | 'timed'
+// 'timed' and 'mobility' are both logged as a hold in seconds rather than
+// reps × weight; 'mobility' additionally groups the stretch library.
+export type ExKind = 'weighted' | 'bodyweight' | 'timed' | 'mobility'
+
+/** Kinds whose sets are a hold duration, not reps × weight. Also accepts the
+ *  wider ExerciseType stored on custom exercises (which adds 'cardio'). */
+export const isHoldKind = (kind: ExKind | 'cardio' | null | undefined) =>
+  kind === 'timed' || kind === 'mobility'
 
 export interface BuiltinExercise {
   key: string
@@ -50,4 +57,30 @@ export const EXERCISES: BuiltinExercise[] = [
   { key: 'plank', name: 'Plank', muscle: 'Core', equipment: 'Bodyweight', kind: 'timed' },
   { key: 'crunch', name: 'Crunch', muscle: 'Core', equipment: 'Bodyweight', kind: 'bodyweight' },
   { key: 'hanging_leg_raise', name: 'Hanging Leg Raise', muscle: 'Core', equipment: 'Bodyweight', kind: 'bodyweight' },
+  // Mobility — logged as a hold in seconds. Bilateral stretches count both
+  // sides together (one hold entry), matching the Mobility list's minutes.
+  { key: 'couch_stretch', name: 'Couch Stretch', muscle: 'Hip Flexors', equipment: 'Floor', kind: 'mobility' },
+  { key: 'pigeon_pose', name: 'Pigeon Pose', muscle: 'Glutes', equipment: 'Floor', kind: 'mobility' },
+  { key: 'ninety_ninety', name: '90/90 Hip Switch', muscle: 'Hips', equipment: 'Floor', kind: 'mobility' },
+  { key: 'deep_squat_hold', name: 'Deep Squat Hold', muscle: 'Hips', equipment: 'Bodyweight', kind: 'mobility' },
+  { key: 'horse_stance', name: 'Horse Stance', muscle: 'Hips', equipment: 'Bodyweight', kind: 'mobility' },
+  { key: 'lizard_pose', name: 'Lizard Pose', muscle: 'Hips', equipment: 'Floor', kind: 'mobility' },
+  { key: 'pancake_stretch', name: 'Pancake Stretch', muscle: 'Adductors', equipment: 'Floor', kind: 'mobility' },
+  { key: 'butterfly_stretch', name: 'Butterfly Stretch', muscle: 'Adductors', equipment: 'Floor', kind: 'mobility' },
+  { key: 'hamstring_stretch', name: 'Seated Hamstring Stretch', muscle: 'Hamstrings', equipment: 'Floor', kind: 'mobility' },
+  { key: 'standing_quad_stretch', name: 'Standing Quad Stretch', muscle: 'Quads', equipment: 'Bodyweight', kind: 'mobility' },
+  { key: 'calf_stretch', name: 'Calf Stretch', muscle: 'Calves', equipment: 'Wall', kind: 'mobility' },
+  { key: 'worlds_greatest_stretch', name: "World's Greatest Stretch", muscle: 'Full Body', equipment: 'Bodyweight', kind: 'mobility' },
+  { key: 'dead_hang', name: 'Dead Hang', muscle: 'Lats', equipment: 'Pull-Up Bar', kind: 'mobility' },
+  { key: 'childs_pose', name: "Child's Pose", muscle: 'Lats', equipment: 'Floor', kind: 'mobility' },
+  { key: 'doorway_chest_stretch', name: 'Doorway Chest Stretch', muscle: 'Chest', equipment: 'Wall', kind: 'mobility' },
+  { key: 'thoracic_extension', name: 'Thoracic Extension', muscle: 'Upper Back', equipment: 'Foam Roller', kind: 'mobility' },
+  { key: 'seated_spinal_twist', name: 'Seated Spinal Twist', muscle: 'Spine', equipment: 'Floor', kind: 'mobility' },
+  { key: 'cat_cow', name: 'Cat-Cow', muscle: 'Spine', equipment: 'Floor', kind: 'mobility' },
+  { key: 'shoulder_dislocates', name: 'Shoulder Dislocates', muscle: 'Shoulders', equipment: 'Band', kind: 'mobility' },
+  { key: 'neck_side_stretch', name: 'Neck Side Stretch', muscle: 'Neck', equipment: 'Bodyweight', kind: 'mobility' },
+  { key: 'wrist_flexor_stretch', name: 'Wrist Flexor Stretch', muscle: 'Forearms', equipment: 'Floor', kind: 'mobility' },
 ]
+
+/** Built-in stretches, for the Mobility list's name suggestions. */
+export const MOBILITY_EXERCISES = EXERCISES.filter((e) => e.kind === 'mobility')

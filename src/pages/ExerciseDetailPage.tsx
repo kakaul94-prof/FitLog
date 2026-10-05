@@ -9,6 +9,9 @@ import {
   Pencil,
   Trash2,
   RotateCw,
+  TrendingUp,
+  Trophy,
+  AlertTriangle,
 } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { ActionSheet } from '@/components/ActionSheet'
@@ -18,7 +21,11 @@ import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useLongPress } from '@/lib/useLongPress'
-import { useExerciseHistory, useExerciseSessions } from '@/features/strength/useStrength'
+import {
+  useExerciseHistory,
+  useExerciseSessions,
+  type ExerciseSession,
+} from '@/features/strength/useStrength'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import {
   useFormVideo,
@@ -30,11 +37,14 @@ import {
   currentE1RM,
   suggestNext,
   weightForReps,
+  formatGoalTarget,
   requiredPace,
   formatPace,
+  projectGoalEta,
   PROGRESSION_LABEL,
   PROGRESSION_SOURCE,
 } from '@/lib/progression'
+import type { GoalProjection } from '@/lib/progression'
 import {
   useStrengthGoal,
   useSaveStrengthGoal,
@@ -51,15 +61,18 @@ import {
 import { EXERCISES } from '@/data/exercises'
 import { getExerciseForm } from '@/data/exerciseForm'
 import { builtinKeyForName } from '@/data/exerciseAliases'
+import { useCoachEnabled } from '@/features/profile/useProfile'
 
 const METRICS = [
+  { key: 'e1rm', label: 'Est. 1RM' },
   { key: 'max', label: 'Max weight' },
   { key: 'total', label: 'Total volume' },
   { key: 'avg', label: 'Average weight' },
 ] as const
 type MetricKey = (typeof METRICS)[number]['key']
 
-const GREEN = '#16a34a'
+const ACCENT = 'var(--primary)'
+const GOAL = '#d97706' // amber-600 — the goal line, distinct from the accent trend
 const TABS = ['history', 'form', 'videos', 'progress'] as const
 type Tab = (typeof TABS)[number]
 
@@ -88,7 +101,7 @@ export function ExerciseDetailPage() {
     .join(' · ')
 
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title={name}
         subtitle={subtitle || undefined}
@@ -140,6 +153,87 @@ function setLabel(weight: number | null, reps: number | null): string {
   return '—'
 }
 
+// All-time bests for this lift, derived from the same session history the
+// History tab already loads (no extra query). The persistent counterpart to the
+// live PR banners shown during a workout: heaviest set, biggest single-set
+// volume, and biggest session tonnage. Returns null for unweighted lifts
+// (nothing to rank), so the card simply doesn't appear.
+function RecordsCard({ sessions }: { sessions: ExerciseSession[] }) {
+  let maxWeight = 0
+  let maxWeightReps: number | null = null
+  let bestSetVol = 0
+  let bestSetVolLabel = ''
+  let bestSessionVol = 0
+  let bestSessionDate = ''
+  for (const s of sessions) {
+    let sessionVol = 0
+    for (const x of s.sets) {
+      const w = x.weight_lb ?? 0
+      const r = x.reps ?? 0
+      if (w > maxWeight) {
+        maxWeight = w
+        maxWeightReps = x.reps
+      }
+      const v = r * w
+      if (v > bestSetVol) {
+        bestSetVol = v
+        bestSetVolLabel = `${w} × ${r}`
+      }
+      sessionVol += v
+    }
+    if (sessionVol > bestSessionVol) {
+      bestSessionVol = sessionVol
+      bestSessionDate = s.date
+    }
+  }
+
+  const records = [
+    maxWeight > 0 && {
+      label: 'Heaviest set',
+      value: setLabel(maxWeight, maxWeightReps),
+    },
+    bestSetVol > 0 && {
+      label: 'Best set volume',
+      value: `${Math.round(bestSetVol)} lb`,
+      detail: bestSetVolLabel,
+    },
+    bestSessionVol > 0 && {
+      label: 'Best session volume',
+      value: `${Math.round(bestSessionVol)} lb`,
+      detail: dateLabel(bestSessionDate),
+    },
+  ].filter(Boolean) as { label: string; value: string; detail?: string }[]
+
+  if (!records.length) return null
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-1.5 border-b border-border p-3">
+        <Trophy className="h-4 w-4 text-amber-500" />
+        <span className="text-sm font-semibold">Records</span>
+      </div>
+      <div className="space-y-2 p-3">
+        {records.map((r) => (
+          <div
+            key={r.label}
+            className="flex items-baseline justify-between gap-2"
+          >
+            <span className="text-sm text-muted-foreground">{r.label}</span>
+            <span className="text-sm font-semibold tabular-nums">
+              {r.value}
+              {r.detail && (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  {r.detail}
+                </span>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function HistoryTab({ exerciseKey }: { exerciseKey: string | undefined }) {
   const { data: sessions, isLoading } = useExerciseSessions(exerciseKey)
   const rows = sessions ?? []
@@ -161,6 +255,7 @@ function HistoryTab({ exerciseKey }: { exerciseKey: string | undefined }) {
 
   return (
     <div className="space-y-3">
+      <RecordsCard sessions={rows} />
       {rows.map((s) => {
         const best = s.sets.reduce(
           (m, x) => Math.max(m, estimated1RM(x.weight_lb ?? 0, x.reps ?? 0)),
@@ -248,10 +343,15 @@ function FormTab({
 
   const removeNote = (idx: number) => {
     if (!exerciseKey) return
+    const text = noteLines[idx]
     const next = noteLines.filter((_, i) => i !== idx)
     upsert.mutate({
       exercise_key: exerciseKey,
       notes: next.length ? next.join('\n') : null,
+      // Drop the note's star so it can't linger or pre-star a re-added note.
+      ...(starred.includes(text)
+        ? { starred_cues: starred.filter((c) => c !== text) }
+        : {}),
     })
   }
 
@@ -268,8 +368,16 @@ function FormTab({
   const saveEdit = () => {
     const trimmed = editDraft.trim()
     if (!exerciseKey || editIdx === null || !trimmed) return
+    const old = noteLines[editIdx]
     const next = noteLines.map((l, i) => (i === editIdx ? trimmed : l))
-    upsert.mutate({ exercise_key: exerciseKey, notes: next.join('\n') })
+    upsert.mutate({
+      exercise_key: exerciseKey,
+      notes: next.join('\n'),
+      // Move the star onto the edited text so it doesn't fall off.
+      ...(starred.includes(old)
+        ? { starred_cues: starred.map((c) => (c === old ? trimmed : c)) }
+        : {}),
+    })
     cancelEdit()
   }
 
@@ -279,7 +387,7 @@ function FormTab({
     upsert.mutate({ exercise_key: exerciseKey, hidden_cues: [...hidden, text] })
   }
 
-  // Star / unstar a curated cue the user finds especially helpful.
+  // Star / unstar a curated cue or one of your own notes (same store).
   const toggleStar = (text: string) => {
     if (!exerciseKey) return
     const next = starred.includes(text)
@@ -383,6 +491,7 @@ function FormTab({
                     marker="•"
                     markerClass="text-primary"
                     text={line}
+                    starred={starred.includes(line)}
                     onLongPress={() => setMenuIdx(i)}
                   />
                 ),
@@ -417,6 +526,14 @@ function FormTab({
       {menuIdx !== null && noteLines[menuIdx] !== undefined && (
         <ActionSheet
           title={noteLines[menuIdx]}
+          starred={starred.includes(noteLines[menuIdx])}
+          starLabel={
+            starred.includes(noteLines[menuIdx]) ? 'Unstar note' : 'Star note'
+          }
+          onStar={() => {
+            toggleStar(noteLines[menuIdx])
+            setMenuIdx(null)
+          }}
           editLabel="Edit note"
           deleteLabel="Delete note"
           onEdit={() => {
@@ -605,13 +722,26 @@ function FormSection({
 
 function ProgressTab({ exerciseKey }: { exerciseKey: string | undefined }) {
   const { data: history } = useExerciseHistory(exerciseKey)
-  const [metric, setMetric] = useState<MetricKey>('max')
+  const { data: goal } = useStrengthGoal(exerciseKey)
+  // null = no explicit pick yet → default to Est. 1RM when a goal exists (so the
+  // goal line shows), else Max weight. A user pick sticks regardless.
+  const [picked, setPicked] = useState<MetricKey | null>(null)
+  const metric: MetricKey = picked ?? (goal ? 'e1rm' : 'max')
 
   const rows = history ?? []
   const chartData = rows.map((r) => ({ date: r.date.slice(5), value: r[metric] }))
   const bestMax = rows.reduce((m, r) => Math.max(m, r.max), 0)
   const bestVol = rows.reduce((m, r) => Math.max(m, r.total), 0)
   const meta = METRICS.find((m) => m.key === metric) ?? METRICS[0]
+
+  // The goal is a target 1RM, so the goal line + ETA only apply to that series.
+  const showGoal = metric === 'e1rm' && !!goal
+  const proj = showGoal
+    ? projectGoalEta(
+        rows.map((r) => ({ date: r.date, e1rm: r.e1rm })),
+        goal.target_1rm_lb,
+      )
+    : null
 
   return (
     <div className="space-y-4">
@@ -626,7 +756,10 @@ function ProgressTab({ exerciseKey }: { exerciseKey: string | undefined }) {
         </Card>
       </div>
 
-      <Select value={metric} onChange={(e) => setMetric(e.target.value as MetricKey)}>
+      <Select
+        value={metric}
+        onChange={(e) => setPicked(e.target.value as MetricKey)}
+      >
         {METRICS.map((m) => (
           <option key={m.key} value={m.key}>
             {m.label}
@@ -644,22 +777,81 @@ function ProgressTab({ exerciseKey }: { exerciseKey: string | undefined }) {
               Log this exercise in 2+ sessions to see a trend.
             </p>
           ) : (
-            <LineChartSvg
-              data={chartData}
-              xKey="date"
-              series={[
-                {
-                  key: 'value',
-                  color: GREEN,
-                  strokeWidth: 2.5,
-                  dotRadius: 3,
-                  name: meta.label,
-                },
-              ]}
-            />
+            <>
+              <LineChartSvg
+                data={chartData}
+                xKey="date"
+                refLine={
+                  showGoal
+                    ? {
+                        value: goal.target_1rm_lb,
+                        color: GOAL,
+                        label: `Goal ${goal.target_1rm_lb}`,
+                      }
+                    : undefined
+                }
+                series={[
+                  {
+                    key: 'value',
+                    color: ACCENT,
+                    strokeWidth: 2.5,
+                    dotRadius: 3,
+                    name: meta.label,
+                  },
+                ]}
+              />
+              {showGoal && proj && (
+                <GoalEtaCaption proj={proj} goal={goal} />
+              )}
+            </>
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// The actual-trend projection under the e1RM chart: where your logged trend is
+// headed (vs. the goal card's REQUIRED pace). Reached / flat / on-track states.
+function GoalEtaCaption({
+  proj,
+  goal,
+}: {
+  proj: GoalProjection
+  goal: StrengthGoal
+}) {
+  if (proj.reached)
+    return <p className="mt-3 text-xs font-medium text-primary">🎉 Goal reached</p>
+  if (!proj.etaISO)
+    return (
+      <p className="mt-3 text-xs text-muted-foreground">
+        Not trending up yet — no estimate.
+      </p>
+    )
+  const eta = new Date(proj.etaISO + 'T00:00:00').toLocaleDateString(undefined, {
+    month: 'short',
+    year: 'numeric',
+  })
+  const behind = goal.target_date ? proj.etaISO > goal.target_date : false
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <TrendingUp className="h-4 w-4 shrink-0 text-primary" />
+      <span className="text-xs text-muted-foreground">
+        Trend +{formatPace(proj.slopePerWeek)} lb/wk · reach {goal.target_1rm_lb}{' '}
+        by ≈ {eta}
+      </span>
+      {goal.target_date && (
+        <span
+          className={cn(
+            'ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-medium',
+            behind
+              ? 'bg-destructive/10 text-destructive'
+              : 'bg-primary/10 text-primary',
+          )}
+        >
+          {behind ? 'behind' : 'on track'}
+        </span>
+      )}
     </div>
   )
 }
@@ -813,9 +1005,18 @@ function GoalCard({
   const update = useUpdateStrengthGoal()
   const del = useDeleteStrengthGoal()
   const [editing, setEditing] = useState(false)
+  // The last-session pain/form heads-up belongs to the coach, so it follows the
+  // same switch as the workout page — the two surfaces can't disagree.
+  const coachEnabled = useCoachEnabled()
 
   const priorSessions = (sessions ?? []).map((s) =>
-    s.sets.map((x) => ({ weight_lb: x.weight_lb, reps: x.reps })),
+    s.sets.map((x) => ({
+      weight_lb: x.weight_lb,
+      reps: x.reps,
+      effort: x.effort,
+      feel: x.feel,
+      pain: x.pain,
+    })),
   )
   const current = currentE1RM(priorSessions)
 
@@ -923,7 +1124,7 @@ function GoalCard({
           <span className="text-muted-foreground">
             {current ? `Now ~${current} lb` : 'No history yet'}
           </span>
-          <span className="font-medium">Goal {goal.target_1rm_lb} lb 1RM</span>
+          <span className="font-medium">Goal {formatGoalTarget(goal)}</span>
         </div>
         <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
           <div
@@ -996,6 +1197,13 @@ function GoalCard({
           </>
         )}
 
+        {coachEnabled && sug.warning && (
+          <div className="mt-2 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            <span>{sug.warning}</span>
+          </div>
+        )}
+
         <p className="mt-2 text-[11px] text-muted-foreground">{sug.source}</p>
 
         {goal.method === '531' && current > 0 && (
@@ -1029,7 +1237,10 @@ function GoalForm({
 }) {
   const save = useSaveStrengthGoal()
   const update = useUpdateStrengthGoal()
-  const [target, setTarget] = useState(goal ? String(goal.target_1rm_lb) : '')
+  const [weight, setWeight] = useState(
+    goal ? String(goal.target_weight_lb) : '',
+  )
+  const [reps, setReps] = useState(String(goal?.target_reps ?? 1))
   const [method, setMethod] = useState<ProgressionMethod>(
     goal?.method ?? 'double',
   )
@@ -1040,14 +1251,19 @@ function GoalForm({
   const [targetDate, setTargetDate] = useState(goal?.target_date ?? '')
   const pending = save.isPending || update.isPending
 
+  const w = parseFloat(weight)
+  const r = Math.max(1, parseInt(reps, 10) || 1)
+  const derived1RM = w > 0 ? Math.round(estimated1RM(w, r)) : 0
+
   const onSave = () => {
-    const t = parseFloat(target)
-    if (!t) return
+    if (!(w > 0)) return
     const repLow = parseInt(lo, 10) || 5
     const base = {
       exercise_key: exerciseKey,
       exercise_name: name,
-      target_1rm_lb: t,
+      target_weight_lb: w,
+      target_reps: r,
+      target_1rm_lb: derived1RM,
       method,
       increment_lb: parseFloat(inc) || 5,
       rep_low: repLow,
@@ -1065,17 +1281,35 @@ function GoalForm({
         {goal ? 'Edit goal' : 'New strength goal'}
       </div>
 
-      <label className="block text-xs text-muted-foreground">
-        Target 1RM (lb)
-        <Input
-          type="number"
-          inputMode="decimal"
-          value={target}
-          onChange={(e) => setTarget(e.target.value)}
-          placeholder="e.g. 200"
-          className="mt-1"
-        />
-      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block text-xs text-muted-foreground">
+          Target weight (lb)
+          <Input
+            type="number"
+            inputMode="decimal"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder="e.g. 225"
+            className="mt-1"
+          />
+        </label>
+        <label className="block text-xs text-muted-foreground">
+          Target reps
+          <Input
+            type="number"
+            inputMode="numeric"
+            value={reps}
+            onChange={(e) => setReps(e.target.value)}
+            placeholder="1"
+            className="mt-1"
+          />
+        </label>
+      </div>
+      {derived1RM > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          = {derived1RM} lb est. 1RM (Epley) — what progress tracks against
+        </p>
+      )}
 
       <label className="block text-xs text-muted-foreground">
         Target date (optional)
@@ -1159,7 +1393,7 @@ function GoalForm({
         <Button
           className="flex-1"
           onClick={onSave}
-          disabled={!parseFloat(target) || pending}
+          disabled={!(w > 0) || pending}
         >
           {pending ? 'Saving…' : 'Save goal'}
         </Button>

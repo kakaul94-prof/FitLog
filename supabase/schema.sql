@@ -34,15 +34,46 @@ create table if not exists public.profiles (
   calorie_goal_mode text not null default 'calculated'
     check (calorie_goal_mode in ('calculated','manual')),
   manual_calorie_goal integer,
+  -- Dated log of calorie-goal changes: jsonb array of { from (ISO date), goal }.
+  -- Lets past diary days keep the goal that was in effect then. [] = none.
+  calorie_goal_history jsonb not null default '[]'::jsonb,
   macro_targets jsonb not null default
     '{"protein":{"mode":"g_per_lb","value":0.9},"fat":{"mode":"pct","value":30},"carb":{"mode":"remainder"}}'::jsonb,
   eat_back_exercise boolean not null default false,
   -- Per-muscle weekly set goals (sets/week), keyed by RegionId (src/data/bodyMap.ts).
   -- Sparse; missing regions use DEFAULT_GOALS in app code. 0 = untracked.
   volume_targets jsonb,
+  -- Foods taken daily (e.g. a multivitamin): jsonb array of { food_id, servings }.
+  -- Folded into the weekly micro rollup (not the diary). [] = none.
+  daily_supplements jsonb not null default '[]'::jsonb,
+  -- Heart-rate zones: max HR (null = estimate from age) + optional resting HR
+  -- (enables Karvonen reserve zones when set).
+  max_hr smallint,
+  resting_hr smallint,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- HR settings (added later; idempotent for existing DBs).
+alter table public.profiles add column if not exists max_hr smallint;
+alter table public.profiles add column if not exists resting_hr smallint;
+alter table public.profiles add column if not exists daily_supplements jsonb not null default '[]'::jsonb;
+-- Workout program (ordered rotation of templates + rest days). See migration_program.sql.
+alter table public.profiles add column if not exists program jsonb;
+-- Dated calorie-goal history (see migration_calorie_goal_history.sql).
+alter table public.profiles add column if not exists calorie_goal_history jsonb not null default '[]'::jsonb;
+-- Weekly cardio minutes target (see migration_routine_cardio.sql). null = unset.
+alter table public.profiles add column if not exists weekly_cardio_min_target integer;
+-- Per-intensity weekly cardio goal (see migration_cardio_goal.sql). null = unset.
+alter table public.profiles add column if not exists cardio_goal jsonb;
+-- Daily step goal (see migration_step_goal.sql). null = unset.
+alter table public.profiles add column if not exists step_goal integer;
+-- Next-set coach opt-in (see migration_coach_enabled.sql). Off by default.
+alter table public.profiles add column if not exists coach_enabled boolean not null default false;
+-- Trainer chat memory (see migration_trainer_memory.sql). [] = nothing saved.
+alter table public.profiles add column if not exists trainer_memory jsonb not null default '[]'::jsonb;
+-- Rehab centre: injuries, their plans, the rehab log and pain check-ins
+-- (see migration_rehab.sql). {} = nothing set up yet.
+alter table public.profiles add column if not exists rehab jsonb not null default '{}'::jsonb;
 alter table public.profiles enable row level security;
 drop policy if exists profiles_rw_own on public.profiles;
 create policy profiles_rw_own on public.profiles
@@ -104,6 +135,10 @@ create table if not exists public.recipe_ingredients (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   recipe_food_id uuid not null references public.foods(id) on delete cascade,
   ingredient_food_id uuid not null references public.foods(id) on delete restrict,
+  -- amount of `unit`: 'base' = one base serving, a portion id, or a mass unit
+  -- (g/oz/lb). `servings` is the derived base-serving multiplier.
+  amount numeric,
+  unit text,
   servings numeric not null default 1,
   position integer not null default 0,
   created_at timestamptz not null default now()
@@ -166,8 +201,28 @@ create table if not exists public.exercise_entries (
   duration_min numeric,
   distance_mi numeric,
   calories integer not null default 0,
+  avg_hr smallint,
+  zone smallint check (zone is null or zone between 1 and 5),
+  load_lb numeric,
+  level smallint,
+  level_max smallint,
   created_at timestamptz not null default now()
 );
+-- Cardio HR zones (added later; idempotent for existing DBs).
+alter table public.exercise_entries add column if not exists avg_hr smallint;
+alter table public.exercise_entries add column if not exists zone smallint;
+-- Carried load in lb (added later; see migration_ruck_load.sql).
+alter table public.exercise_entries add column if not exists load_lb numeric;
+-- Machine resistance level (added later; see migration_cardio_level.sql).
+alter table public.exercise_entries add column if not exists level smallint;
+alter table public.exercise_entries add column if not exists level_max smallint;
+-- Recorded chest-strap session (added later; see migration_hr_session.sql).
+alter table public.exercise_entries add column if not exists max_hr smallint;
+alter table public.exercise_entries add column if not exists hr_samples jsonb;
+alter table public.exercise_entries add column if not exists zone_seconds int[];
+alter table public.exercise_entries drop constraint if exists exercise_entries_zone_check;
+alter table public.exercise_entries add constraint exercise_entries_zone_check
+  check (zone is null or zone between 1 and 5);
 create index if not exists exercise_user_date_idx on public.exercise_entries(user_id, entry_date);
 alter table public.exercise_entries enable row level security;
 drop policy if exists exercise_rw_own on public.exercise_entries;
@@ -216,9 +271,13 @@ create table if not exists public.routine_exercises (
   exercise_name text not null,
   position integer not null default 0,
   target_sets integer,
-  target_reps integer
+  target_reps integer,
+  -- Droppable when you start the session with a time budget (false = core).
+  is_optional boolean not null default false
 );
 create index if not exists routine_ex_routine_idx on public.routine_exercises(routine_id);
+alter table public.routine_exercises
+  add column if not exists is_optional boolean not null default false;
 alter table public.routine_exercises enable row level security;
 drop policy if exists routine_ex_rw_own on public.routine_exercises;
 create policy routine_ex_rw_own on public.routine_exercises
@@ -257,7 +316,7 @@ create table if not exists public.workout_sets (
   weight_lb numeric,
   duration_sec numeric,
   distance numeric,
-  effort integer check (effort between 1 and 5),
+  effort integer check (effort between 1 and 10),
   is_warmup boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -278,6 +337,7 @@ create table if not exists public.measurements (
   type text not null default 'weight',
   value numeric not null,
   unit text not null default 'lb',
+  source text, -- 'healthconnect' = imported by the weight sync; null = manual
   created_at timestamptz not null default now()
 );
 create index if not exists measurements_user_type_idx
@@ -327,8 +387,25 @@ alter table public.workout_sets
   add column if not exists started_at timestamptz,
   add column if not exists ended_at  timestamptz;
 
+-- Post-set feedback for the next-set coach (see migration_set_feedback.sql):
+-- feel = movement quality ('good'|'off'); pain = site label, null = no pain.
+alter table public.workout_sets
+  add column if not exists feel text check (feel in ('good','off')),
+  add column if not exists pain text;
+
 alter table public.routine_exercises
   add column if not exists superset_group integer;
+
+-- Cardio prescriptions on template items (see migration_routine_cardio.sql).
+-- Rows with exercise_key 'cardio:<activity>' use these; lift rows leave them null.
+alter table public.routine_exercises
+  add column if not exists target_duration_min numeric,
+  add column if not exists target_distance_mi numeric,
+  add column if not exists target_zone smallint,
+  add column if not exists intervals jsonb;
+alter table public.routine_exercises drop constraint if exists routine_ex_target_zone_check;
+alter table public.routine_exercises add constraint routine_ex_target_zone_check
+  check (target_zone is null or (target_zone between 1 and 5));
 
 -- ============================================================
 -- exercise_notes — per-user form notes for an exercise.
@@ -462,6 +539,8 @@ create table if not exists public.strength_goals (
   exercise_key text not null,
   exercise_name text not null,
   target_1rm_lb numeric not null,
+  target_weight_lb numeric not null,
+  target_reps integer not null default 1,
   method text not null default 'double' check (method in ('linear', 'double', '531')),
   increment_lb numeric,
   rep_low integer not null default 5,

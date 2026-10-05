@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Plus, X, Search, Copy } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, X, Search, Copy } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { NutrientBreakdown } from '@/components/NutrientBreakdown'
+import { StartFromSourceSheet } from '@/components/StartFromSourceSheet'
 import { useFoods } from '@/features/foods/useFoods'
+import { ingredientUnits, ingredientNutrients } from '@/lib/nutrients'
+import type { Food } from '@/lib/database.types'
+import type { RecipeIngredientRow } from '@/features/recipes/useRecipes'
 import {
   useRecipe,
   useUpdateRecipe,
@@ -32,6 +37,7 @@ export function RecipeEditPage() {
   const [name, setName] = useState('')
   const [yieldServings, setYieldServings] = useState('1')
   const [adding, setAdding] = useState(false)
+  const [sourceOpen, setSourceOpen] = useState(false)
   const [search, setSearch] = useState('')
   const { data: foods } = useFoods(search)
 
@@ -42,11 +48,12 @@ export function RecipeEditPage() {
     }
   }, [recipe])
 
-  const pick = async (foodId: string) => {
+  const pick = async (food: Food) => {
     await addIng.mutateAsync({
       recipeFoodId: id!,
-      ingredientFoodId: foodId,
-      servings: 1,
+      food,
+      amount: 1,
+      unit: 'base',
     })
     setAdding(false)
     setSearch('')
@@ -55,7 +62,7 @@ export function RecipeEditPage() {
   const options = (foods ?? []).filter((f) => f.id !== id)
 
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title="Edit recipe"
         left={
@@ -113,41 +120,27 @@ export function RecipeEditPage() {
             Ingredients
           </h2>
           <Card className="divide-y divide-border overflow-hidden">
-            {ingredients.map(({ ri, food }) => (
-              <div key={ri.id} className="flex items-center gap-2 p-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">
-                    {food?.name ?? 'Unknown'}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {Math.round((food?.nutrients.kcal ?? 0) * ri.servings)} calories
-                  </div>
-                </div>
-                <Input
-                  className="h-9 w-16"
-                  type="number"
-                  inputMode="decimal"
-                  defaultValue={String(ri.servings)}
-                  onBlur={(e) => {
-                    const v = parseFloat(e.target.value) || 0
-                    if (v > 0 && v !== ri.servings)
-                      updateIng.mutate({
-                        id: ri.id,
-                        recipeFoodId: id!,
-                        servings: v,
-                      })
-                  }}
-                />
-                <button
-                  onClick={() =>
-                    removeIng.mutate({ id: ri.id, recipeFoodId: id! })
-                  }
-                  className="text-muted-foreground active:text-destructive"
-                  aria-label="Remove"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+            {ingredients.map((row) => (
+              <IngredientRow
+                key={row.ri.id}
+                row={row}
+                onChange={(amount, unit) =>
+                  row.food &&
+                  updateIng.mutate({
+                    id: row.ri.id,
+                    recipeFoodId: id!,
+                    food: row.food,
+                    amount,
+                    unit,
+                  })
+                }
+                onRemove={() =>
+                  removeIng.mutate({ id: row.ri.id, recipeFoodId: id! })
+                }
+                onEdit={() =>
+                  row.food && nav(`/foods/${row.food.id}?ingredientOf=${id}`)
+                }
+              />
             ))}
             {ingredients.length === 0 && (
               <div className="p-4 text-center text-sm text-muted-foreground">
@@ -173,7 +166,7 @@ export function RecipeEditPage() {
               {options.map((f) => (
                 <button
                   key={f.id}
-                  onClick={() => pick(f.id)}
+                  onClick={() => pick(f)}
                   className="block w-full p-2 text-left text-sm active:bg-accent"
                 >
                   {f.name}{' '}
@@ -191,7 +184,7 @@ export function RecipeEditPage() {
             <Button
               variant="outline"
               className="mt-1 w-full"
-              onClick={() => nav(`/foods/new?addToRecipe=${id}`)}
+              onClick={() => setSourceOpen(true)}
             >
               <Plus className="h-4 w-4" /> Create a new food
             </Button>
@@ -220,6 +213,98 @@ export function RecipeEditPage() {
           {recipe && <NutrientBreakdown nutrients={recipe.nutrients} />}
         </div>
       </div>
+
+      {sourceOpen && (
+        <StartFromSourceSheet
+          onClose={() => setSourceOpen(false)}
+          newFoodPath={`/foods/new?addToRecipe=${id}`}
+        />
+      )}
+    </div>
+  )
+}
+
+function IngredientRow({
+  row,
+  onChange,
+  onRemove,
+  onEdit,
+}: {
+  row: RecipeIngredientRow
+  onChange: (amount: number, unit: string) => void
+  onRemove: () => void
+  onEdit: () => void
+}) {
+  const { ri, food } = row
+  const units = food ? ingredientUnits(food) : []
+  const [amount, setAmount] = useState(String(ri.amount ?? ri.servings))
+  const [unit, setUnit] = useState(ri.unit ?? 'base')
+
+  // Resync when the row reloads (e.g. after a save invalidates the query).
+  useEffect(() => {
+    setAmount(String(ri.amount ?? ri.servings))
+    setUnit(ri.unit ?? 'base')
+  }, [ri.amount, ri.servings, ri.unit])
+
+  const amt = parseFloat(amount) || 0
+  const kcal = food ? ingredientNutrients(food, amt, unit).kcal ?? 0 : 0
+
+  const commitAmount = () => {
+    if (amt > 0 && (amt !== (ri.amount ?? ri.servings) || unit !== (ri.unit ?? 'base')))
+      onChange(amt, unit)
+  }
+  const commitUnit = (nextUnit: string) => {
+    setUnit(nextUnit)
+    if (amt > 0) onChange(amt, nextUnit)
+  }
+
+  return (
+    <div className="flex items-center gap-2 p-3">
+      <button
+        type="button"
+        onClick={onEdit}
+        disabled={!food}
+        className="min-w-0 flex-1 text-left active:opacity-70 disabled:pointer-events-none"
+      >
+        <div className="flex items-center gap-1 text-sm font-medium">
+          <span className="truncate">{food?.name ?? 'Unknown'}</span>
+          {food && (
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          )}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {Math.round(kcal)} calories
+        </div>
+      </button>
+      <Input
+        className="h-9 w-14"
+        type="number"
+        inputMode="decimal"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        onBlur={commitAmount}
+        aria-label="Amount"
+      />
+      <Select
+        className="h-9 w-24"
+        value={unit}
+        onChange={(e) => commitUnit(e.target.value)}
+        disabled={!food}
+        aria-label="Unit"
+      >
+        {units.map((u) => (
+          <option key={u.unit} value={u.unit}>
+            {u.label}
+          </option>
+        ))}
+      </Select>
+      <button
+        onClick={onRemove}
+        className="text-muted-foreground active:text-destructive"
+        aria-label="Remove"
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
   )
 }

@@ -48,6 +48,7 @@ git checkout -b dev && git push -u origin dev
    - `VITE_SUPABASE_URL` — the **bare** project URL `https://<ref>.supabase.co`. **Not** the REST endpoint (`…/rest/v1/`) — that causes `Invalid path specified in request URL` at sign-in.
    - `VITE_SUPABASE_ANON_KEY` — newer Supabase projects show keys as `sb_publishable_…` / `sb_secret_…`. Use the **publishable** key here; **never** the secret one (it bypasses RLS).
    - `VITE_USDA_API_KEY`
+   - `ANTHROPIC_API_KEY` — **secret, not a `VITE_` var**: it is read server-side by the Pages Functions and must never reach the browser. Powers meal-photo scan (`/api/scan-plate`), recipe import (`/api/import-recipe`) and the Ask-a-trainer chat (`/api/trainer`). Needed on **both** projects — the two are separate Cloudflare projects with separate secrets, so a key added to one does **not** exist on the other. Get it from console.anthropic.com. Symptom of a missing key: those endpoints return 503 "not configured". Symptom of a stale/revoked key: 502 with `authentication_error: API key is invalid` (this bit dev on 2026-08-09 — all three features were down at once).
 5. **Workers AI binding** (powers "Scan nutrition label"; Settings → Functions/Bindings — you may need one deploy first): add a **Workers AI** binding named **`AI`**. Needed on **both** projects, or label scanning breaks for that environment. No API key — uses Cloudflare's free Workers AI allowance; nothing is exposed to the browser.
 6. **Save and Deploy.**
 

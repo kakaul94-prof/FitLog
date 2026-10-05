@@ -1,0 +1,13 @@
+# Keep the E2E image small and free of local secrets / host-built binaries.
+.git
+node_modules
+dist
+android
+.env
+.env.*
+playwright-report
+test-results
+e2e/.auth
+supabase/.temp
+*.png
+*.csv

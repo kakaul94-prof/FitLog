@@ -1,25 +1,42 @@
-import { useRef, useState, type TouchEvent as ReactTouchEvent } from 'react'
-import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
 import {
+  useEffect,
+  useRef,
+  useState,
+  type TouchEvent as ReactTouchEvent,
+} from 'react'
+import { createPortal } from 'react-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import {
+  Activity,
+  ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Coffee,
+  Cookie,
+  Moon,
   Plus,
+  Salad,
   Trash2,
+  Flag,
   Flame,
+  Footprints,
+  Utensils,
   CheckCircle2,
   Circle,
   X,
   BookmarkPlus,
   Copy,
   ArrowRightLeft,
+  type LucideIcon,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ActionSheet } from '@/components/ActionSheet'
-import { CalorieRing, RING_GREEN } from '@/components/CalorieRing'
+import { CalorieRing } from '@/components/CalorieRing'
+import { ZoneBadge } from '@/components/ZoneBadge'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   useDiary,
   useStreak,
@@ -35,25 +52,96 @@ import {
 } from '@/features/exercise/useExercise'
 import { useProfile } from '@/features/profile/useProfile'
 import { useLatestWeight } from '@/features/measurements/useMeasurements'
-import { resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
+import { useSteps, useConnectSteps } from '@/features/steps/useSteps'
+import { goalForDate, resolveCalorieGoal, resolveMacroTargets } from '@/lib/calc'
 import { scaleNutrients, sumNutrients } from '@/lib/nutrients'
 import { todayISO, addDaysISO, dateLabel } from '@/lib/date'
+import { syncStreakNudge } from '@/lib/reminders'
 import { useLongPress } from '@/lib/useLongPress'
 import { cn } from '@/lib/utils'
 import type { DiaryEntry, ExerciseEntry, Meal } from '@/lib/database.types'
 
-const MEALS: { key: Meal; label: string }[] = [
-  { key: 'breakfast', label: 'Breakfast' },
-  { key: 'lunch', label: 'Lunch' },
-  { key: 'dinner', label: 'Dinner' },
-  { key: 'snacks', label: 'Snacks' },
+const MEALS: { key: Meal; label: string; icon: LucideIcon }[] = [
+  { key: 'breakfast', label: 'Breakfast', icon: Coffee },
+  { key: 'lunch', label: 'Lunch', icon: Salad },
+  { key: 'dinner', label: 'Dinner', icon: Moon },
+  { key: 'snacks', label: 'Snacks', icon: Cookie },
 ]
+
+// Cold-load placeholder that mirrors the hero (ring + macro bars) and the meal
+// cards, so the real layout fades in rather than flashing the empty/no-goal state.
+function DiarySkeleton() {
+  return (
+    <>
+      <Card className="p-4">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-[132px] w-[132px] rounded-full" />
+          <div className="flex flex-1 flex-col items-end gap-2">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="space-y-2">
+              <Skeleton className="h-2.5 w-12" />
+              <Skeleton className="h-1.5 w-full" />
+              <Skeleton className="h-2.5 w-10" />
+            </div>
+          ))}
+        </div>
+      </Card>
+      {MEALS.map((m) => (
+        <Card key={m.key} className="p-3">
+          <div className="flex items-center justify-between pb-2">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-3 w-12" />
+          </div>
+          <div className="space-y-3 border-t border-border pt-3">
+            <Skeleton className="h-3 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </Card>
+      ))}
+    </>
+  )
+}
 
 export function DiaryPage() {
   const nav = useNavigate()
-  const [date, setDate] = useState(todayISO())
-  const { data: entries } = useDiary(date)
-  const { data: profile } = useProfile()
+  // Seed from ?date= so returning here from add-food keeps the day you were on;
+  // a fresh Diary-tab tap (no param) still opens today.
+  const [params, setParams] = useSearchParams()
+  const [date, setDate] = useState(() => params.get('date') || todayISO())
+  // Mirror the viewed day back into the URL (replace, so day-stepping doesn't
+  // grow history) — otherwise back-navigation resurrects a stale ?date=.
+  // Today is kept as plain "/" so restored sessions never pin an old day.
+  useEffect(() => {
+    const want = date === todayISO() ? null : date
+    if ((params.get('date') || null) === want) return
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        if (want) next.set('date', want)
+        else next.delete('date')
+        return next
+      },
+      { replace: true },
+    )
+  }, [date, params, setParams])
+  const { data: entries, isLoading: diaryLoading } = useDiary(date)
+  const { data: profile, isLoading: profileLoading } = useProfile()
+
+  // Keep the native streak nudge honest (Android app only; no-op on web):
+  // logging something today pushes it to tomorrow evening, an empty day pulls
+  // it back to tonight. Only meaningful while viewing today with data loaded.
+  const loggedToday =
+    date === todayISO() && entries ? entries.length > 0 : null
+  useEffect(() => {
+    if (loggedToday !== null) void syncStreakNudge(loggedToday)
+  }, [loggedToday])
+
   const { data: weight } = useLatestWeight()
   const { data: exEntries } = useExerciseEntries(date)
   const { data: streak = 0 } = useStreak()
@@ -121,12 +209,19 @@ export function DiaryPage() {
       step(dx < 0 ? 1 : -1)
   }
 
+  // Cold-load skeleton: profile drives the "Set your goal" flash, entries the
+  // meal lists. Both are isLoading only on the first fetch (no cached data).
+  const loading = profileLoading || diaryLoading
   const list = entries ?? []
   const consumed = sumNutrients(
     list.map((e) => scaleNutrients(e.nutrients, e.servings)),
   )
   const goalRes = profile ? resolveCalorieGoal(profile, weight ?? null) : null
-  const goal = goalRes?.goal ?? null
+  // Show the goal that was in effect on the viewed day (today/future = live),
+  // so changing your goal doesn't rewrite past days.
+  const goal = profile
+    ? goalForDate(profile.calorie_goal_history, date, goalRes?.goal ?? null, todayISO())
+    : null
   const consumedKcal = Math.round(consumed.kcal ?? 0)
   const burned = (exEntries ?? []).reduce((s, e) => s + e.calories, 0)
   const macros =
@@ -183,12 +278,13 @@ export function DiaryPage() {
       !confirm(`Delete ${count} ${count === 1 ? 'entry' : 'entries'}?`)
     )
       return
-    delEntries.mutate([...selectedIds], { onSuccess: exitSelect })
+    delEntries.mutate([...selectedIds])
+    exitSelect()
   }
 
   const doMove = async (meal: Meal) => {
     if (!move || move.ids.length === 0) return
-    await moveEntries.mutateAsync({ ids: move.ids, meal })
+    moveEntries.mutate({ ids: move.ids, meal })
     setMove(null)
     exitSelect()
   }
@@ -270,6 +366,10 @@ export function DiaryPage() {
           dir < 0 && 'diary-slide-left',
         )}
       >
+        {loading ? (
+          <DiarySkeleton />
+        ) : (
+          <>
         <Card className="p-4">
           {goal != null ? (
             <>
@@ -279,10 +379,25 @@ export function DiaryPage() {
                   goal={goal}
                   burned={burned}
                 />
-                <div className="flex-1 text-right text-xs text-muted-foreground">
-                  <div>{goal} goal</div>
-                  <div>− {consumedKcal} food</div>
-                  {burned > 0 && <div>+ {burned} exercise</div>}
+                <div className="flex-1 space-y-2.5 pl-1">
+                  <StatRow
+                    icon={Flag}
+                    value={goal.toLocaleString()}
+                    label="goal"
+                  />
+                  <StatRow
+                    icon={Utensils}
+                    value={consumedKcal.toLocaleString()}
+                    label="food"
+                  />
+                  {burned > 0 && (
+                    <StatRow
+                      icon={Flame}
+                      iconColor={MACRO_HUES.carb}
+                      value={`+${burned.toLocaleString()}`}
+                      label="exercise"
+                    />
+                  )}
                 </div>
               </div>
               {macros && (
@@ -295,6 +410,7 @@ export function DiaryPage() {
                       }
                       have={Math.round(consumed[k] ?? 0)}
                       target={macros[k].grams}
+                      color={MACRO_HUES[k]}
                     />
                   ))}
                 </div>
@@ -315,14 +431,7 @@ export function DiaryPage() {
               to track calories remaining.
             </div>
           )}
-          {list.length > 0 && (
-            <button
-              onClick={() => nav(`/diary/nutrients?date=${date}`)}
-              className="mt-3 w-full text-center text-xs font-medium text-primary"
-            >
-              View full nutrient breakdown →
-            </button>
-          )}
+          <CardFooter date={date} showNutrients={list.length > 0} />
         </Card>
 
         {MEALS.map((m) => {
@@ -330,23 +439,50 @@ export function DiaryPage() {
           const mealKcal = Math.round(
             items.reduce((s, e) => s + (e.nutrients.kcal ?? 0) * e.servings, 0),
           )
+          const MealIcon = m.icon
+          // Empty meal collapses to a single tappable "+ Add" row.
+          if (items.length === 0) {
+            return (
+              <Card key={m.key} className="p-3">
+                <button
+                  type="button"
+                  disabled={selectMode}
+                  onClick={() => nav(`/diary/add?date=${date}&meal=${m.key}`)}
+                  className="flex w-full items-center justify-between disabled:opacity-40"
+                >
+                  <span className="flex items-center gap-2.5 text-[15px] font-semibold text-muted-foreground">
+                    <MealIcon className="h-[18px] w-[18px]" />
+                    {m.label}
+                  </span>
+                  <span className="text-sm font-medium text-primary">
+                    + Add
+                  </span>
+                </button>
+              </Card>
+            )
+          }
           return (
-            <Card key={m.key} className="overflow-hidden">
+            <Card key={m.key} className="p-3">
               <button
                 type="button"
-                disabled={items.length === 0}
                 onClick={() =>
                   nav(`/diary/nutrients?date=${date}&meal=${m.key}`)
                 }
-                className="flex w-full items-center justify-between border-b border-border p-3 text-left active:bg-accent"
+                className="flex w-full items-center justify-between pb-2 text-left"
               >
-                <span className="font-semibold">{m.label}</span>
+                <span className="flex items-center gap-2.5 text-[15px] font-semibold">
+                  <MealIcon className="h-[18px] w-[18px] text-primary" />
+                  {m.label}
+                </span>
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  {mealKcal} calories
-                  {items.length > 0 && <ChevronRight className="h-4 w-4" />}
+                  <span className="text-[13px] font-semibold tabular-nums text-foreground">
+                    {mealKcal}
+                  </span>
+                  cal
+                  <ChevronRight className="h-4 w-4" />
                 </span>
               </button>
-              <div className="divide-y divide-border">
+              <div className="border-t border-border pt-1">
                 {items.map((e) => (
                   <FoodEntryRow
                     key={e.id}
@@ -362,39 +498,69 @@ export function DiaryPage() {
               {!selectMode && (
                 <button
                   onClick={() => nav(`/diary/add?date=${date}&meal=${m.key}`)}
-                  className="flex w-full items-center gap-2 p-3 text-sm font-medium text-primary active:bg-accent"
+                  className="mt-1 flex items-center gap-1 py-1 text-[13px] font-medium text-primary active:opacity-60"
                 >
-                  <Plus className="h-4 w-4" /> Add food
+                  <Plus className="h-3.5 w-3.5" /> Add food
                 </button>
               )}
             </Card>
           )
         })}
 
-        <Card className="overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border p-3">
-            <span className="font-semibold">Exercise</span>
-            <span className="text-xs text-muted-foreground">{burned} calories</span>
-          </div>
-          <div className="divide-y divide-border">
-            {(exEntries ?? []).map((e) => (
-              <ExerciseEntryRow
-                key={e.id}
-                entry={e}
-                onEdit={() => nav(`/exercise/edit/${e.id}`)}
-                onMenu={() => setMenuEx(e)}
-              />
-            ))}
-          </div>
-          {!selectMode && (
+        {(exEntries ?? []).length === 0 ? (
+          <Card className="p-3">
             <button
+              type="button"
+              disabled={selectMode}
               onClick={() => nav(`/exercise/add?date=${date}`)}
-              className="flex w-full items-center gap-2 p-3 text-sm font-medium text-primary active:bg-accent"
+              className="flex w-full items-center justify-between disabled:opacity-40"
             >
-              <Plus className="h-4 w-4" /> Add exercise
+              <span className="flex items-center gap-2.5 text-[15px] font-semibold text-muted-foreground">
+                <Activity className="h-[18px] w-[18px]" />
+                Exercise
+              </span>
+              <span className="text-sm font-medium text-primary">+ Add</span>
             </button>
-          )}
-        </Card>
+          </Card>
+        ) : (
+          <Card className="p-3">
+            <div className="flex items-center justify-between pb-2">
+              <span className="flex items-center gap-2.5 text-[15px] font-semibold">
+                <Activity
+                  className="h-[18px] w-[18px]"
+                  style={{ color: MACRO_HUES.carb }}
+                />
+                Exercise
+              </span>
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <span className="text-[13px] font-semibold tabular-nums text-foreground">
+                  {burned}
+                </span>
+                cal
+              </span>
+            </div>
+            <div className="border-t border-border pt-1">
+              {(exEntries ?? []).map((e) => (
+                <ExerciseEntryRow
+                  key={e.id}
+                  entry={e}
+                  onEdit={() => nav(`/exercise/edit/${e.id}`)}
+                  onMenu={() => setMenuEx(e)}
+                />
+              ))}
+            </div>
+            {!selectMode && (
+              <button
+                onClick={() => nav(`/exercise/add?date=${date}`)}
+                className="mt-1 flex items-center gap-1 py-1 text-[13px] font-medium text-primary active:opacity-60"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add exercise
+              </button>
+            )}
+          </Card>
+        )}
+          </>
+        )}
       </div>
 
       {selectMode && (
@@ -599,7 +765,7 @@ export function DiaryPage() {
 }
 
 const ROW_CLASS =
-  'flex w-full select-none items-center gap-2 p-3 text-left [-webkit-touch-callout:none] active:bg-accent'
+  'flex w-full select-none items-center gap-2 rounded-md py-2 text-left [-webkit-touch-callout:none] active:bg-accent'
 
 function FoodEntryRow({
   entry,
@@ -618,12 +784,14 @@ function FoodEntryRow({
 }) {
   const press = useLongPress(onMenu, onEdit)
   const body = (
-    <div className="min-w-0 flex-1">
-      <div className="truncate text-sm font-medium">{entry.food_name}</div>
-      <div className="text-xs text-muted-foreground">
-        {Math.round((entry.nutrients.kcal ?? 0) * entry.servings)} calories
+    <>
+      <div className="min-w-0 flex-1 truncate text-sm font-medium">
+        {entry.food_name}
       </div>
-    </div>
+      <div className="shrink-0 text-[13px] tabular-nums text-muted-foreground">
+        {Math.round((entry.nutrients.kcal ?? 0) * entry.servings)}
+      </div>
+    </>
   )
   if (selectMode) {
     return (
@@ -657,15 +825,31 @@ function ExerciseEntryRow({
   onMenu: () => void
 }) {
   const press = useLongPress(onMenu, onEdit)
+  const meta = [
+    entry.duration_min ? `${entry.duration_min} min` : null,
+    entry.distance_mi ? `${entry.distance_mi} mi` : null,
+    entry.load_lb ? `${entry.load_lb} lb` : null,
+    entry.level ? `L${entry.level}/${entry.level_max}` : null,
+  ].filter(Boolean)
   return (
     <button {...press} className={ROW_CLASS}>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{entry.name}</div>
-        <div className="text-xs text-muted-foreground">
-          {entry.duration_min ? `${entry.duration_min} min` : ''}
-          {entry.distance_mi ? ` · ${entry.distance_mi} mi` : ''} ·{' '}
-          {entry.calories} calories
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{entry.name}</span>
+          <ZoneBadge
+            zone={entry.zone}
+            avgHr={entry.avg_hr}
+            className="shrink-0"
+          />
         </div>
+        {meta.length > 0 && (
+          <div className="text-xs text-muted-foreground">
+            {meta.join(' · ')}
+          </div>
+        )}
+      </div>
+      <div className="shrink-0 text-[13px] tabular-nums text-muted-foreground">
+        {entry.calories}
       </div>
     </button>
   )
@@ -699,28 +883,132 @@ function SelectAction({
   )
 }
 
+// Fixed per-macro hues: protein blue, carbs yellow, fat red (the ring's over
+// color, reused here as fat's identity — not a warning).
+const MACRO_HUES = {
+  protein: '#6d87b8',
+  carb: '#c9974f',
+  fat: '#bf6360',
+} as const
+
+function StatRow({
+  icon: Icon,
+  iconColor,
+  value,
+  label,
+}: {
+  icon: LucideIcon
+  iconColor?: string
+  value: string
+  label: string
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Icon
+        className={cn(
+          'h-4 w-4 shrink-0',
+          !iconColor && 'text-muted-foreground',
+        )}
+        style={iconColor ? { color: iconColor } : undefined}
+      />
+      <span className="text-[15px] font-semibold tabular-nums">{value}</span>
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
 function MacroBar({
   label,
   have,
   target,
+  color,
 }: {
   label: string
   have: number
   target: number
+  color: string
 }) {
   const pct = target > 0 ? Math.min(100, Math.round((have / target) * 100)) : 0
   return (
     <div className="text-center">
       <div className="text-xs font-medium">{label}</div>
-      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className="h-full"
-          style={{ width: `${pct}%`, background: RING_GREEN }}
+          className="h-full rounded-full"
+          style={{ width: `${pct}%`, background: color }}
         />
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">
+      <div className="mt-1 text-xs tabular-nums text-muted-foreground">
         {have}/{target}g
       </div>
     </div>
   )
 }
+
+// Card footer: passive Health Connect steps (native Android only — the steps
+// half renders nothing on web / older APKs; before the READ_STEPS grant it
+// shows a "Connect steps" tap) merged with the nutrient-breakdown link into
+// one compact row. With a step goal set (Profile → Steps) the count reads
+// "6,432 / 10,000" and turns primary once the goal is hit.
+function CardFooter({
+  date,
+  showNutrients,
+}: {
+  date: string
+  showNutrients: boolean
+}) {
+  const nav = useNavigate()
+  const { data } = useSteps(date)
+  const connect = useConnectSteps(date)
+  const { data: profile } = useProfile()
+  const steps = data && data.status !== 'unavailable' ? data : null
+  const stepGoal = profile?.step_goal ?? null
+  const stepCount = steps?.steps ?? 0
+  const goalMet = stepGoal != null && stepGoal > 0 && stepCount >= stepGoal
+  if (!steps && !showNutrients) return null
+  return (
+    <div className="mt-3 flex items-center justify-center gap-2.5 border-t border-border pt-3">
+      {steps &&
+        (steps.status === 'no_permission' ? (
+          <button
+            onClick={() => connect.mutate()}
+            disabled={connect.isPending}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary disabled:opacity-60"
+          >
+            <Footprints className="h-4 w-4" />
+            {connect.isPending ? 'Connecting…' : 'Connect steps'}
+          </button>
+        ) : (
+          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Footprints className={cn('h-4 w-4', goalMet && 'text-primary')} />
+            <span
+              className={cn(
+                'font-semibold tabular-nums',
+                goalMet ? 'text-primary' : 'text-foreground',
+              )}
+            >
+              {stepCount.toLocaleString()}
+            </span>
+            <span>
+              {stepGoal != null && stepGoal > 0
+                ? `/ ${stepGoal.toLocaleString()} steps`
+                : 'steps'}
+            </span>
+          </span>
+        ))}
+      {steps && showNutrients && (
+        <span className="text-muted-foreground/50">·</span>
+      )}
+      {showNutrients && (
+        <button
+          onClick={() => nav(`/diary/nutrients?date=${date}`)}
+          aria-label="Day nutrients"
+          className="flex items-center text-primary"
+        >
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+

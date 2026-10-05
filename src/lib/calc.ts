@@ -1,5 +1,6 @@
 import type {
   ActivityLevel,
+  GoalHistoryEntry,
   MacroTargets,
   Profile,
   Sex,
@@ -32,6 +33,103 @@ export function ageFromBirthDate(birthDate: string | null): number | null {
   const m = now.getMonth() - b.getMonth()
   if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age--
   return age
+}
+
+// ---------- heart-rate training zones ----------
+// Max HR via Tanaka (2001): 208 − 0.7·age — more accurate than 220−age, age-only.
+export function hrMax(age: number): number {
+  return Math.round(208 - 0.7 * age)
+}
+
+export interface HrZoneBand {
+  zone: number
+  name: string
+  /** Fraction-of-max-HR bounds: [pctLo, pctHi). */
+  pctLo: number
+  pctHi: number
+}
+
+/** The 5 classic %HRmax training zones (low → high intensity). */
+export const HR_ZONE_BANDS: HrZoneBand[] = [
+  { zone: 1, name: 'Recovery', pctLo: 0.5, pctHi: 0.6 },
+  { zone: 2, name: 'Aerobic base', pctLo: 0.6, pctHi: 0.7 },
+  { zone: 3, name: 'Tempo', pctLo: 0.7, pctHi: 0.8 },
+  { zone: 4, name: 'Threshold', pctLo: 0.8, pctHi: 0.9 },
+  { zone: 5, name: 'VO₂ max', pctLo: 0.9, pctHi: 1.0 },
+]
+
+export interface HrZone extends HrZoneBand {
+  loBpm: number
+  hiBpm: number
+}
+
+/** A usable resting HR for Karvonen (positive and below max), else null. */
+function usableRest(maxHr: number, restingHr?: number | null): number | null {
+  return restingHr != null && restingHr > 0 && restingHr < maxHr ? restingHr : null
+}
+
+/** The bpm at an intensity fraction — Karvonen (heart-rate reserve) when a valid
+ * resting HR is supplied, else plain %HRmax. */
+function bpmAt(pct: number, maxHr: number, restingHr?: number | null): number {
+  const rest = usableRest(maxHr, restingHr)
+  return Math.round(rest != null ? rest + pct * (maxHr - rest) : maxHr * pct)
+}
+
+/**
+ * The 5 zone bands as bpm ranges. With a valid resting HR the bounds use
+ * heart-rate reserve (Karvonen); otherwise plain %HRmax.
+ */
+export function hrZones(maxHr: number, restingHr?: number | null): HrZone[] {
+  return HR_ZONE_BANDS.map((b) => ({
+    ...b,
+    loBpm: bpmAt(b.pctLo, maxHr, restingHr),
+    hiBpm: bpmAt(b.pctHi, maxHr, restingHr),
+  }))
+}
+
+/**
+ * Zone (1–5) for an average HR; null below Zone 1 (<50% intensity). Uses the
+ * Karvonen reserve when a valid resting HR is supplied, else %HRmax.
+ */
+export function zoneForHr(
+  hr: number,
+  maxHr: number,
+  restingHr?: number | null,
+): number | null {
+  if (!hr || hr <= 0) return null
+  const rest = usableRest(maxHr, restingHr)
+  const pct = rest != null ? (hr - rest) / (maxHr - rest) : hr / maxHr
+  if (pct < 0.5) return null
+  if (pct < 0.6) return 1
+  if (pct < 0.7) return 2
+  if (pct < 0.8) return 3
+  if (pct < 0.9) return 4
+  return 5
+}
+
+/** A profile's effective max HR: their set value, else the age estimate, else null. */
+export function resolveMaxHr(profile: Profile | null | undefined): number | null {
+  if (profile?.max_hr != null) return profile.max_hr
+  const age = ageFromBirthDate(profile?.birth_date ?? null)
+  return age != null ? hrMax(age) : null
+}
+
+/** A profile's zone bpm ranges (Karvonen when resting HR is set), or null when
+ * there's no max HR to work from. */
+export function resolveHrZones(
+  profile: Profile | null | undefined,
+): HrZone[] | null {
+  const max = resolveMaxHr(profile)
+  return max != null ? hrZones(max, profile?.resting_hr ?? null) : null
+}
+
+/** Zone (1–5) for an avg HR under a profile's settings; null when unavailable. */
+export function resolveZoneForHr(
+  hr: number,
+  profile: Profile | null | undefined,
+): number | null {
+  const max = resolveMaxHr(profile)
+  return max != null ? zoneForHr(hr, max, profile?.resting_hr ?? null) : null
 }
 
 // ---------- energy expenditure ----------
@@ -131,6 +229,73 @@ export function resolveCalorieGoal(
     mode: profile.calorie_goal_mode,
     missing,
   }
+}
+
+// ---------- dated calorie-goal history ----------
+// Changing your goal shouldn't rewrite past days. We keep a dated log of goal
+// values (GoalHistoryEntry); a past day shows the value in effect then, while
+// today/future always use the live goal (so current settings/weight still show
+// through). The first change seeds a baseline so pre-history days stay put.
+
+// Baseline entries use this sentinel start so they precede any real diary day.
+export const GOAL_HISTORY_BASELINE_DATE = '2000-01-01'
+
+/** The recorded goal in effect on `dateISO` (latest entry with `from` ≤ date),
+ * or null when history has no entry that early. */
+function recordedGoalOnOrBefore(
+  history: GoalHistoryEntry[],
+  dateISO: string,
+): number | null {
+  let best: GoalHistoryEntry | null = null
+  for (const e of history) {
+    if (e.from <= dateISO && (best == null || e.from > best.from)) best = e
+  }
+  return best ? best.goal : null
+}
+
+/**
+ * The calorie goal to display for a given day. Today/future use `liveGoal`
+ * (current profile + weight); a past day uses the value that was in effect then,
+ * falling back to `liveGoal` when nothing was recorded that early (e.g. before
+ * any goal change).
+ */
+export function goalForDate(
+  history: GoalHistoryEntry[] | null | undefined,
+  dateISO: string,
+  liveGoal: number | null,
+  todayISO: string,
+): number | null {
+  if (dateISO >= todayISO) return liveGoal
+  const recorded = recordedGoalOnOrBefore(history ?? [], dateISO)
+  return recorded != null ? recorded : liveGoal
+}
+
+/**
+ * Fold a goal change into the dated history (one entry per day). No-op when the
+ * goal in effect today isn't actually changing. The first-ever change seeds a
+ * baseline holding the OLD goal so every prior day stays frozen at it; then
+ * today's entry holds the new goal. Returns the next history array.
+ */
+export function recordGoalChange(
+  history: GoalHistoryEntry[] | null | undefined,
+  opts: { today: string; oldGoal: number | null; newGoal: number | null },
+): GoalHistoryEntry[] {
+  const { today, oldGoal, newGoal } = opts
+  const hist = [...(history ?? [])]
+  if (newGoal == null) return hist
+  // What the day currently resolves to: a recorded entry if one exists, else the
+  // live/old goal that's been showing via fallback.
+  const recordedToday = recordedGoalOnOrBefore(hist, today)
+  const effectiveBefore = recordedToday != null ? recordedToday : oldGoal
+  if (effectiveBefore === newGoal) return hist // nothing actually changed
+  // First recorded change: freeze all prior days at the old value.
+  if (hist.length === 0 && oldGoal != null) {
+    hist.push({ from: GOAL_HISTORY_BASELINE_DATE, goal: oldGoal })
+  }
+  const next = hist.filter((e) => e.from !== today)
+  next.push({ from: today, goal: newGoal })
+  next.sort((a, b) => a.from.localeCompare(b.from))
+  return next
 }
 
 // ---------- adaptive TDEE (data-driven maintenance) ----------
@@ -312,7 +477,102 @@ export function estimated1RM(weight: number, reps: number): number {
   return weight * (1 + reps / 30)
 }
 
+export const BAR_LB = 45
+
+export interface WarmupStep {
+  weightLb: number
+  reps: number
+  isBar?: boolean
+}
+
+/**
+ * Warm-up ramp to a working weight: 50%×5, 70%×3, 90%×1, rounded to the
+ * nearest 5 lb; barbell lifts start with the empty bar ×10. Steps at or above
+ * the working weight, at or below the bar (barbell), or that round into the
+ * previous step are dropped — a light working weight can yield [] (no ramp).
+ */
+export function warmupRamp(workingLb: number, barbell: boolean): WarmupStep[] {
+  if (!Number.isFinite(workingLb) || workingLb <= 0) return []
+  const steps: WarmupStep[] = []
+  if (barbell && BAR_LB < workingLb) steps.push({ weightLb: BAR_LB, reps: 10, isBar: true })
+  for (const [pct, reps] of [
+    [0.5, 5],
+    [0.7, 3],
+    [0.9, 1],
+  ] as const) {
+    const w = Math.round((workingLb * pct) / 5) * 5
+    if (w <= 0 || w >= workingLb) continue
+    if (barbell && w <= BAR_LB) continue
+    if (steps.some((s) => s.weightLb === w)) continue
+    steps.push({ weightLb: w, reps })
+  }
+  return steps
+}
+
 // ---------- exercise calories ----------
+/**
+ * Body weight plus anything you carried (ruck plate, vest, pack), in lb — the
+ * mass the estimate should actually move. Both burn formulas below scale
+ * linearly with mass, which is the accepted approximation for backpack-style
+ * loads on level ground: Pandolf's non-linear load term contributes only a few
+ * percent until you add grade or rough terrain.
+ */
+export function effectiveWeightLb(
+  bodyLb: number | null | undefined,
+  loadLb: number | null | undefined,
+): number {
+  if (!bodyLb) return 0
+  return bodyLb + Math.max(0, loadLb ?? 0)
+}
+
+/** MET at the bottom (level 1) and top of a machine's resistance scale. */
+export const LEVEL_MET_MIN = 3.5
+export const LEVEL_MET_MAX = 8.9
+
+/**
+ * MET for a machine resistance level, normalised to the FRACTION of that
+ * machine's max — "level 5" means different work on a 10-level console than on
+ * an 18-level one, so the raw number can't drive the estimate. Level 1 is the
+ * floor of the scale (not zero resistance), hence level−1 over max−1.
+ *
+ * This fixes the scale mismatch between machines, not the calibration one: one
+ * vendor's top level really is heavier than another's, and only watts would
+ * catch that. Assumes cadence stays roughly constant across levels.
+ */
+export function levelMet(
+  level: number | null | undefined,
+  levelMax: number | null | undefined,
+): number | null {
+  if (!level || !levelMax || levelMax <= 1) return null
+  const f = Math.min(1, Math.max(0, (level - 1) / (levelMax - 1)))
+  return LEVEL_MET_MIN + (LEVEL_MET_MAX - LEVEL_MET_MIN) * f
+}
+
+/** Neutral machine cadence in console-mph — the pace at which the level MET
+ *  applies unscaled. Console "miles" aren't standardized across vendors, so
+ *  retune this if estimates drift from a machine's reality. */
+export const MACHINE_REF_MPH = 6
+
+/**
+ * Cadence-adjusted MET for machine cardio (elliptical). levelMet assumes a
+ * constant cadence; when the console reports a distance, the measured pace
+ * scales the WORK portion of the MET — at a fixed resistance, work is
+ * force × strides, so kcal track distance — while the 1-MET resting floor
+ * stays fixed. The factor is clamped because vendor "miles" vary wildly;
+ * without distance or duration this is a no-op, preserving the plain
+ * level/MET estimate.
+ */
+export function cadenceAdjustedMet(
+  met: number,
+  distanceMi: number,
+  durationMin: number,
+): number {
+  if (!met || !distanceMi || !durationMin) return met
+  const mph = distanceMi / (durationMin / 60)
+  const factor = Math.min(1.4, Math.max(0.7, mph / MACHINE_REF_MPH))
+  return 1 + (met - 1) * factor
+}
+
 /** MET estimate: kcal = MET * 3.5 * kg / 200 * minutes. */
 export function metCalories(
   met: number,
@@ -333,6 +593,30 @@ export function distanceCalories(
   const km = distanceMi * 1.60934
   const coef = met >= 7 ? 1.0 : 0.6
   return Math.round(coef * lbToKg(weightLb) * km)
+}
+
+/** Distance burn coefficient (kcal per kg per km) from measured speed (mph). */
+export function distanceCoef(speedMph: number): number {
+  return speedMph >= 5 ? 1.0 : 0.6 // ~5 mph is the walk→run transition
+}
+
+/**
+ * Pace-aware distance burn — like distanceCalories, but the walk/run
+ * coefficient comes from the MEASURED speed rather than the activity label.
+ * Used by the GPS recorder, which knows your actual pace, so a fast 2-mile
+ * effort isn't under-counted the way a label-based "Walking" entry would be.
+ * `movingMin` is minutes actually moving (excludes stops), so a long pause
+ * doesn't drag the pace down into the walking bracket.
+ */
+export function paceAwareCalories(
+  distanceMi: number,
+  movingMin: number,
+  weightLb: number,
+): number {
+  if (!distanceMi || !weightLb) return 0
+  const km = distanceMi * 1.60934
+  const speedMph = movingMin > 0 ? distanceMi / (movingMin / 60) : 0
+  return Math.round(distanceCoef(speedMph) * lbToKg(weightLb) * km)
 }
 
 // ---------- body ----------

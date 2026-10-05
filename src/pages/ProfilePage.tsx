@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Plus, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,22 +9,30 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
+import { useDailySupplements } from '@/features/profile/useDailySupplements'
+import { useFoods } from '@/features/foods/useFoods'
 import {
   useLatestWeight,
   useLogMeasurement,
 } from '@/features/measurements/useMeasurements'
 import {
   ACTIVITY_LABELS,
+  ageFromBirthDate,
   caloriesForRate,
   cmToFtIn,
   ftInToCm,
+  hrMax,
+  hrZones,
+  recordGoalChange,
   resolveCalorieGoal,
   resolveMacroTargets,
 } from '@/lib/calc'
+import { zoneColor } from '@/data/zones'
 import { useAdaptiveTDEE } from '@/features/insights/useAdaptiveTDEE'
 import { todayISO } from '@/lib/date'
 import type {
   ActivityLevel,
+  DailySupplement,
   MacroMode,
   MacroTargets,
   Sex,
@@ -62,6 +70,11 @@ export function ProfilePage() {
   const [ft, setFt] = useState('')
   const [inch, setInch] = useState('')
   const [activity, setActivity] = useState<ActivityLevel>('moderate')
+  const [maxHrMode, setMaxHrMode] = useState<'age' | 'manual'>('age')
+  const [maxHr, setMaxHr] = useState('')
+  const [restingHr, setRestingHr] = useState('')
+  const [showHrTips, setShowHrTips] = useState(false)
+  const [stepGoal, setStepGoal] = useState('')
   const [weight, setWeight] = useState('')
   const [rate, setRate] = useState('0')
   const [goalWeight, setGoalWeight] = useState('')
@@ -91,6 +104,10 @@ export function ProfilePage() {
       setInch(String(i))
     }
     setActivity(profile.activity_level)
+    setMaxHrMode(profile.max_hr != null ? 'manual' : 'age')
+    setMaxHr(profile.max_hr != null ? String(profile.max_hr) : '')
+    setRestingHr(profile.resting_hr != null ? String(profile.resting_hr) : '')
+    setStepGoal(profile.step_goal != null ? String(profile.step_goal) : '')
     setRate(String(profile.goal_rate_lb_per_week))
     setGoalWeight(profile.goal_weight_lb != null ? String(profile.goal_weight_lb) : '')
     setManualMode(profile.calorie_goal_mode === 'manual')
@@ -121,6 +138,18 @@ export function ProfilePage() {
   const weightNum = parseFloat(weight) || null
   const heightCm =
     ft || inch ? ftInToCm(parseInt(ft) || 0, parseInt(inch) || 0) : null
+
+  // Live HR-zone preview from the in-form values (before save).
+  const ageForHr = ageFromBirthDate(birthDate || null)
+  const estMaxHr = ageForHr != null ? hrMax(ageForHr) : null
+  const effMaxHr = maxHrMode === 'manual' ? parseInt(maxHr) || null : estMaxHr
+  const restingHrNum = parseInt(restingHr) || null
+  const hrPreview = effMaxHr != null ? hrZones(effMaxHr, restingHrNum) : null
+  const usingKarvonen =
+    effMaxHr != null &&
+    restingHrNum != null &&
+    restingHrNum > 0 &&
+    restingHrNum < effMaxHr
 
   const goal = resolveCalorieGoal(
     {
@@ -157,6 +186,16 @@ export function ProfilePage() {
   const onSave = async () => {
     setSaved(false)
     const r = parseFloat(rate) || 0
+    // Record the change into the dated goal history so past days keep the goal
+    // that was in effect then. `goal.goal` is the new goal from the form values.
+    const oldGoal = profile
+      ? resolveCalorieGoal(profile, latestWeight ?? null).goal
+      : null
+    const nextGoalHistory = recordGoalChange(profile?.calorie_goal_history, {
+      today: todayISO(),
+      oldGoal,
+      newGoal: goal.goal,
+    })
     await updateProfile.mutateAsync({
       sex: sex || null,
       birth_date: birthDate || null,
@@ -167,7 +206,11 @@ export function ProfilePage() {
       goal_weight_lb: goalWeight ? parseFloat(goalWeight) : null,
       calorie_goal_mode: manualMode ? 'manual' : 'calculated',
       manual_calorie_goal: manualMode ? parseInt(manualCal) || null : null,
+      calorie_goal_history: nextGoalHistory,
       macro_targets: macroTargets,
+      max_hr: maxHrMode === 'manual' ? parseInt(maxHr) || null : null,
+      resting_hr: restingHr.trim() ? parseInt(restingHr) || null : null,
+      step_goal: stepGoal.trim() ? parseInt(stepGoal) || null : null,
     })
     if (weightNum != null && weightNum !== latestWeight) {
       await logWeight.mutateAsync({
@@ -186,9 +229,17 @@ export function ProfilePage() {
     if (adaptiveGoal == null) return
     setManualMode(true)
     setManualCal(String(adaptiveGoal))
+    const oldGoal = profile
+      ? resolveCalorieGoal(profile, latestWeight ?? null).goal
+      : null
     await updateProfile.mutateAsync({
       calorie_goal_mode: 'manual',
       manual_calorie_goal: adaptiveGoal,
+      calorie_goal_history: recordGoalChange(profile?.calorie_goal_history, {
+        today: todayISO(),
+        oldGoal,
+        newGoal: adaptiveGoal,
+      }),
     })
     setAdaptiveApplied(true)
     setTimeout(() => setAdaptiveApplied(false), 2500)
@@ -339,6 +390,148 @@ export function ProfilePage() {
                 ))}
               </Select>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Heart rate */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Heart rate</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Max heart rate</Label>
+              <div className="flex gap-2">
+                <label className="flex flex-1 items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="maxhrmode"
+                    checked={maxHrMode === 'age'}
+                    onChange={() => setMaxHrMode('age')}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  From age{estMaxHr != null ? ` (${estMaxHr})` : ''}
+                </label>
+                <label className="flex flex-1 items-center gap-2 text-sm">
+                  <input
+                    type="radio"
+                    name="maxhrmode"
+                    checked={maxHrMode === 'manual'}
+                    onChange={() => setMaxHrMode('manual')}
+                    className="h-4 w-4 accent-primary"
+                  />
+                  Set manually
+                </label>
+              </div>
+              {maxHrMode === 'manual' && (
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="e.g. 190"
+                  value={maxHr}
+                  onChange={(e) => setMaxHr(e.target.value)}
+                />
+              )}
+              {maxHrMode === 'age' && estMaxHr == null && (
+                <p className="text-xs text-muted-foreground">
+                  Add your birth date above to estimate this, or set it manually.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="resthr">Resting HR (optional)</Label>
+              <Input
+                id="resthr"
+                type="number"
+                inputMode="numeric"
+                placeholder="e.g. 55"
+                value={restingHr}
+                onChange={(e) => setRestingHr(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Measure on waking. When set, zones use your reserve (Karvonen)
+                for a more personal fit.
+              </p>
+            </div>
+
+            {hrPreview && (
+              <div className="rounded-lg border border-border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-medium">Your zones</span>
+                  <span className="text-xs text-muted-foreground">
+                    {usingKarvonen ? 'Karvonen (reserve)' : '% of max HR'}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {hrPreview.map((z) => (
+                    <div
+                      key={z.zone}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ background: zoneColor(z.zone) }}
+                      />
+                      <span className="w-5 font-medium">Z{z.zone}</span>
+                      <span className="text-muted-foreground">{z.name}</span>
+                      <span className="ml-auto tabular-nums">
+                        {z.loBpm}–{z.hiBpm} bpm
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowHrTips((s) => !s)}
+                className="text-xs font-medium text-primary"
+              >
+                {showHrTips ? 'Hide' : 'How to find these'}
+              </button>
+              {showHrTips && (
+                <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+                  <p>
+                    <span className="font-medium text-foreground">Max HR</span> —
+                    age estimate (default), a field test (progressive hard efforts
+                    to all-out, read your peak), the highest your watch has
+                    caught, or a lab test.
+                  </p>
+                  <p>
+                    <span className="font-medium text-foreground">
+                      Resting HR
+                    </span>{' '}
+                    — your watch's resting value, or count your pulse for a full
+                    minute right after waking.
+                  </p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Steps */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Steps</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            <Label htmlFor="stepgoal">Daily step goal</Label>
+            <Input
+              id="stepgoal"
+              type="number"
+              inputMode="numeric"
+              placeholder="e.g. 10000"
+              value={stepGoal}
+              onChange={(e) => setStepGoal(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Shown next to your step count on the diary. Leave blank for no
+              goal.
+            </p>
           </CardContent>
         </Card>
 
@@ -540,6 +733,9 @@ export function ProfilePage() {
           {updateProfile.isPending ? 'Saving…' : saved ? 'Saved ✓' : 'Save'}
         </Button>
 
+        {/* Daily supplements (self-saving, like the Password card below) */}
+        <SupplementsCard />
+
         {/* Password */}
         <Card>
           <CardHeader>
@@ -642,6 +838,160 @@ function MacroRow({
           />
         )}
       </div>
+    </div>
+  )
+}
+
+// A multivitamin / supplement taken every day. Self-saving (each add/remove/dose
+// change persists immediately); its micros feed the weekly Micronutrients card.
+function SupplementsCard() {
+  const { data: profile } = useProfile()
+  const updateProfile = useUpdateProfile()
+  const { supplements } = useDailySupplements()
+  const [search, setSearch] = useState('')
+  const { data: results } = useFoods(search)
+
+  const raw: DailySupplement[] = profile?.daily_supplements ?? []
+  const persist = (next: DailySupplement[]) =>
+    updateProfile.mutate({ daily_supplements: next })
+
+  const add = (foodId: string) => {
+    if (raw.some((s) => s.food_id === foodId)) return
+    persist([...raw, { food_id: foodId, servings: 1 }])
+    setSearch('')
+  }
+  const remove = (foodId: string) =>
+    persist(raw.filter((s) => s.food_id !== foodId))
+  const setServings = (foodId: string, servings: number) =>
+    persist(raw.map((s) => (s.food_id === foodId ? { ...s, servings } : s)))
+
+  const addedIds = new Set(raw.map((s) => s.food_id))
+  const matches = (results ?? [])
+    .filter((f) => !addedIds.has(f.id))
+    .slice(0, 6)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Daily supplements</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          A multivitamin or supplement you take every day. Its micronutrients are
+          added to every logged day in your weekly Micronutrients summary
+          (Progress → Nutrition). It isn&rsquo;t logged to your diary, and changes
+          here save on their own.
+        </p>
+
+        {supplements.length > 0 && (
+          <ul className="space-y-2">
+            {supplements.map((s) => (
+              <li
+                key={s.food_id}
+                className="flex items-center gap-2 rounded-lg border border-border p-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{s.food.name}</p>
+                  {s.food.brand && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {s.food.brand}
+                    </p>
+                  )}
+                </div>
+                <ServingsInput
+                  value={s.servings}
+                  unit={s.food.serving_unit}
+                  onCommit={(v) => setServings(s.food_id, v)}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Remove ${s.food.name}`}
+                  onClick={() => remove(s.food_id)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="space-y-1.5">
+          <Label htmlFor="supp-search">Add a supplement</Label>
+          <Input
+            id="supp-search"
+            placeholder="Search your foods…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search.trim() &&
+            (matches.length > 0 ? (
+              <ul className="overflow-hidden rounded-lg border border-border">
+                {matches.map((f) => (
+                  <li key={f.id}>
+                    <button
+                      type="button"
+                      onClick={() => add(f.id)}
+                      className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-muted"
+                    >
+                      <Plus className="h-4 w-4 shrink-0 text-primary" />
+                      <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                      {f.brand && (
+                        <span className="shrink-0 truncate text-xs text-muted-foreground">
+                          {f.brand}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No matches. Create the supplement as a food first (add it from the
+                Diary), then search for it here.
+              </p>
+            ))}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// Compact servings field that commits on blur / Enter (not per keystroke, so it
+// doesn't fire a save on every digit).
+function ServingsInput({
+  value,
+  unit,
+  onCommit,
+}: {
+  value: number
+  unit: string
+  onCommit: (v: number) => void
+}) {
+  const [v, setV] = useState(String(value))
+  useEffect(() => setV(String(value)), [value])
+  const commit = () => {
+    const n = parseFloat(v)
+    if (!isNaN(n) && n > 0 && n !== value) onCommit(n)
+    else setV(String(value))
+  }
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        className="w-14 text-center"
+        type="number"
+        inputMode="decimal"
+        value={v}
+        aria-label="Servings per day"
+        onChange={(e) => setV(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        }}
+      />
+      <span className="w-10 shrink-0 truncate text-xs text-muted-foreground">
+        {unit}
+      </span>
     </div>
   )
 }

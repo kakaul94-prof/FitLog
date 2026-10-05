@@ -1,73 +1,190 @@
-# React + TypeScript + Vite
+# FitLog
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A phone-first Progressive Web App for tracking nutrition, cardio, strength, and body weight — a personal, modern take on the classic MyFitnessPal, built end-to-end with React 19, TypeScript, and Supabase.
 
-Currently, two official plugins are available:
+**Live app:** [fitlog-9wl.pages.dev](https://fitlog-9wl.pages.dev)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+<!-- Add a screenshot or two here — a phone-sized capture of the Diary and Progress views goes a long way. -->
 
-## React Compiler
+## Overview
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+FitLog is a single-user, cloud-synced fitness tracker designed mobile-first and installable as a PWA. It covers the full daily loop: logging food against calorie and macro goals, importing whole-food nutrition data from the USDA database, tracking cardio and strength workouts, and charting body-weight and lifting progress over time. The entire stack — data model, business logic, UI, tests, and CI/CD — was designed and built from scratch.
 
-## Expanding the ESLint configuration
+## Features
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Food diary** with calorie, macro, and full micronutrient tracking (31 nutrients with %DV), plus a live logging streak.
+- **USDA food import** — search and import whole-food nutrition data, with automatic per-serving rescaling from the source's per-100g values.
+- **Recipes** — build multi-ingredient recipes whose per-serving nutrition is computed and stored automatically.
+- **Cardio tracking** — MET-based or distance-based calorie estimates (walk/run/hike) with a manual override, and optional "eat-back" of burned calories.
+- **Strength training** — workouts, exercises, and sets with supersets, estimated 1RM (Epley), and per-exercise progression charts (max weight, total volume, average weight per session).
+- **Body measurements** — weight plus optional body metrics, with moving-average trend charts.
+- **Smart calorie goals** — a hybrid Mifflin-St Jeor BMR × activity model with a deficit derived from a target weekly rate, or a manual override.
+- **Installable PWA** with offline read access to recent data.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Tech Stack
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+| Layer | Technology |
+|---|---|
+| Frontend | React 19, Vite, TypeScript |
+| Styling | Tailwind CSS v4, small `cva`-based UI primitives (shadcn-style, no CLI) |
+| Routing & data | React Router (lazy routes), TanStack Query |
+| Backend | Supabase — Postgres + Auth (email/password, magic-link fallback) |
+| Charts | Hand-rolled SVG (line charts + macro donut) — no charting library |
+| Icons / PWA | lucide-react, vite-plugin-pwa |
+| Testing | Vitest (unit), Playwright (E2E, Page Object Model), Docker + Docker Compose |
+| Hosting / CI | Cloudflare Pages, GitHub Actions (tests gate every production deploy) |
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Architecture Highlights
+
+- **Row-Level Security everywhere.** Every table is RLS owner-only, with `user_id` defaulting to `auth.uid()` — access control is enforced in the database, not just the client.
+- **Snapshotting for historical accuracy.** Diary entries snapshot a food's nutrition at log time, so editing a food later never rewrites past days.
+- **Feature-based data layer.** TanStack Query hooks are organized per feature with a consistent query-key scheme, and mutations invalidate exactly the keys they affect.
+- **Pure, testable core logic.** Calorie/macro math, 1RM, MET calories, BMI, and progression live in dependency-free `src/lib` modules, unit-tested in isolation.
+- **Hand-rolled SVG charts** keep the bundle lean and give full control over the mobile-first visualizations.
+
+## Testing
+
+Core business logic is covered by [Vitest](https://vitest.dev) unit tests, co-located with the pure-logic libraries (`calc`, `nutrients`, `progression`, `date`). These run without a backend or DOM, so the math that drives goals, macros, and progression is verified independently of the UI.
+
+```bash
+npm test          # run the unit suite once
+npm run test:watch  # watch mode while iterating
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+A `tsc + vite` build check is run before every commit to keep the tree type-safe.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### End-to-end tests in Docker
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+The E2E suite ([`e2e/`](e2e/README.md)) drives the real app in Chromium at a phone viewport through the key user journeys (sign in, log a meal, log a workout, log body weight). It also checks Row-Level Security directly against the database API. Everything runs in containers:
+
+- **Test database:** the Supabase CLI's local stack (Postgres, Auth, PostgREST and Storage in Docker), built from the same `supabase/schema.sql` as production, including its RLS policies. `supabase/seed.sql` adds two test users. Tests never touch a hosted project, and `e2e/support/env.ts` refuses to run against any non-local URL.
+- **Test runner:** Microsoft's official Playwright image, pinned to the exact `@playwright/test` version (`e2e/Dockerfile`). It runs the Vite dev server and the browser inside the container.
+
+With Docker running, one command runs the whole suite:
+
+```bash
+npm run test:e2e:docker   # start the test DB, build the runner image, run all tests
 ```
+
+The HTML report lands in `playwright-report/` on your machine (`npx playwright show-report`). Stop the database with `npm run db:stop`, or restore it to the seed state with `npm run db:reset`.
+
+```mermaid
+flowchart LR
+  subgraph Host["Your machine or a GitHub Actions runner"]
+    subgraph Runner["Playwright container (e2e/Dockerfile)"]
+      PW[Playwright tests] --> CH[Chromium, phone viewport]
+      CH --> VITE[Vite dev server]
+      PW -. RLS + DB assertions .-> API
+    end
+    subgraph DB["Supabase local stack (supabase start)"]
+      API[API gateway :54321] --> AUTH[Auth]
+      API --> REST[PostgREST]
+      AUTH --> PG[(Postgres + RLS<br/>schema.sql + seed.sql)]
+      REST --> PG
+    end
+    CH -- host.docker.internal --> API
+    Runner -- report volume --> REPORT[playwright-report/]
+  end
+```
+
+### CI/CD pipeline
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and every push to `dev` or `main`:
+
+```mermaid
+flowchart LR
+  PUSH[Push / PR] --> UNIT[Unit: build + Vitest]
+  PUSH --> E2E[E2E: supabase start, then Playwright container]
+  E2E -- on failure --> ART[Report uploaded as artifact]
+  UNIT --> GATE{Both passed and branch is main?}
+  E2E --> GATE
+  GATE -- yes --> DEPLOY[wrangler pages deploy to fitlog-prod]
+```
+
+Production is only deployed from `main`, and only after both test jobs pass. The `dev` site still auto-deploys through Cloudflare's Git integration.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20.19+ (Vite 8)
+- Docker Desktop (for the E2E suite)
+- A [Supabase](https://supabase.com) project (Postgres + Auth)
+- A [USDA FoodData Central](https://fdc.nal.usda.gov/api-key-signup.html) API key (for food import)
+
+### Setup
+
+```bash
+# 1. Clone and install
+git clone https://github.com/kakaul94-prof/FitLog.git
+cd FitLog
+npm install
+
+# 2. Configure environment (create a .env file)
+cp .env.example .env   # then fill in the values below
+```
+
+```env
+VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+VITE_USDA_API_KEY=your-usda-api-key
+```
+
+```bash
+# 3. Apply the database schema
+#    Run supabase/schema.sql in the Supabase SQL Editor (it's idempotent)
+
+# 4. Run it
+npm run dev       # http://localhost:5173
+```
+
+### Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start the dev server |
+| `npm run build` | Type-check and build for production (`tsc` + `vite`) |
+| `npm test` | Run the unit test suite |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:e2e:docker` | Start the local test DB and run the E2E suite in Docker |
+| `npm run test:e2e` | Run the E2E suite on the host (needs `npm run db:start`) |
+| `npm run db:start` / `db:stop` / `db:reset` | Manage the local Supabase test stack |
+
+## Deployment
+
+FitLog deploys to **Cloudflare Pages**. The `dev` branch auto-deploys to the dev site through Cloudflare's Git integration. Production (`fitlog-prod`) is deployed by the CI workflow's `deploy-prod` job with `wrangler pages deploy`, only after the unit and E2E jobs pass on `main`. SPA deep links are handled via `public/_redirects`.
+
+The deploy job reads these GitHub repository secrets and skips itself until `CLOUDFLARE_API_TOKEN` exists:
+
+| Secret | Value |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with the *Cloudflare Pages: Edit* permission |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `PROD_VITE_SUPABASE_URL` / `PROD_VITE_SUPABASE_ANON_KEY` / `PROD_VITE_USDA_API_KEY` | The production build variables (the same values set in the `fitlog-prod` Pages project) |
+
+Once the secrets are set, turn off automatic production deployments for `fitlog-prod` in Cloudflare (Settings → Build → Branch control), so the gated CI job is the only way to production.
+
+## Project Structure
+
+```
+src/
+├── pages/         # one component per route
+├── features/      # TanStack Query hooks, grouped by domain area
+├── lib/           # pure logic: calc, nutrients, progression, date, supabase client
+├── components/    # UI primitives + layout (AppLayout, BottomNav, shared panels)
+└── data/          # built-in activities & exercises
+supabase/
+├── schema.sql     # idempotent schema + RLS policies
+├── seed.sql       # E2E test users + data (local stack only)
+└── config.toml    # Supabase CLI local stack
+e2e/
+├── Dockerfile     # Playwright runner image
+├── pages/         # Page Objects
+├── tests/         # user-journey specs + RLS spec
+└── support/       # local-only env guard, Supabase API client
+compose.yaml       # `e2e` service (docker compose run e2e)
+```
+
+## Notes
+
+FitLog is a personal project, built and maintained solo. The Supabase anon key is safe to expose in the client because access is fully governed by Row-Level Security policies.

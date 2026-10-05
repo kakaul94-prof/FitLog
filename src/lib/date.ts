@@ -39,3 +39,24 @@ export function dateLabel(iso: string): string {
     day: 'numeric',
   })
 }
+
+/**
+ * Consecutive-day streak ending at `today` — or yesterday, as a morning grace
+ * period — from a collection of logged 'YYYY-MM-DD' dates. Pure core of
+ * useStreak: computed from the data, so backfilling a missed day heals the gap.
+ */
+export function computeStreak(
+  loggedDates: Iterable<string>,
+  today: string,
+): number {
+  const logged =
+    loggedDates instanceof Set ? loggedDates : new Set(loggedDates)
+  let day = today
+  if (!logged.has(day)) day = addDaysISO(day, -1) // morning grace
+  let count = 0
+  while (logged.has(day)) {
+    count++
+    day = addDaysISO(day, -1)
+  }
+  return count
+}

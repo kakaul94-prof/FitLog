@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Dumbbell, Flame } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { ZoneBadge } from '@/components/ZoneBadge'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useWorkoutsRange } from '@/features/strength/useStrength'
@@ -76,7 +77,7 @@ export function WorkoutCalendarPage() {
   }
 
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title="Workout history"
         left={
@@ -194,6 +195,8 @@ export function WorkoutCalendarPage() {
                 const meta = [
                   e.duration_min ? `${e.duration_min} min` : null,
                   e.distance_mi ? `${e.distance_mi} mi` : null,
+                  e.load_lb ? `${e.load_lb} lb` : null,
+                  e.level ? `L${e.level}/${e.level_max}` : null,
                   `${e.calories} calories`,
                 ]
                   .filter(Boolean)
@@ -208,6 +211,11 @@ export function WorkoutCalendarPage() {
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium">{e.name}</div>
                       <div className="text-xs text-muted-foreground">{meta}</div>
+                      <ZoneBadge
+                        zone={e.zone}
+                        avgHr={e.avg_hr}
+                        className="mt-1"
+                      />
                     </div>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </Link>

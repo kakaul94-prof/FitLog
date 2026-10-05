@@ -49,7 +49,7 @@ export function MuscleGoalsPage() {
     )
 
   return (
-    <div className="mx-auto min-h-svh w-full max-w-md bg-background">
+    <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title="Weekly set goals"
         left={

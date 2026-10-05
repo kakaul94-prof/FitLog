@@ -7,8 +7,9 @@
 const R = 50
 const C = 2 * Math.PI * R
 
-// Ring-local muted colors. Exported so the diary macro bars can match the ring
-// without recoloring the global `primary` token (buttons/nav stay as-is).
+// Ring-local muted colors. Exported so macro bars elsewhere (ProgressPage) can
+// match the ring without recoloring the global `primary` token; the diary's own
+// bars use per-macro hues from the same family (MACRO_HUES in DiaryPage).
 export const RING_GREEN = '#54976e'
 export const RING_OVER = '#bf6360'
 

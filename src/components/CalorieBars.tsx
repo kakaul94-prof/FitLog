@@ -7,6 +7,12 @@ export interface CalorieBar {
   date: string
   kcal: number
   logged: boolean
+  // The budget for this day — the goal in effect then (see goalForDate) plus
+  // any cardio burned. null = no goal.
+  goal?: number | null
+  // Cardio calories burned that day; shown in the tooltip so the raised goal
+  // line is self-explaining. Omit/0 = no cardio.
+  burned?: number
 }
 
 const AXIS = '#9ca3af'
@@ -41,17 +47,17 @@ function md(iso: string): string {
 
 /**
  * Dependency-free daily-calories bar chart (hand-rolled SVG, like CalorieRing /
- * LineChartSvg — recharts crashes in the prod bundle). Bars are green under the
- * goal, red over it; unlogged days render as gaps. Tap a bar to read its total.
+ * LineChartSvg — recharts crashes in the prod bundle). Bars are green under that
+ * day's budget, red over it; the dashed line steps with the goal history and
+ * rises on days with cardio burned. Unlogged days render as gaps. Tap a bar to
+ * read its total.
  */
 export function CalorieBars({
   data,
-  goal,
   height = 184,
   className,
 }: {
   data: CalorieBar[]
-  goal: number | null
   height?: number
   className?: string
 }) {
@@ -61,7 +67,8 @@ export function CalorieBars({
 
   const n = data.length
   const maxKcal = data.reduce((m, d) => Math.max(m, d.kcal), 0)
-  const top = niceMax(Math.max(goal ?? 0, maxKcal) * 1.1)
+  const maxGoal = data.reduce((m, d) => Math.max(m, d.goal ?? 0), 0)
+  const top = niceMax(Math.max(maxGoal, maxKcal) * 1.1)
 
   const pw = Math.max(0, w - PAD.left - PAD.right)
   const ph = Math.max(0, height - PAD.top - PAD.bottom)
@@ -75,6 +82,33 @@ export function CalorieBars({
   for (let v = 1000; v < top; v += 1000) ticks.push(v)
 
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(pw / 44))))
+
+  // Stepped goal line: each day's goal spans its own slot and steps at the
+  // boundary when it changes. One path per contiguous run of days with a goal.
+  const goalPaths: string[] = []
+  {
+    let d = ''
+    let prevY: number | null = null
+    data.forEach((row, i) => {
+      const g = row.goal
+      const xa = PAD.left + i * slot
+      const xb = PAD.left + (i + 1) * slot
+      if (g == null) {
+        if (d) goalPaths.push(d)
+        d = ''
+        prevY = null
+        return
+      }
+      const y = yAt(g)
+      if (!d) d = `M ${xa} ${y} L ${xb} ${y}`
+      else {
+        if (prevY != null && y !== prevY) d += ` L ${xa} ${y}`
+        d += ` L ${xb} ${y}`
+      }
+      prevY = y
+    })
+    if (d) goalPaths.push(d)
+  }
 
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
     const rect = svgRef.current?.getBoundingClientRect()
@@ -129,23 +163,22 @@ export function CalorieBars({
                 width={barW}
                 height={Math.max(1, base - yAt(d.kcal))}
                 rx={1.5}
-                fill={goal != null && d.kcal > goal ? RING_OVER : RING_GREEN}
+                fill={d.goal != null && d.kcal > d.goal ? RING_OVER : RING_GREEN}
                 opacity={active == null || active === i ? 1 : 0.5}
               />
             ) : null,
           )}
 
-          {goal != null && (
-            <line
-              x1={PAD.left}
-              y1={yAt(goal)}
-              x2={w - PAD.right}
-              y2={yAt(goal)}
+          {goalPaths.map((d, i) => (
+            <path
+              key={`goal-${i}`}
+              d={d}
+              fill="none"
               stroke="var(--muted-foreground)"
               strokeWidth={1.3}
               strokeDasharray="4 3"
             />
-          )}
+          ))}
 
           {data.map((d, i) =>
             i % every === 0 || i === n - 1 ? (
@@ -175,6 +208,11 @@ export function CalorieBars({
           <div className="text-muted-foreground">
             {data[active].kcal.toLocaleString()} cal
           </div>
+          {(data[active].burned ?? 0) > 0 && (
+            <div className="text-muted-foreground">
+              +{data[active].burned!.toLocaleString()} exercise
+            </div>
+          )}
         </div>
       )}
     </div>

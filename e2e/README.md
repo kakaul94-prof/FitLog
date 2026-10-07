@@ -10,6 +10,7 @@ never a hosted project.
 | `tests/diary.spec.ts` | Log a meal with Quick add; row saved with the right meal + calories |
 | `tests/workout.spec.ts` | Start a workout, add an exercise, log a set, mark done; set saved |
 | `tests/progress.spec.ts` | Log body weight; appears in history and in the DB |
+| `tests/food-search.spec.ts` | Library search (partial match, empty state, add with servings, never another user's foods), multi-add, Recent tab, nutrient snapshot survives a food edit, USDA import / no matches / outage (stubbed) |
 | `tests/rls.spec.ts` | Alice can't read, forge, update or delete Bob's rows; anon sees nothing |
 
 ## Run it
@@ -38,6 +39,15 @@ Report: `npx playwright show-report`.
 - **Test data.** `supabase/seed.sql` creates Alice (the browser user) and Bob
   (owns private rows for the RLS spec). Names are made unique per run, so the
   suite can rerun without a reset. `npm run db:reset` restores the seed.
+  Specs set up their own rows through the API (`support/data.ts`) and do the
+  journey under test through the UI.
+- **External APIs are stubbed.** The app gets a dummy USDA key so its USDA UI
+  shows, and the `usda` fixture (`support/usda.ts`) answers every request to
+  `api.nal.usda.gov` with canned data or a chosen error. The real API is never
+  called, and an unstubbed USDA request fails the test.
+- **Syncing on optimistic UI.** The food picker shows "Added …" before the
+  insert lands, so the page object waits for the insert's network response,
+  not the toast.
 - **Safety.** `support/env.ts` throws if the Supabase URL isn't local, and the
   config passes the local URL/key to Vite explicitly (overriding any `.env`)
   on its own port (5174) with no server reuse.

@@ -7,6 +7,7 @@ import { ProgressPage } from './pages/ProgressPage'
 import { WorkoutPage } from './pages/WorkoutPage'
 import { signedInClient } from './support/api'
 import { USERS } from './support/env'
+import { UsdaStub } from './support/usda'
 
 type Fixtures = {
   loginPage: LoginPage
@@ -16,6 +17,8 @@ type Fixtures = {
   progressPage: ProgressPage
   /** Supabase client signed in as Alice (the browser's account) for DB assertions. */
   aliceDb: SupabaseClient
+  /** Fake USDA API for this test's page; fails the test on any USDA call it didn't stub. */
+  usda: UsdaStub
 }
 
 /** `test` with page objects and a DB client injected, so specs never `new` anything. */
@@ -26,6 +29,12 @@ export const test = base.extend<Fixtures>({
   workoutPage: async ({ page }, use) => use(new WorkoutPage(page)),
   progressPage: async ({ page }, use) => use(new ProgressPage(page)),
   aliceDb: async ({}, use) => use(await signedInClient(USERS.alice)),
+  usda: async ({ page }, use) => {
+    const usda = new UsdaStub(page)
+    await usda.install()
+    await use(usda)
+    usda.expectNoUnexpectedCalls()
+  },
 })
 
 export { expect } from '@playwright/test'

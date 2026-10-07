@@ -48,7 +48,9 @@ export default defineConfig({
     env: {
       VITE_SUPABASE_URL: SUPABASE_URL,
       VITE_SUPABASE_ANON_KEY: SUPABASE_ANON_KEY,
-      VITE_USDA_API_KEY: '',
+      // A dummy key so the app shows its USDA search UI. It is never valid:
+      // every USDA request is answered by the `usda` fixture (e2e/support/usda.ts).
+      VITE_USDA_API_KEY: 'e2e-dummy-key',
     },
   },
 })

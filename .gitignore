@@ -27,6 +27,7 @@ src/data/patchNotes.generated.ts
 # Playwright / E2E
 /test-results
 /playwright-report
+/reports
 /playwright/.cache
 /e2e/.auth
 

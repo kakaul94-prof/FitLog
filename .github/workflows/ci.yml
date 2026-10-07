@@ -34,6 +34,16 @@ jobs:
           VITE_USDA_API_KEY: ''
       - run: npm test
 
+      # Results for the quality dashboard; uploaded even when tests fail.
+      - name: Upload unit results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-results
+          path: reports/vitest.json
+          if-no-files-found: ignore
+          retention-days: 7
+
   e2e:
     name: E2E tests (Playwright in Docker)
     runs-on: ubuntu-latest
@@ -65,6 +75,58 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 14
+
+      - name: Upload E2E results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: reports/playwright.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Quality metrics: pass rate, flaky tests and durations for the dashboard
+  # (README → Quality metrics). Deliberately outside the release gate:
+  # deploy-prod needs only unit + e2e, and continue-on-error keeps a metrics
+  # problem from turning the run red. It runs in parallel with the deploy, so
+  # it adds no time to a release.
+  metrics:
+    name: Quality metrics
+    needs: [unit, e2e]
+    if: ${{ !cancelled() }} # failed runs are data too
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # push the run record to the gh-pages branch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # the metrics scripts have no dependencies, so no npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-results'
+          path: reports
+          merge-multiple: true
+
+      # Every run (PRs included) gets a results table in its job summary.
+      - name: Summarize this run
+        run: node metrics/summarize.mjs
+        env:
+          JOB_RESULTS: ${{ toJSON(needs) }}
+
+      # Only pushes publish to the dashboard: this workflow's push filter means
+      # main and dev. PR runs stop at the summary above.
+      - name: Check out the dashboard branch
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: _site
+      - name: Publish to the dashboard
+        if: github.event_name == 'push'
+        run: bash metrics/publish.sh _site
 
   deploy-prod:
     name: Deploy to production

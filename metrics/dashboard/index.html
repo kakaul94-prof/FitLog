@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FitLog Quality</title>
+  <meta name="description" content="Test pass rate, flaky tests and suite duration from every FitLog CI run.">
+  <style>
+    :root {
+      --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+      --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10);
+      /* Categorical series, fixed order (validated for color-vision deficiency). */
+      --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+      /* Status: always shown with an icon + label, never color alone. */
+      --good: #0ca30c; --warn: #fab219; --bad: #d03b3b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+        --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+        --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+    a { color: inherit; text-decoration-color: var(--axis); text-underline-offset: 2px; }
+    a:hover { text-decoration-color: currentColor; }
+    h1 { font-size: 22px; margin: 0; }
+    h2 { font-size: 15px; margin: 0 0 2px; }
+    .sub, .note { color: var(--ink-2); margin: 2px 0 0; }
+    .note { font-size: 12px; margin-bottom: 12px; }
+    header { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; }
+    .filter { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+    .filter button { font: inherit; border: 0; background: none; color: var(--ink-2); padding: 6px 14px; cursor: pointer; }
+    .filter button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+    .grid { display: grid; gap: 12px; margin-bottom: 12px; }
+    .kpis { grid-template-columns: repeat(4, 1fr); }
+    .two { grid-template-columns: 1fr 1fr; }
+    .multiples { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .kpi .label { color: var(--ink-2); font-size: 12px; }
+    .kpi .value { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .kpi .ctx { color: var(--muted); font-size: 12px; }
+    .last { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+    .dot { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-size: 11px; font-weight: 700; }
+    .passed .dot { background: var(--good); } .flaky .dot { background: var(--warn); color: #0b0b0b; } .failed .dot { background: var(--bad); }
+    .meta { color: var(--ink-2); }
+    .chart { position: relative; height: 220px; }
+    .multiples .chart { height: 160px; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+    th { color: var(--ink-2); font-weight: 500; font-size: 12px; }
+    td.num, th.num { text-align: right; white-space: nowrap; }
+    td.test { min-width: 220px; }
+    td.test small { display: block; color: var(--muted); }
+    .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+    .empty { color: var(--ink-2); padding: 24px 0; text-align: center; }
+    footer { color: var(--muted); font-size: 12px; margin-top: 20px; }
+    @media (max-width: 800px) { .kpis { grid-template-columns: 1fr 1fr; } .two { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>FitLog Quality</h1>
+        <p class="sub">Unit + E2E results from every CI run on <code>main</code> and <code>dev</code></p>
+      </div>
+      <div class="filter" id="branch-filter" role="group" aria-label="Branch"></div>
+    </header>
+    <div id="app"><p class="empty">Loading…</p></div>
+    <footer>
+      Flaky = failed, then passed on retry (Playwright, 2 retries in CI). Unit tests run without retries.
+      Source: <a href="https://github.com/kakaul94-prof/FitLog/tree/main/metrics">metrics/</a> ·
+      data: <a href="data/history.json">history.json</a> (last 200 runs)
+    </footer>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="dashboard.js" defer></script>
+</body>
+</html>

@@ -99,9 +99,34 @@ flowchart LR
   UNIT --> GATE{Both passed and branch is main?}
   E2E --> GATE
   GATE -- yes --> DEPLOY[wrangler pages deploy to fitlog-prod]
+  UNIT -. JSON results .-> METRICS[Quality metrics: job summary + dashboard]
+  E2E -. JSON results .-> METRICS
 ```
 
 Production is only deployed from `main`, and only after both test jobs pass. The `dev` site still auto-deploys through Cloudflare's Git integration.
+
+### Quality metrics dashboard
+
+**Live dashboard: [kakaul94-prof.github.io/FitLog](https://kakaul94-prof.github.io/FitLog/)**
+
+Every CI run records its results so quality can be tracked over time, not just pass/fail per build.
+
+| Tracked | How |
+|---|---|
+| Pass rate per suite | Tests that passed (including after a retry) ÷ tests run, per CI run |
+| Flaky rate + top flaky tests | Tests that failed, then passed on a retry; ranked by how often across runs |
+| Suite duration + slowest 10 tests | Wall-clock time per suite; each slow test against its own 10-run average |
+| Last run status | Result, branch, commit link and per-job outcome, including infrastructure failures with no test results |
+
+**How flaky detection works.** In CI Playwright retries a failing test up to twice. Playwright then marks a test that failed and later passed as `flaky`, and the metrics keep that status rather than counting it as a pass. Retries keep a release from being blocked by a one-off timing problem without hiding it, and the dashboard shows which tests rely on them. Unit tests run with no retries on purpose, because they should be deterministic. For flakes rare enough to slip past retries, the manual [Flake hunt](.github/workflows/flake-hunt.yml) workflow runs every E2E test N times with retries off and ranks tests by failure rate.
+
+**How it's built** ([`metrics/`](metrics)):
+
+1. Playwright and Vitest each write a JSON report next to their usual output, and both jobs upload it as an artifact, even when tests fail.
+2. A `metrics` job turns the reports into one record per run (timestamp, commit, branch, totals, durations, per-test times) and writes a results table to the run's job summary, PRs included. One small adapter per tool maps its report into a shared shape, so adding a new tool means adding one adapter (`metrics/adapters/`).
+3. On pushes to `main` and `dev`, the record is appended to `data/history.json` on the `gh-pages` branch (capped at 200 runs, ~0.6 MB), which GitHub Pages serves with a static Chart.js page. Git acts as the database, so there is no server and no paid service, and history is versioned. The alternative was deploying the page as a build artifact and re-downloading the previous history each time. That avoids bot commits, but one failed download would wipe the history.
+
+The `metrics` job is outside the release gate: `deploy-prod` depends only on the test jobs, the metrics job has `continue-on-error`, and it runs alongside the deploy. A metrics failure can't block or slow a release. Records contain test names, statuses, durations and public run links only; no error text, logs or environment values are published.
 
 ## Getting Started
 

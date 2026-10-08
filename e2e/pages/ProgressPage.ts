@@ -26,7 +26,9 @@ export class ProgressPage extends BasePage {
     const saved = this.page.waitForResponse(
       (r) => r.url().includes('/rest/v1/measurements') && r.request().method() === 'PATCH',
     )
-    await this.page.getByLabel(`Date of ${lb} lb`).fill(date)
+    // exact: label matching is a case-insensitive substring by default, and
+    // "Date of 150.5 lb" would also match the "Change date of 150.5 lb" button.
+    await this.page.getByLabel(`Date of ${lb} lb`, { exact: true }).fill(date)
     expect((await saved).ok(), 'weigh-in update failed').toBe(true)
   }
 

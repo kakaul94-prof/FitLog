@@ -53,6 +53,7 @@ const HeartRateMonitorPage = lazyPage(() => import('@/pages/HeartRateMonitorPage
 const WorkoutPage = lazyPage(() => import('@/pages/WorkoutPage'), 'WorkoutPage')
 const ExercisePickerPage = lazyPage(() => import('@/pages/ExercisePickerPage'), 'ExercisePickerPage')
 const ExerciseDetailPage = lazyPage(() => import('@/pages/ExerciseDetailPage'), 'ExerciseDetailPage')
+const FormRecordPage = lazyPage(() => import('@/pages/FormRecordPage'), 'FormRecordPage')
 const WorkoutCalendarPage = lazyPage(() => import('@/pages/WorkoutCalendarPage'), 'WorkoutCalendarPage')
 const MuscleVolumePage = lazyPage(() => import('@/pages/MuscleVolumePage'), 'MuscleVolumePage')
 const MuscleGoalsPage = lazyPage(() => import('@/pages/MuscleGoalsPage'), 'MuscleGoalsPage')
@@ -163,6 +164,7 @@ const router = createBrowserRouter(
       <Route path="/workout/:id" element={<WorkoutPage />} />
       <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
       <Route path="/lift/exercise/:key" element={<ExerciseDetailPage />} />
+      <Route path="/lift/exercise/:key/record" element={<FormRecordPage />} />
       <Route path="/lift/calendar" element={<WorkoutCalendarPage />} />
       <Route path="/lift/volume" element={<MuscleVolumePage />} />
       <Route path="/lift/volume/goals" element={<MuscleGoalsPage />} />

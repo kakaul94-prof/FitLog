@@ -1,6 +1,6 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft,
   EyeOff,
@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Trophy,
   AlertTriangle,
+  Video,
 } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { ActionSheet } from '@/components/ActionSheet'
@@ -28,10 +29,12 @@ import {
 } from '@/features/strength/useStrength'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import {
-  useFormVideo,
+  MAX_CLIPS,
+  useFormVideos,
   useUploadFormVideo,
   useDeleteFormVideo,
 } from '@/features/strength/useFormVideos'
+import { ReplaceClipSheet } from '@/components/ReplaceClipSheet'
 import { estimated1RM } from '@/lib/calc'
 import {
   currentE1RM,
@@ -84,7 +87,12 @@ const MAX_CLIP_SEC = 33
 export function ExerciseDetailPage() {
   const { key } = useParams()
   const nav = useNavigate()
-  const [tab, setTab] = useState<Tab>('history')
+  // Tab lives in the URL so returning from the recorder lands back on Videos.
+  const [params, setParams] = useSearchParams()
+  const tab = (TABS as readonly string[]).includes(params.get('tab') ?? '')
+    ? (params.get('tab') as Tab)
+    : 'history'
+  const setTab = (t: Tab) => setParams({ tab: t }, { replace: true })
   const { data: custom } = useCustomExercises()
 
   const builtin = EXERCISES.find((e) => e.key === key)
@@ -857,34 +865,58 @@ function GoalEtaCaption({
 }
 
 function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
-  const { data, isLoading } = useFormVideo(exerciseKey)
+  const { data: clips = [], isLoading } = useFormVideos(exerciseKey)
   const upload = useUploadFormVideo()
   const del = useDeleteFormVideo()
+  const nav = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
+  const [selected, setSelected] = useState(0)
+  // A gallery pick waits here for review before it's saved.
+  const [picked, setPicked] = useState<{
+    file: File
+    url: string
+    sec: number | null
+  } | null>(null)
+  const [replacing, setReplacing] = useState(false)
   const err = (upload.error ?? del.error) as Error | null
+  const current = clips[Math.min(selected, clips.length - 1)]
+
+  const clearPicked = () => {
+    if (picked) URL.revokeObjectURL(picked.url)
+    setPicked(null)
+    setReplacing(false)
+  }
 
   const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     e.target.value = '' // let the same file be re-picked later
     if (!file || !exerciseKey) return
-    const duration_sec = await readDuration(file)
-    if (duration_sec != null && duration_sec > MAX_CLIP_SEC) {
-      window.alert(
-        `Clip is ${fmtDuration(duration_sec)} — please keep it under 30s.`,
-      )
+    const sec = await readDuration(file)
+    if (sec != null && sec > MAX_CLIP_SEC) {
+      window.alert(`Clip is ${fmtDuration(sec)} — please keep it under 30s.`)
       return
     }
-    if (
-      data &&
-      !window.confirm('Replace your current clip? The old one is deleted.')
+    upload.reset()
+    setPicked({ file, url: URL.createObjectURL(file), sec })
+  }
+
+  const savePicked = (replace_id?: string) => {
+    if (!picked || !exerciseKey) return
+    if (!replace_id && clips.length >= MAX_CLIPS) return setReplacing(true)
+    upload.mutate(
+      { exercise_key: exerciseKey, file: picked.file, duration_sec: picked.sec, replace_id },
+      {
+        onSuccess: () => {
+          clearPicked()
+          setSelected(0)
+        },
+      },
     )
-      return
-    upload.mutate({ exercise_key: exerciseKey, file, duration_sec })
   }
 
   const onDelete = () => {
-    if (!exerciseKey || !data || !window.confirm('Delete this form clip?')) return
-    del.mutate({ exercise_key: exerciseKey, storage_path: data.row.storage_path })
+    if (!current || !window.confirm('Delete this form clip?')) return
+    del.mutate(current.row, { onSuccess: () => setSelected(0) })
   }
 
   return (
@@ -897,13 +929,38 @@ function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
         onChange={onPick}
       />
 
-      {isLoading ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
-      ) : data ? (
+      {picked ? (
         <Card className="overflow-hidden">
           <video
-            key={data.url}
-            src={data.url}
+            src={picked.url}
+            controls
+            playsInline
+            className="aspect-video w-full bg-black"
+          />
+          <CardContent className="grid grid-cols-2 gap-2 py-3">
+            <Button variant="outline" onClick={clearPicked} disabled={upload.isPending}>
+              Cancel
+            </Button>
+            <Button onClick={() => savePicked()} disabled={upload.isPending}>
+              {upload.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </CardContent>
+          {replacing && (
+            <ReplaceClipSheet
+              clips={clips}
+              pending={upload.isPending}
+              onConfirm={(id) => savePicked(id)}
+              onClose={() => setReplacing(false)}
+            />
+          )}
+        </Card>
+      ) : isLoading ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+      ) : current ? (
+        <Card className="overflow-hidden">
+          <video
+            key={current.url}
+            src={current.url}
             controls
             playsInline
             preload="metadata"
@@ -912,9 +969,9 @@ function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
           <CardContent className="flex items-center justify-between gap-2 py-3">
             <span className="text-xs text-muted-foreground">
               {[
-                dateLabel(data.row.created_at.slice(0, 10)),
-                data.row.duration_sec ? fmtDuration(data.row.duration_sec) : null,
-                data.row.size_bytes ? fmtSize(data.row.size_bytes) : null,
+                dateLabel(todayISO(new Date(current.row.created_at))),
+                current.row.duration_sec ? fmtDuration(current.row.duration_sec) : null,
+                current.row.size_bytes ? fmtSize(current.row.size_bytes) : null,
               ]
                 .filter(Boolean)
                 .join(' · ')}
@@ -937,23 +994,65 @@ function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
         </Card>
       )}
 
-      <Button
-        className="w-full"
-        onClick={() => inputRef.current?.click()}
-        disabled={upload.isPending}
-      >
-        {upload.isPending
-          ? 'Uploading…'
-          : data
-            ? 'Replace clip'
-            : 'Record / add clip'}
-      </Button>
+      {!picked && clips.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {clips.map((c, i) => (
+            <button
+              key={c.row.id}
+              onClick={() => setSelected(i)}
+              className={cn(
+                'overflow-hidden rounded-lg border text-xs',
+                c === current ? 'border-2 border-primary' : 'border-border',
+              )}
+            >
+              <video
+                src={`${c.url}#t=0.1`}
+                preload="metadata"
+                muted
+                playsInline
+                className="pointer-events-none aspect-video w-full bg-black object-cover"
+              />
+              <span className="block py-0.5">
+                {dateLabel(todayISO(new Date(c.row.created_at)))}
+              </span>
+            </button>
+          ))}
+          {Array.from({ length: Math.max(0, MAX_CLIPS - clips.length) }, (_, i) => (
+            <div
+              key={`empty-${i}`}
+              className="flex items-center justify-center rounded-lg border border-dashed border-border text-xs text-muted-foreground"
+            >
+              Empty
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!picked && (
+        <div className="space-y-2">
+          <Button
+            className="w-full"
+            onClick={() => nav(`/lift/exercise/${exerciseKey}/record`)}
+            disabled={!exerciseKey}
+          >
+            <Video className="mr-2 h-4 w-4" />
+            Record clip
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => inputRef.current?.click()}
+          >
+            Upload from gallery
+          </Button>
+        </div>
+      )}
 
       {err && <p className="px-1 text-xs text-destructive">{err.message}</p>}
 
       <p className="px-1 text-xs text-muted-foreground">
-        One clip is kept per exercise — a new recording replaces it. Clips must
-        be under 30s; film ~20–30s at 720p to keep files small.
+        Up to {MAX_CLIPS} clips per exercise, 30s max. Once full, saving a new
+        one asks which to replace.
       </p>
     </div>
   )

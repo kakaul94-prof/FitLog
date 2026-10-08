@@ -1,5 +1,4 @@
 import { expect, type Locator } from '@playwright/test'
-import { startsWith } from '../support/text'
 import { BasePage } from './BasePage'
 
 /** The workout rotation (/program), plus browsing and switching ready-made programs. */
@@ -45,7 +44,12 @@ export class ProgramPage extends BasePage {
     await this.goto()
     await this.openRotation()
     await this.page.getByRole('button', { name: /^Change program/ }).click()
-    await this.page.getByRole('button', { name: startsWith(presetName) }).click()
+    // Match the preset's exact title, not a prefix: "Upper / lower" is also the
+    // start of "Upper / lower / push / pull".
+    await this.page
+      .getByRole('button')
+      .filter({ has: this.page.getByText(presetName, { exact: true }) })
+      .click()
     await this.page.getByRole('button', { name: /^(Use this program|Switch back to this program)$/ }).click()
     await this.page.getByRole('button', { name: 'Switch program' }).click()
     await expect(this.page).toHaveURL(/\/program$/)

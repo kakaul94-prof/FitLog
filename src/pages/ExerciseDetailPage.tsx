@@ -969,7 +969,7 @@ function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
           <CardContent className="flex items-center justify-between gap-2 py-3">
             <span className="text-xs text-muted-foreground">
               {[
-                dateLabel(current.row.created_at.slice(0, 10)),
+                dateLabel(todayISO(new Date(current.row.created_at))),
                 current.row.duration_sec ? fmtDuration(current.row.duration_sec) : null,
                 current.row.size_bytes ? fmtSize(current.row.size_bytes) : null,
               ]
@@ -1013,7 +1013,7 @@ function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
                 className="pointer-events-none aspect-video w-full bg-black object-cover"
               />
               <span className="block py-0.5">
-                {dateLabel(c.row.created_at.slice(0, 10))}
+                {dateLabel(todayISO(new Date(c.row.created_at)))}
               </span>
             </button>
           ))}

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
-import { dateLabel } from '@/lib/date'
+import { dateLabel, todayISO } from '@/lib/date'
 import type { FormClip } from '@/features/strength/useFormVideos'
 
 function fmtSec(sec: number): string {
@@ -59,7 +59,7 @@ export function ReplaceClipSheet({
                   className="h-9 w-14 shrink-0 rounded bg-black object-cover"
                 />
                 <span className="text-sm">
-                  {dateLabel(c.row.created_at.slice(0, 10))}
+                  {dateLabel(todayISO(new Date(c.row.created_at)))}
                   {c.row.duration_sec ? ` · ${fmtSec(c.row.duration_sec)}` : ''}
                   {i === clips.length - 1 && (
                     <span className="block text-xs text-muted-foreground">Oldest</span>

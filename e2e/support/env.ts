@@ -53,9 +53,36 @@ export const USERS = {
     email: 'erin@e2e.test',
     password: 'erin-password',
   },
+  // Trainer: memory is one record per user; 200 lb + 2000/day goal for the snapshot.
+  frank: {
+    id: 'ffffffff-0000-4000-8000-000000000006',
+    email: 'frank@e2e.test',
+    password: 'frank-password',
+  },
+  // Backup: restoring wipes the account first, so nobody else may share it.
+  grace: {
+    id: '77777777-0000-4000-8000-000000000007',
+    email: 'grace@e2e.test',
+    password: 'grace-password',
+  },
+  // Entries: edits and deletes diary entries and weigh-ins.
+  heidi: {
+    id: '88888888-0000-4000-8000-000000000008',
+    email: 'heidi@e2e.test',
+    password: 'heidi-password',
+  },
+  // Profile: goals and settings, and sign-out (which ends every session of the account).
+  ivan: {
+    id: '99999999-0000-4000-8000-000000000009',
+    email: 'ivan@e2e.test',
+    password: 'ivan-password',
+  },
 } as const
 
 export type TestUser = (typeof USERS)[keyof typeof USERS]
 
+export type SessionUser = 'alice' | 'carol' | 'dave' | 'erin' | 'frank' | 'grace' | 'heidi' | 'ivan'
+export const SESSION_USERS: SessionUser[] = ['alice', 'carol', 'dave', 'erin', 'frank', 'grace', 'heidi', 'ivan']
+
 /** Saved browser session for a user who signs in during setup (auth.setup.ts). */
-export const authFile = (user: 'alice' | 'carol' | 'dave' | 'erin') => `e2e/.auth/${user}.json`
+export const authFile = (user: SessionUser) => `e2e/.auth/${user}.json`

@@ -1,18 +1,24 @@
 import { test as base } from '@playwright/test'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { BackupPage } from './pages/BackupPage'
 import { CardioPage } from './pages/CardioPage'
 import { DiaryPage } from './pages/DiaryPage'
+import { EntryPage } from './pages/EntryPage'
+import { FoodFormPage } from './pages/FoodFormPage'
 import { FoodPickerPage } from './pages/FoodPickerPage'
 import { LoginPage } from './pages/LoginPage'
+import { ProfileSettingsPage } from './pages/ProfileSettingsPage'
 import { ProgramPage } from './pages/ProgramPage'
 import { ProgressPage } from './pages/ProgressPage'
 import { RecipePage } from './pages/RecipePage'
 import { RoutinePage } from './pages/RoutinePage'
 import { TrackPage } from './pages/TrackPage'
+import { TrainerPage } from './pages/TrainerPage'
 import { WorkoutPage } from './pages/WorkoutPage'
 import { signedInClient } from './support/api'
 import { USERS } from './support/env'
 import { FakeGps } from './support/gps'
+import { TrainerStub } from './support/trainer'
 import { UsdaStub } from './support/usda'
 
 type Fixtures = {
@@ -26,12 +32,23 @@ type Fixtures = {
   programPage: ProgramPage
   cardioPage: CardioPage
   trackPage: TrackPage
+  entryPage: EntryPage
+  trainerPage: TrainerPage
+  backupPage: BackupPage
+  foodFormPage: FoodFormPage
+  profilePage: ProfileSettingsPage
   /** Supabase client signed in as Alice (the browser's account) for DB assertions. */
   aliceDb: SupabaseClient
-  /** Carol owns the program spec's data, Dave the routines spec's, Erin cardio + GPS (support/env.ts). */
+  /** One account per area with per-user state (support/env.ts): Carol program, Dave routines, Erin cardio + GPS, Frank trainer, Grace backup, Heidi entries, Ivan profile. */
   carolDb: SupabaseClient
   daveDb: SupabaseClient
   erinDb: SupabaseClient
+  frankDb: SupabaseClient
+  graceDb: SupabaseClient
+  heidiDb: SupabaseClient
+  ivanDb: SupabaseClient
+  /** Scripted /api/trainer; records what the app sent. */
+  trainer: TrainerStub
   /** Test-driven GPS + fake clock; installed before the page loads. */
   gps: FakeGps
   /** Fake USDA API for this test's page; fails the test on any USDA call it didn't stub. */
@@ -50,10 +67,25 @@ export const test = base.extend<Fixtures>({
   programPage: async ({ page }, use) => use(new ProgramPage(page)),
   cardioPage: async ({ page }, use) => use(new CardioPage(page)),
   trackPage: async ({ page }, use) => use(new TrackPage(page)),
+  entryPage: async ({ page }, use) => use(new EntryPage(page)),
+  trainerPage: async ({ page }, use) => use(new TrainerPage(page)),
+  backupPage: async ({ page }, use) => use(new BackupPage(page)),
+  foodFormPage: async ({ page }, use) => use(new FoodFormPage(page)),
+  profilePage: async ({ page }, use) => use(new ProfileSettingsPage(page)),
   aliceDb: async ({}, use) => use(await signedInClient(USERS.alice)),
   carolDb: async ({}, use) => use(await signedInClient(USERS.carol)),
   daveDb: async ({}, use) => use(await signedInClient(USERS.dave)),
   erinDb: async ({}, use) => use(await signedInClient(USERS.erin)),
+  frankDb: async ({}, use) => use(await signedInClient(USERS.frank)),
+  graceDb: async ({}, use) => use(await signedInClient(USERS.grace)),
+  heidiDb: async ({}, use) => use(await signedInClient(USERS.heidi)),
+  ivanDb: async ({}, use) => use(await signedInClient(USERS.ivan)),
+  trainer: async ({ page }, use) => {
+    const trainer = new TrainerStub(page)
+    await trainer.install()
+    await use(trainer)
+    await trainer.dispose()
+  },
   gps: async ({ page }, use) => {
     const gps = new FakeGps(page)
     await gps.install()

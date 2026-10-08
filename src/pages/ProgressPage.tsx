@@ -664,13 +664,14 @@ function MeasurementRow({
         <button
           onClick={openPicker}
           className="text-muted-foreground underline decoration-dotted underline-offset-2 active:text-foreground"
-          aria-label="Change date"
+          aria-label={`Change date of ${row.value} ${row.unit}`}
         >
           {row.measured_on}
         </button>
         <input
           ref={dateInput}
           type="date"
+          aria-label={`Date of ${row.value} ${row.unit}`}
           value={row.measured_on}
           max={todayISO()}
           onChange={(e) => {
@@ -694,7 +695,7 @@ function MeasurementRow({
       <button
         onClick={onDelete}
         className="px-2 text-muted-foreground active:text-destructive"
-        aria-label="Delete"
+        aria-label={`Delete ${row.value} ${row.unit}`}
       >
         ✕
       </button>

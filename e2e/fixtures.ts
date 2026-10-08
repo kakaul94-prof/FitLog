@@ -3,7 +3,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { DiaryPage } from './pages/DiaryPage'
 import { FoodPickerPage } from './pages/FoodPickerPage'
 import { LoginPage } from './pages/LoginPage'
+import { ProgramPage } from './pages/ProgramPage'
 import { ProgressPage } from './pages/ProgressPage'
+import { RecipePage } from './pages/RecipePage'
+import { RoutinePage } from './pages/RoutinePage'
 import { WorkoutPage } from './pages/WorkoutPage'
 import { signedInClient } from './support/api'
 import { USERS } from './support/env'
@@ -15,8 +18,14 @@ type Fixtures = {
   foodPickerPage: FoodPickerPage
   workoutPage: WorkoutPage
   progressPage: ProgressPage
+  recipePage: RecipePage
+  routinePage: RoutinePage
+  programPage: ProgramPage
   /** Supabase client signed in as Alice (the browser's account) for DB assertions. */
   aliceDb: SupabaseClient
+  /** Carol owns the program spec's data; Dave the routines spec's (support/env.ts). */
+  carolDb: SupabaseClient
+  daveDb: SupabaseClient
   /** Fake USDA API for this test's page; fails the test on any USDA call it didn't stub. */
   usda: UsdaStub
 }
@@ -28,7 +37,12 @@ export const test = base.extend<Fixtures>({
   foodPickerPage: async ({ page }, use) => use(new FoodPickerPage(page)),
   workoutPage: async ({ page }, use) => use(new WorkoutPage(page)),
   progressPage: async ({ page }, use) => use(new ProgressPage(page)),
+  recipePage: async ({ page }, use) => use(new RecipePage(page)),
+  routinePage: async ({ page }, use) => use(new RoutinePage(page)),
+  programPage: async ({ page }, use) => use(new ProgramPage(page)),
   aliceDb: async ({}, use) => use(await signedInClient(USERS.alice)),
+  carolDb: async ({}, use) => use(await signedInClient(USERS.carol)),
+  daveDb: async ({}, use) => use(await signedInClient(USERS.dave)),
   usda: async ({ page }, use) => {
     const usda = new UsdaStub(page)
     await usda.install()

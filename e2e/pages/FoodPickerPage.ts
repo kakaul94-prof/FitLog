@@ -1,7 +1,6 @@
 import { expect, type Locator } from '@playwright/test'
+import { startsWith } from '../support/text'
 import { BasePage } from './BasePage'
-
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** The "Add to {meal}" food picker (/diary/add). */
 export class FoodPickerPage extends BasePage {
@@ -43,7 +42,7 @@ export class FoodPickerPage extends BasePage {
 
   /** A food in the list. Its accessible name starts with the food name ("Oats 150 calories · …"). */
   foodRow(name: string): Locator {
-    return this.page.getByRole('button', { name: new RegExp(`^${escapeRegExp(name)}`) })
+    return this.page.getByRole('button', { name: startsWith(name) })
   }
 
   /** A USDA search result (description, then brand / data type). */

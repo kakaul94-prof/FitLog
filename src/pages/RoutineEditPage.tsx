@@ -581,15 +581,16 @@ export function RoutineEditPage() {
       <PageHeader
         title={isNew ? 'New template' : 'Edit template'}
         left={
-          <Button variant="ghost" size="icon" onClick={() => nav('/strength')}>
+          <Button variant="ghost" size="icon" aria-label="Back" onClick={() => nav('/strength')}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }
       />
       <div className="space-y-4 p-4">
         <div className="space-y-1.5">
-          <label className="text-sm font-medium">Template name</label>
+          <label htmlFor="template-name" className="text-sm font-medium">Template name</label>
           <Input
+            id="template-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Push Day"
@@ -939,7 +940,7 @@ function RoutineExRow({
         <button
           onClick={onRemove}
           className="text-muted-foreground active:text-destructive"
-          aria-label="Remove"
+          aria-label={`Remove ${ex.exercise_name}`}
         >
           <X className="h-4 w-4" />
         </button>
@@ -950,6 +951,7 @@ function RoutineExRow({
           type="number"
           inputMode="numeric"
           placeholder="sets"
+          aria-label={`${ex.exercise_name} target sets`}
           value={sets}
           onChange={(e) => setSets(e.target.value)}
           onBlur={() => onTarget({ target_sets: sets ? parseInt(sets) : null })}
@@ -960,6 +962,7 @@ function RoutineExRow({
           type="number"
           inputMode="numeric"
           placeholder="reps"
+          aria-label={`${ex.exercise_name} target reps`}
           value={reps}
           onChange={(e) => setReps(e.target.value)}
           onBlur={() => onTarget({ target_reps: reps ? parseInt(reps) : null })}

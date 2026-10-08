@@ -10,6 +10,9 @@ never a hosted project.
 | `tests/diary.spec.ts` | Log a meal with Quick add; row saved with the right meal + calories |
 | `tests/workout.spec.ts` | Start a workout, add an exercise, log a set, mark done; set saved |
 | `tests/progress.spec.ts` | Log body weight; appears in history and in the DB |
+| `tests/recipes.spec.ts` | Build a recipe (per-serving nutrients stored), recalculation on yield / ingredient changes, log recipe servings to the diary |
+| `tests/routines.spec.ts` | Create a template with targets, start a workout from it, leaving with unsaved edits (Discard vs Save) — as Dave |
+| `tests/program.spec.ts` | Pick a preset program, Next up follows the rotation (skips rest, wraps), "Set as next" persists without dropping other program data, switching programs and back restores the rotation — as Carol, run in order |
 | `tests/food-search.spec.ts` | Library search (partial match, empty state, add with servings, never another user's foods), multi-add, Recent tab, nutrient snapshot survives a food edit, USDA import / no matches / outage (stubbed) |
 | `tests/rls.spec.ts` | Alice can't read, forge, update or delete Bob's rows; anon sees nothing |
 
@@ -36,8 +39,12 @@ Report: `npx playwright show-report`.
 - **DB assertions.** Specs check the UI *and* poll Postgres via a Supabase
   client signed in as the same user, so a test fails if the UI looks right but
   nothing was saved.
-- **Test data.** `supabase/seed.sql` creates Alice (the browser user) and Bob
-  (owns private rows for the RLS spec). Names are made unique per run, so the
+- **Test data.** `supabase/seed.sql` creates Alice (the default browser user),
+  Bob (owns private rows for the RLS spec), and one account per area with
+  per-user state: Carol (program: one record per user) and Dave (templates,
+  which change what the Exercise tab offers). Parallel specs can't change each
+  other's state, and the program spec runs its tests in order because they
+  share Carol's record. Names are made unique per run, so the
   suite can rerun without a reset. `npm run db:reset` restores the seed.
   Specs set up their own rows through the API (`support/data.ts`) and do the
   journey under test through the UI.

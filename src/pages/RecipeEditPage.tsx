@@ -88,8 +88,9 @@ export function RecipeEditPage() {
       <div className="space-y-4 p-4">
         <Card className="space-y-3 p-4">
           <div className="space-y-1.5">
-            <Label>Name</Label>
+            <Label htmlFor="recipe-name">Name</Label>
             <Input
+              id="recipe-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               onBlur={() => {
@@ -100,8 +101,9 @@ export function RecipeEditPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Yield (servings)</Label>
+            <Label htmlFor="recipe-yield">Yield (servings)</Label>
             <Input
+              id="recipe-yield"
               type="number"
               inputMode="decimal"
               value={yieldServings}
@@ -301,7 +303,7 @@ function IngredientRow({
       <button
         onClick={onRemove}
         className="text-muted-foreground active:text-destructive"
-        aria-label="Remove"
+        aria-label={food ? `Remove ${food.name}` : 'Remove ingredient'}
       >
         <X className="h-4 w-4" />
       </button>

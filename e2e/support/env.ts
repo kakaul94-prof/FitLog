@@ -34,6 +34,22 @@ export const USERS = {
     email: 'bob@e2e.test',
     password: 'bob-password',
   },
+  // One account per area with per-user state, so specs running in parallel
+  // can't change each other's: Carol owns the program spec, Dave the routines
+  // spec (templates change what Alice's Exercise tab shows).
+  carol: {
+    id: 'cccccccc-0000-4000-8000-000000000003',
+    email: 'carol@e2e.test',
+    password: 'carol-password',
+  },
+  dave: {
+    id: 'dddddddd-0000-4000-8000-000000000004',
+    email: 'dave@e2e.test',
+    password: 'dave-password',
+  },
 } as const
 
 export type TestUser = (typeof USERS)[keyof typeof USERS]
+
+/** Saved browser session for a user who signs in during setup (auth.setup.ts). */
+export const authFile = (user: 'alice' | 'carol' | 'dave') => `e2e/.auth/${user}.json`

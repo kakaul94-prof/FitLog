@@ -3,8 +3,11 @@
 -- Never run this against a hosted project. The passwords are throwaway
 -- values for a disposable local database, not secrets.
 --
--- Two users so the suite can prove row-level security: Alice is the
--- account the browser tests sign in as; Bob owns rows Alice must never see.
+-- Three users. Alice is the account the browser tests sign in as; Bob owns
+-- rows Alice must never see (row-level security). Carol is only used by the
+-- program spec and Dave only by the routines spec: the program is one record
+-- per user, and templates change what the Exercise tab shows, so each area
+-- gets its own account and parallel specs can't collide.
 -- ============================================================
 
 -- auth.users + auth.identities is what GoTrue writes on a real signup.
@@ -21,6 +24,12 @@ values
    now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
   ('00000000-0000-0000-0000-000000000000', 'bbbbbbbb-0000-4000-8000-000000000002',
    'authenticated', 'authenticated', 'bob@e2e.test', crypt('bob-password', gen_salt('bf')),
+   now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', 'cccccccc-0000-4000-8000-000000000003',
+   'authenticated', 'authenticated', 'carol@e2e.test', crypt('carol-password', gen_salt('bf')),
+   now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', 'dddddddd-0000-4000-8000-000000000004',
+   'authenticated', 'authenticated', 'dave@e2e.test', crypt('dave-password', gen_salt('bf')),
    now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '');
 
 insert into auth.identities (
@@ -30,7 +39,7 @@ select gen_random_uuid(), id, id::text, 'email',
        jsonb_build_object('sub', id::text, 'email', email, 'email_verified', true),
        now(), now(), now()
 from auth.users
-where email in ('alice@e2e.test', 'bob@e2e.test');
+where email in ('alice@e2e.test', 'bob@e2e.test', 'carol@e2e.test', 'dave@e2e.test');
 
 -- The on_auth_user_created trigger has already made both profiles rows.
 -- Give Alice a fixed calorie goal so the diary renders deterministically.

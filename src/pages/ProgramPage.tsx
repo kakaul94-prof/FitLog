@@ -740,7 +740,7 @@ export function ProgramPage() {
                               setActionFor({ item, index })
                             }}
                             className="shrink-0 text-muted-foreground"
-                            aria-label="Options"
+                            aria-label={`Options for ${isRoutine ? routineName(item.routineId) : 'Rest day'}`}
                           >
                             <MoreVertical className="h-4 w-4" />
                           </button>

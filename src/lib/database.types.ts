@@ -144,8 +144,42 @@ export interface Profile {
   // Facts the Ask-a-trainer chat remembers between sessions (see TrainerFact).
   // Empty = the trainer sees only your live training stats.
   trainer_memory: TrainerFact[]
+  // Pre-workout fuel timing: the personal offset learned from post-workout
+  // feedback + the last meal timed (see FuelTimingState). null = never used.
+  fuel_timing: FuelTimingState | null
   created_at: string
   updated_at: string
+}
+
+// How the stomach felt during a workout after a timed meal. 'flat' = hungry /
+// low energy (ate too long before); 'heavy' = still full (too soon).
+export type FuelFeel = 'heavy' | 'fine' | 'flat'
+
+export interface FuelFeedback {
+  date: string
+  feel: FuelFeel
+  /** Minutes between eating and starting the workout. */
+  gapMin: number
+  kcal: number
+}
+
+export interface FuelMeal {
+  ateAt: string
+  /** Diary entries picked, so the card can redraw the window + reasons. */
+  entryIds: string[]
+  kcal: number
+  earliestMin: number
+  latestMin: number
+}
+
+// Window math lives in lib/fuel.ts.
+export interface FuelTimingState {
+  /** Personal shift applied to every window, minutes; clamped ±60. */
+  offsetMin: number
+  /** Last meal timed on the card, asked about after the next workout. */
+  last: FuelMeal | null
+  /** Recent feedback, newest last; pruned to 30. */
+  log: FuelFeedback[]
 }
 
 // Weekly cardio goal, in one of two granularities. 'simple' targets light

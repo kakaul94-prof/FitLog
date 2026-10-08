@@ -71,6 +71,8 @@ alter table public.profiles add column if not exists step_goal integer;
 alter table public.profiles add column if not exists coach_enabled boolean not null default false;
 -- Trainer chat memory (see migration_trainer_memory.sql). [] = nothing saved.
 alter table public.profiles add column if not exists trainer_memory jsonb not null default '[]'::jsonb;
+-- Pre-workout fuel timing (see migration_fuel_timing.sql). null = never used.
+alter table public.profiles add column if not exists fuel_timing jsonb;
 -- Rehab centre: injuries, their plans, the rehab log and pain check-ins
 -- (see migration_rehab.sql). {} = nothing set up yet.
 alter table public.profiles add column if not exists rehab jsonb not null default '{}'::jsonb;

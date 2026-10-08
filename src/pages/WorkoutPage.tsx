@@ -52,6 +52,7 @@ import {
 } from '@/features/strength/useStrengthGoals'
 import { useRoutine } from '@/features/strength/useRoutines'
 import { useCoachEnabled, useUpdateProfile } from '@/features/profile/useProfile'
+import { FuelFeedbackPrompt } from '@/components/PreWorkoutFuel'
 import { useExerciseEntries } from '@/features/exercise/useExercise'
 import { useCustomActivities } from '@/features/exercise/useCustomActivities'
 import {
@@ -418,6 +419,7 @@ export function WorkoutPage() {
         }
       />
       <div className="space-y-4 p-4 pb-32">
+        {workout && <FuelFeedbackPrompt startedAt={workout.created_at} />}
         {activeBlocks.map(renderBlock)}
 
         {completedBlocks.length > 0 && (

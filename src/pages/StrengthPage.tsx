@@ -15,6 +15,7 @@ import {
   HeartPulse,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { PreWorkoutFuelCard } from '@/components/PreWorkoutFuel'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -158,6 +159,11 @@ export function StrengthPage() {
         }
       />
       <div className="flex flex-1 flex-col px-4 pb-2">
+        {!inProgress && (
+          <div className="pt-2">
+            <PreWorkoutFuelCard />
+          </div>
+        )}
         <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
           {inProgress ? (
             <>

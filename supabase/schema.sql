@@ -483,11 +483,11 @@ create policy meal_items_rw_own on public.meal_items
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ============================================================
--- form_videos — per-user form-check videos, up to 3 per exercise
--- (MAX_CLIPS, enforced by the app: once full, a new clip replaces the
--- one the user picks). exercise_key = built-in slug or 'custom:<uuid>'.
--- The video lives in the private 'form-videos' Storage bucket; this
--- row points at it.
+-- form_videos — per-user form-check video for one exercise.
+-- exercise_key = built-in slug or 'custom:<uuid>'. Keep-last-1 via
+-- unique(user_id, exercise_key): a new clip replaces the prior one
+-- (the app deletes the old file on upload). The video lives in the
+-- private 'form-videos' Storage bucket; this row points at it.
 -- ============================================================
 create table if not exists public.form_videos (
   id uuid primary key default gen_random_uuid(),
@@ -496,13 +496,10 @@ create table if not exists public.form_videos (
   storage_path text not null,
   duration_sec integer,
   size_bytes bigint,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (user_id, exercise_key)
 );
--- Keep-last-1 era constraint; dropped by migration_form_videos_multi.sql.
-alter table public.form_videos drop constraint if exists form_videos_user_id_exercise_key_key;
 create index if not exists form_videos_user_idx on public.form_videos(user_id);
-create index if not exists form_videos_exercise_idx
-  on public.form_videos(user_id, exercise_key, created_at desc);
 alter table public.form_videos enable row level security;
 drop policy if exists form_videos_rw_own on public.form_videos;
 create policy form_videos_rw_own on public.form_videos

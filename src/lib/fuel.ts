@@ -47,11 +47,6 @@ export interface FuelWindow {
   flags: FuelFlag[]
 }
 
-export type FuelStatus =
-  | { kind: 'wait'; min: number }
-  | { kind: 'open'; min: number }
-  | { kind: 'passed'; min: number }
-
 const round5 = (m: number) => Math.round(m / 5) * 5
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
@@ -112,13 +107,6 @@ export function preWorkoutWindow(entries: FuelEntry[], offsetMin = 0): FuelWindo
 
 export function gapMinutes(fromISO: string, toISO: string): number {
   return (new Date(toISO).getTime() - new Date(fromISO).getTime()) / 60000
-}
-
-export function windowStatus(ateAt: string, w: Pick<FuelWindow, 'earliestMin' | 'latestMin'>, nowISO: string): FuelStatus {
-  const since = gapMinutes(ateAt, nowISO)
-  if (since < w.earliestMin) return { kind: 'wait', min: Math.ceil(w.earliestMin - since) }
-  if (since <= w.latestMin) return { kind: 'open', min: Math.floor(w.latestMin - since) }
-  return { kind: 'passed', min: Math.floor(since - w.latestMin) }
 }
 
 /** The timed meal a workout started at `startedAt` should ask about, or null. */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, UtensilsCrossed, X } from 'lucide-react'
 import { Card } from '@/components/ui/card'
@@ -14,9 +14,6 @@ import {
   preWorkoutWindow,
   recordFuelFeedback,
   rememberFuelMeal,
-  windowStatus,
-  type FuelFlag,
-  type FuelStatus,
 } from '@/lib/fuel'
 import type { DiaryEntry, FuelFeel, FuelTimingState, Meal } from '@/lib/database.types'
 
@@ -26,14 +23,6 @@ const MEALS: { key: Meal; label: string }[] = [
   { key: 'dinner', label: 'Dinner' },
   { key: 'snacks', label: 'Snacks' },
 ]
-
-const FLAG_TEXT: Record<FuelFlag, string> = {
-  light: 'Very light: you may get hungry mid-session',
-  'low-carb': 'Low carb: fine for a short lift, may feel flat on a long one',
-  'gi-risk': 'High fat or fiber: more chance of stomach discomfort',
-  large: 'Big meal: give it the full window',
-  'fiber-missing': 'Fiber missing for some foods: window may be early',
-}
 
 const FEELS: { key: FuelFeel; label: string }[] = [
   { key: 'heavy', label: 'Heavy' },
@@ -51,21 +40,6 @@ const hhmm = (iso: string) => {
 const clockAt = (ateAt: string, min: number) =>
   timeLabel(new Date(new Date(ateAt).getTime() + min * 60_000).toISOString())
 
-function statusText(s: FuelStatus): string {
-  if (s.kind === 'wait') return `Window opens in ${formatMinutes(s.min)}`
-  if (s.kind === 'open') return `In your window · closes in ${formatMinutes(s.min)}`
-  return `Window closed ${formatMinutes(s.min)} ago`
-}
-
-function useNowISO(): string {
-  const [now, setNow] = useState(() => new Date().toISOString())
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date().toISOString()), 60_000)
-    return () => clearInterval(t)
-  }, [])
-  return now
-}
-
 // Lift tab: pick today's pre-workout meal from the diary and get a comfort
 // window to train in (lib/fuel.ts). Collapses to one button until used.
 export function PreWorkoutFuelCard() {
@@ -73,7 +47,6 @@ export function PreWorkoutFuelCard() {
   const today = todayISO()
   const { data: entries } = useDiary(today)
   const [open, setOpen] = useState(false)
-  const now = useNowISO()
   const state = profile?.fuel_timing ?? null
   const last = state?.last && todayISO(new Date(state.last.ateAt)) === today ? state.last : null
   const picked = useMemo(
@@ -112,34 +85,17 @@ export function PreWorkoutFuelCard() {
           Change
         </button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {picked.map((e) => e.food_name).join(' + ')} · {Math.round(w.kcal)} kcal · ate {timeLabel(last.ateAt)}
-      </p>
       <div>
         <p className="text-lg font-bold">
           Train {clockAt(last.ateAt, w.earliestMin)} – {clockAt(last.ateAt, w.latestMin)}
         </p>
         <p className="text-xs text-muted-foreground">Best around {clockAt(last.ateAt, w.bestMin)}</p>
       </div>
-      <span className={cn(pill, 'inline-block')}>{statusText(windowStatus(last.ateAt, w, now))}</span>
       <ul className="space-y-0.5 border-t border-border pt-2 text-xs text-muted-foreground">
         {w.reasons.map((r) => (
           <li key={r}>· {r}</li>
         ))}
       </ul>
-      {w.flags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {w.flags.map((f) => (
-            <span
-              key={f}
-              className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
-            >
-              {FLAG_TEXT[f]}
-            </span>
-          ))}
-        </div>
-      )}
-      <p className="text-[11px] text-muted-foreground">Comfort estimate, not a performance prescription.</p>
       {sheet}
     </Card>
   )
@@ -163,17 +119,22 @@ function FuelSheet({
   // null = follow the default (when the picked foods were logged).
   const [time, setTime] = useState<string | null>(initial ? hhmm(initial.ateAt) : null)
   const chosen = entries.filter((e) => ids.includes(e.id))
+  const nowISO = new Date().toISOString()
   const loggedAt = chosen.reduce<string | null>((a, e) => (a && a > e.created_at ? a : e.created_at), null)
-  const shown = time ?? hhmm(loggedAt ?? new Date().toISOString())
+  // A log time from another day (pre-logged, copied) or ahead of now isn't
+  // when you ate, so fall back to now.
+  const loggedToday = loggedAt && loggedAt <= nowISO && todayISO(new Date(loggedAt)) === today
+  const shown = time ?? hhmm(loggedToday ? loggedAt : nowISO)
+  const ateAtMs = new Date(`${today}T${shown}`).getTime()
+  const future = ateAtMs > Date.now()
   const total = Math.round(chosen.reduce((s, e) => s + kcalOf(e), 0))
 
   const toggle = (id: string) => setIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
 
   const save = () => {
     const w = preWorkoutWindow(chosen, state?.offsetMin ?? 0)
-    if (!w) return
-    const ateAt = new Date(`${today}T${shown}`).toISOString()
-    update.mutate({ fuel_timing: rememberFuelMeal(state, ateAt, ids, w) }, { onSuccess: onClose })
+    if (!w || future) return
+    update.mutate({ fuel_timing: rememberFuelMeal(state, new Date(ateAtMs).toISOString(), ids, w) }, { onSuccess: onClose })
   }
 
   return createPortal(
@@ -225,16 +186,23 @@ function FuelSheet({
               type="time"
               value={shown}
               onChange={(ev) => setTime(ev.target.value || null)}
-              className="rounded-md border border-border bg-background px-2 py-1"
+              className={cn(
+                'rounded-md border bg-background px-2 py-1',
+                future ? 'border-destructive' : 'border-border',
+              )}
             />
           </label>
-          <p className="text-[11px] text-muted-foreground">Defaults to when you logged it</p>
+          {future ? (
+            <p className="text-xs text-destructive">That's later than now. Set when you actually ate.</p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">Defaults to when you logged it, or now if it was logged ahead of time</p>
+          )}
           {update.isError && <p className="text-xs text-destructive">Couldn't save. Try again.</p>}
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={onClose}>
               Cancel
             </Button>
-            <Button className="flex-1" onClick={save} disabled={total <= 0 || update.isPending}>
+            <Button className="flex-1" onClick={save} disabled={total <= 0 || future || update.isPending}>
               {update.isPending ? 'Saving…' : `Time my workout · ${total} kcal`}
             </Button>
           </div>

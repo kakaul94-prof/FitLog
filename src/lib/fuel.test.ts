@@ -6,7 +6,6 @@ import {
   preWorkoutWindow,
   recordFuelFeedback,
   rememberFuelMeal,
-  windowStatus,
 } from './fuel'
 import type { FuelTimingState, Nutrients } from './database.types'
 
@@ -76,16 +75,6 @@ describe('preWorkoutWindow', () => {
     expect(later.reasons).toContain('Tuned to your feedback: +30 min')
     const earlier = win({ kcal: 150, carb: 30, protein: 5, fat: 2, fiber: 2 }, -60)
     expect([earlier.earliestMin, earlier.latestMin]).toEqual([15, 45])
-  })
-})
-
-describe('windowStatus', () => {
-  const w = { earliestMin: 80, latestMin: 160 }
-  const ate = '2026-10-07T12:00:00Z'
-  it('says wait / open / passed', () => {
-    expect(windowStatus(ate, w, '2026-10-07T12:30:00Z')).toEqual({ kind: 'wait', min: 50 })
-    expect(windowStatus(ate, w, '2026-10-07T14:00:00Z')).toEqual({ kind: 'open', min: 40 })
-    expect(windowStatus(ate, w, '2026-10-07T15:00:00Z')).toEqual({ kind: 'passed', min: 20 })
   })
 })
 

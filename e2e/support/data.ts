@@ -256,3 +256,53 @@ export async function diaryEntries(db: SupabaseClient, foodName: string) {
   const { data } = await db.from('diary_entries').select('meal, servings, food_id, nutrients').eq('food_name', foodName)
   return data
 }
+
+/** A saved meal holding 1 serving of each food (items snapshot the food, like the app's "Save as meal"). */
+export async function createMeal(db: SupabaseClient, name: string, foods: SeededFood[]): Promise<string> {
+  const { data: meal, error } = await db.from('meals').insert({ name }).select('id').single()
+  if (error) throw new Error(`createMeal(${name}): ${error.message}`)
+  const { error: itemError } = await db.from('meal_items').insert(
+    foods.map((f, i) => ({
+      meal_id: meal.id,
+      food_id: f.id,
+      food_name: f.name,
+      servings: 1,
+      serving_qty: 1,
+      serving_unit: 'serving',
+      nutrients: f.nutrients,
+      position: i,
+    })),
+  )
+  if (itemError) throw new Error(`createMeal(${name}) items: ${itemError.message}`)
+  return meal.id
+}
+
+/** A saved meal by name with its items' food names, or null once it's gone. */
+export async function savedMeal(db: SupabaseClient, name: string) {
+  const { data } = await db.from('meals').select('name, meal_items(food_name, servings)').eq('name', name).maybeSingle()
+  if (!data) return null
+  return { name: data.name as string, items: (data.meal_items as { food_name: string }[]).map((i) => i.food_name).sort() }
+}
+
+/** A food by name, as saved. "Deleting" a food archives it (archived: true). */
+export async function foodByName(db: SupabaseClient, name: string) {
+  const { data } = await db
+    .from('foods')
+    .select('id, name, brand, serving_qty, serving_unit, serving_grams, nutrients, portions, archived')
+    .eq('name', name)
+    .maybeSingle()
+  return data
+}
+
+/** A day's food diary with each entry's food link (null after its food is deleted). */
+export async function diaryLinks(db: SupabaseClient, date: string) {
+  const { data } = await db.from('diary_entries').select('food_name, food_id').eq('entry_date', date)
+  return data ?? []
+}
+
+/** Today (or `offset` days from it) as YYYY-MM-DD, in local time like the app. */
+export function dayFromToday(offset: number): string {
+  const d = new Date(`${todayISO()}T12:00:00`)
+  d.setDate(d.getDate() + offset)
+  return d.toLocaleDateString('en-CA')
+}

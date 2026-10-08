@@ -551,6 +551,7 @@ export function FoodPickerPage() {
                 <div className="space-y-3 p-4">
                   <input
                     type="date"
+                    aria-label="Copy from date"
                     value={copyDate}
                     max={addDaysISO(date, -1)}
                     onChange={(e) => setCopyDate(e.target.value)}

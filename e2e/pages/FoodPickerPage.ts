@@ -68,7 +68,7 @@ export class FoodPickerPage extends BasePage {
 
   /** Multi-add: add every picked food at once (one insert for all of them). */
   async addPicked(count: number, meal: string): Promise<void> {
-    await this.addAndWaitForSave(this.page.getByRole('button', { name: `Add ${count} to ${meal}` }), `Added ${count} items`)
+    await this.addAndWaitForSave(this.page.getByRole('button', { name: `Add ${count} to ${meal}` }), `Added ${count} ${count === 1 ? 'item' : 'items'}`)
   }
 
   /**
@@ -85,5 +85,24 @@ export class FoodPickerPage extends BasePage {
     // after a slow insert could miss it.
     await expect(this.message(toast)).toBeVisible()
     expect((await saved).ok(), 'diary insert failed').toBe(true)
+  }
+
+  readonly newFoodButton = this.page.getByRole('button', { name: 'New food', exact: true })
+  readonly copyDayButton = this.page.getByRole('button', { name: 'Copy day', exact: true })
+  readonly copyFromDate = this.page.getByLabel('Copy from date')
+
+  /** Press and hold a food in the list to open its menu (Delete food…). */
+  async openFoodMenu(name: string): Promise<void> {
+    await this.foodRow(name).hover()
+    await this.page.mouse.down()
+    await expect(this.page.getByRole('button', { name: 'Delete food' })).toBeVisible()
+    await this.page.mouse.up()
+  }
+
+  /** Log a saved meal from the Meals tab; done once the insert has landed. */
+  async logSavedMeal(name: string, itemCount: number, meal: string): Promise<void> {
+    await this.tab('Meals').click()
+    await this.page.getByRole('button', { name: startsWith(name) }).click()
+    await this.addAndWaitForSave(this.page.getByRole('button', { name: `Add ${itemCount} to ${meal}` }), `Added ${name}`)
   }
 }

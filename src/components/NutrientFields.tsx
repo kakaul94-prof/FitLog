@@ -20,8 +20,11 @@ function Row({
   const def = NUTRIENT_BY_KEY[k]
   return (
     <div className="flex items-center gap-2">
-      <label className="flex-1 text-sm">{def.label}</label>
+      <label htmlFor={`nutrient-${k}`} className="flex-1 text-sm">
+        {def.label}
+      </label>
       <Input
+        id={`nutrient-${k}`}
         className="h-9 w-24"
         type="number"
         inputMode="decimal"

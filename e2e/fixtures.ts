@@ -4,8 +4,10 @@ import { BackupPage } from './pages/BackupPage'
 import { CardioPage } from './pages/CardioPage'
 import { DiaryPage } from './pages/DiaryPage'
 import { EntryPage } from './pages/EntryPage'
+import { FoodFormPage } from './pages/FoodFormPage'
 import { FoodPickerPage } from './pages/FoodPickerPage'
 import { LoginPage } from './pages/LoginPage'
+import { ProfileSettingsPage } from './pages/ProfileSettingsPage'
 import { ProgramPage } from './pages/ProgramPage'
 import { ProgressPage } from './pages/ProgressPage'
 import { RecipePage } from './pages/RecipePage'
@@ -33,15 +35,18 @@ type Fixtures = {
   entryPage: EntryPage
   trainerPage: TrainerPage
   backupPage: BackupPage
+  foodFormPage: FoodFormPage
+  profilePage: ProfileSettingsPage
   /** Supabase client signed in as Alice (the browser's account) for DB assertions. */
   aliceDb: SupabaseClient
-  /** One account per area with per-user state (support/env.ts): Carol program, Dave routines, Erin cardio + GPS, Frank trainer, Grace backup, Heidi entries. */
+  /** One account per area with per-user state (support/env.ts): Carol program, Dave routines, Erin cardio + GPS, Frank trainer, Grace backup, Heidi entries, Ivan profile. */
   carolDb: SupabaseClient
   daveDb: SupabaseClient
   erinDb: SupabaseClient
   frankDb: SupabaseClient
   graceDb: SupabaseClient
   heidiDb: SupabaseClient
+  ivanDb: SupabaseClient
   /** Scripted /api/trainer; records what the app sent. */
   trainer: TrainerStub
   /** Test-driven GPS + fake clock; installed before the page loads. */
@@ -65,6 +70,8 @@ export const test = base.extend<Fixtures>({
   entryPage: async ({ page }, use) => use(new EntryPage(page)),
   trainerPage: async ({ page }, use) => use(new TrainerPage(page)),
   backupPage: async ({ page }, use) => use(new BackupPage(page)),
+  foodFormPage: async ({ page }, use) => use(new FoodFormPage(page)),
+  profilePage: async ({ page }, use) => use(new ProfileSettingsPage(page)),
   aliceDb: async ({}, use) => use(await signedInClient(USERS.alice)),
   carolDb: async ({}, use) => use(await signedInClient(USERS.carol)),
   daveDb: async ({}, use) => use(await signedInClient(USERS.dave)),
@@ -72,6 +79,7 @@ export const test = base.extend<Fixtures>({
   frankDb: async ({}, use) => use(await signedInClient(USERS.frank)),
   graceDb: async ({}, use) => use(await signedInClient(USERS.grace)),
   heidiDb: async ({}, use) => use(await signedInClient(USERS.heidi)),
+  ivanDb: async ({}, use) => use(await signedInClient(USERS.ivan)),
   trainer: async ({ page }, use) => {
     const trainer = new TrainerStub(page)
     await trainer.install()

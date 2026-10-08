@@ -18,6 +18,9 @@ never a hosted project.
 | `tests/entries.spec.ts` | Edit servings and meal, delete (with confirm), unsaved-changes prompt (Keep editing / Discard / Save), press-and-hold Delete and Move, multi-select delete, the picker's just-added tray, weigh-in date change and delete (as Heidi) |
 | `tests/trainer.spec.ts` | Ask-a-trainer with a stubbed `/api/trainer`: reply shown, request grounded in a snapshot of the user's log, follow-ups send the conversation, starter prompts, remember offer + memory page, error recovery, Stop, in-workout chat (as Frank, in order) |
 | `tests/backup.spec.ts` | Export (all 17 tables, only your rows) and restore: round trip, preview + Cancel, links kept (recipe → ingredients, workout → sets), foreign `user_id`s forced to your own, replace-not-merge, invalid files rejected (as Grace, in order) |
+| `tests/food-form.spec.ts` | New food form: create + log from the picker, Save disabled until named, serving-size rescaling, blank ≠ 0 ("—"), extra serving units, micronutrients with %DV, edit (past entries keep their numbers), delete = archive, create from Library and from the recipe editor |
+| `tests/profile.spec.ts` | Manual target, calculated goal checked against a hand-worked Mifflin-St Jeor, non-retroactive goal history, macro targets (g / % / remainder, g per lb), Save + reload, "From your data" goal, missing-details message, change password, sign out (as Ivan, in order) |
+| `tests/meals.spec.ts` | Save entries as a meal, log / rename / delete saved meals, copy entries to another day (keeps meal + servings), copy a meal from another day in the picker, multi-select move |
 | `tests/food-search.spec.ts` | Library search (partial match, empty state, add with servings, never another user's foods), multi-add, Recent tab, nutrient snapshot survives a food edit, USDA import / no matches / outage (stubbed) |
 | `tests/rls.spec.ts` | Alice can't read, forge, update or delete Bob's rows; anon sees nothing |
 
@@ -49,8 +52,9 @@ Report: `npx playwright show-report`.
   per-user state: Carol (program: one record per user) Dave (templates,
   which change what the Exercise tab offers) Erin (cardio + GPS, with a
   fixed 80 kg weigh-in so calorie estimates are known numbers), Frank (trainer
-  memory), Grace (backup: a restore wipes the account) and Heidi (entry edits
-  and weigh-ins). Parallel specs can't change each
+  memory), Grace (backup: a restore wipes the account), Heidi (entry edits
+  and weigh-ins) and Ivan (profile and goals; sign-out ends every session
+  on the account, so it runs last on a fresh sign-in). Parallel specs can't change each
   other's state, and the program spec runs its tests in order because they
   share Carol's record. Names are made unique per run, so the
   suite can rerun without a reset. `npm run db:reset` restores the seed.

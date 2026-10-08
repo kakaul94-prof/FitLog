@@ -3,9 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Check, RotateCcw, SwitchCamera, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  useFormVideo,
+  MAX_CLIPS,
+  useFormVideos,
   useUploadFormVideo,
 } from '@/features/strength/useFormVideos'
+import { ReplaceClipSheet } from '@/components/ReplaceClipSheet'
 
 const MAX_SEC = 30
 const BITRATE = 2_500_000 // ~9 MB per 30s at 720p
@@ -47,8 +49,9 @@ const canRecord =
 export function FormRecordPage() {
   const { key } = useParams()
   const nav = useNavigate()
-  const { data: existing } = useFormVideo(key)
+  const { data: clips = [] } = useFormVideos(key)
   const upload = useUploadFormVideo()
+  const [replacing, setReplacing] = useState(false)
 
   const [phase, setPhase] = useState<Phase>('ready')
   const [facing, setFacing] = useState<Facing>('environment')
@@ -198,12 +201,11 @@ export function FormRecordPage() {
     setPhase('ready')
   }
 
-  const save = () => {
+  const save = (replace_id?: string) => {
     if (!clip || !key) return
-    if (existing && !window.confirm('Replace your current clip? The old one is deleted.'))
-      return
+    if (!replace_id && clips.length >= MAX_CLIPS) return setReplacing(true)
     upload.mutate(
-      { exercise_key: key, file: clip.file, duration_sec: clip.sec },
+      { exercise_key: key, file: clip.file, duration_sec: clip.sec, replace_id },
       { onSuccess: () => nav(-1) },
     )
   }
@@ -280,7 +282,7 @@ export function FormRecordPage() {
             </button>
             <button
               className="flex items-center justify-center gap-2 rounded-lg bg-primary py-2.5 font-medium text-primary-foreground disabled:opacity-60"
-              onClick={save}
+              onClick={() => save()}
               disabled={upload.isPending}
             >
               <Check className="h-4 w-4" /> {upload.isPending ? 'Saving…' : 'Save'}
@@ -292,6 +294,14 @@ export function FormRecordPage() {
           </p>
           {upload.error && (
             <p className="text-center text-xs text-red-400">{upload.error.message}</p>
+          )}
+          {replacing && (
+            <ReplaceClipSheet
+              clips={clips}
+              pending={upload.isPending}
+              onConfirm={(id) => save(id)}
+              onClose={() => setReplacing(false)}
+            />
           )}
         </div>
       ) : (

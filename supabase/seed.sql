@@ -9,6 +9,9 @@
 --   Carol: program spec (the program is one record per user)
 --   Dave:  routines spec (templates change what the Exercise tab shows)
 --   Erin:  cardio + GPS specs (a fixed weight, since calorie estimates use it)
+--   Frank: trainer spec (trainer memory is one record per user)
+--   Grace: backup spec (restoring a backup wipes the account first)
+--   Heidi: entries spec (edits and deletes diary entries and weigh-ins)
 -- ============================================================
 
 -- auth.users + auth.identities is what GoTrue writes on a real signup.
@@ -34,6 +37,15 @@ values
    now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
   ('00000000-0000-0000-0000-000000000000', 'eeeeeeee-0000-4000-8000-000000000005',
    'authenticated', 'authenticated', 'erin@e2e.test', crypt('erin-password', gen_salt('bf')),
+   now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', 'ffffffff-0000-4000-8000-000000000006',
+   'authenticated', 'authenticated', 'frank@e2e.test', crypt('frank-password', gen_salt('bf')),
+   now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '77777777-0000-4000-8000-000000000007',
+   'authenticated', 'authenticated', 'grace@e2e.test', crypt('grace-password', gen_salt('bf')),
+   now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', '88888888-0000-4000-8000-000000000008',
+   'authenticated', 'authenticated', 'heidi@e2e.test', crypt('heidi-password', gen_salt('bf')),
    now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '');
 
 insert into auth.identities (
@@ -43,18 +55,26 @@ select gen_random_uuid(), id, id::text, 'email',
        jsonb_build_object('sub', id::text, 'email', email, 'email_verified', true),
        now(), now(), now()
 from auth.users
-where email in ('alice@e2e.test', 'bob@e2e.test', 'carol@e2e.test', 'dave@e2e.test', 'erin@e2e.test');
+where email in ('alice@e2e.test', 'bob@e2e.test', 'carol@e2e.test', 'dave@e2e.test', 'erin@e2e.test',
+                'frank@e2e.test', 'grace@e2e.test', 'heidi@e2e.test');
 
 -- The on_auth_user_created trigger has already made the profiles rows.
--- Give Alice and Erin a fixed calorie goal so the diary renders deterministically.
+-- Give Alice, Erin and Frank a fixed calorie goal so the diary (and the
+-- trainer's snapshot) render deterministically.
 update public.profiles
 set calorie_goal_mode = 'manual', manual_calorie_goal = 2000
-where id in ('aaaaaaaa-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000005');
+where id in ('aaaaaaaa-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000005',
+             'ffffffff-0000-4000-8000-000000000006');
 
 -- Erin (cardio + GPS specs) weighs exactly 80 kg, so calorie estimates are
 -- known numbers. Dated long ago so it's her latest weigh-in for any test date.
 insert into public.measurements (user_id, measured_on, type, value)
 values ('eeeeeeee-0000-4000-8000-000000000005', '2000-01-01', 'weight', 176.37);
+
+-- Frank (trainer spec) weighs 200 lb as of today: the trainer's snapshot only
+-- reads recent weigh-ins.
+insert into public.measurements (user_id, measured_on, type, value)
+values ('ffffffff-0000-4000-8000-000000000006', current_date, 'weight', 200);
 
 -- Bob's private data: the RLS spec asserts Alice can't read or change it.
 insert into public.diary_entries (user_id, entry_date, meal, food_name, nutrients)

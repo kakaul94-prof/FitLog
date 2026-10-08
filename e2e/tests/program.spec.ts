@@ -1,5 +1,5 @@
 import { expect, runId, test } from '../fixtures'
-import { createRoutine, getProgram, logRoutineWorkout, setProgram } from '../support/data'
+import { createRoutine, getProgram, setProgram } from '../support/data'
 import { authFile, USERS } from '../support/env'
 
 // The program (workout rotation) is one record per user, so this spec runs as
@@ -14,6 +14,8 @@ const anExercise = [{ key: 'bench_press', name: 'Bench Press', sets: 3, reps: 8 
 
 test.beforeEach(async ({ carolDb }) => {
   await setProgram(carolDb, carol, null)
+  // An unfinished workout replaces the Next up card, so never inherit one.
+  await carolDb.from('workouts').delete().eq('completed', false)
 })
 
 test('picking a ready-made program builds its rotation and keeps your own templates', async ({
@@ -36,7 +38,7 @@ test('picking a ready-made program builds its rotation and keeps your own templa
   expect(stillThere).toHaveLength(1)
 })
 
-test('Next up follows the rotation, skips rest days and wraps around', async ({ carolDb, workoutPage, page }) => {
+test('Next up follows the rotation, skips rest days and wraps around', async ({ carolDb, workoutPage }) => {
   const id = runId()
   const a = await createRoutine(carolDb, `E2E Day A ${id}`, anExercise)
   const b = await createRoutine(carolDb, `E2E Day B ${id}`, anExercise)
@@ -45,12 +47,14 @@ test('Next up follows the rotation, skips rest days and wraps around', async ({ 
   await workoutPage.goto()
   await expect(workoutPage.nextUp(a.name)).toBeVisible()
 
-  await logRoutineWorkout(carolDb, a)
-  await page.reload()
+  // Train through the app, not by inserting workouts: the app keeps an
+  // offline copy of its data that counts as fresh for 60 s, so a workout
+  // written behind its back wouldn't show after a reload. Finishing one in
+  // the app refreshes it, which is the real loop the rotation depends on.
+  await workoutPage.trainNextUp()
   await expect(workoutPage.nextUp(b.name)).toBeVisible() // the rest day is never "next"
 
-  await logRoutineWorkout(carolDb, b)
-  await page.reload()
+  await workoutPage.trainNextUp()
   await expect(workoutPage.nextUp(a.name)).toBeVisible()
 })
 

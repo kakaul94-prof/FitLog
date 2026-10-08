@@ -14,6 +14,14 @@ export class WorkoutPage extends BasePage {
     return this.page.getByRole('heading', { level: 2, name: templateName, exact: true })
   }
 
+  /** Train the Next up template the way a user does: start it, log a set, mark it done. */
+  async trainNextUp(): Promise<void> {
+    await this.page.getByRole('button', { name: 'Start workout', exact: true }).click()
+    await expect(this.page).toHaveURL(/\/workout\/[0-9a-f-]+$/)
+    await this.logSet(1, 135, 5)
+    await this.markDone()
+  }
+
   async startEmptyWorkout(): Promise<void> {
     await this.startEmptyButton.click()
     await expect(this.page).toHaveURL(/\/workout\/[0-9a-f-]+$/)

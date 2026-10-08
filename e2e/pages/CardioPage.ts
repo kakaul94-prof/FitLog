@@ -35,7 +35,14 @@ export class CardioPage extends BasePage {
     await expect(this.durationInput).toBeVisible() // picking opens the duration tile
   }
 
+  /**
+   * Picking an activity opens the duration tile by itself; when editing it
+   * starts closed. Wait until the tiles are on screen before checking, or the
+   * check can run mid-save and the click then closes the tile the app just
+   * opened. (The tiles render before the duration input, so .first() is the tile.)
+   */
   async setDuration(minutes: number): Promise<void> {
+    await expect(this.durationTile.or(this.durationInput).first()).toBeVisible()
     if (!(await this.durationInput.isVisible())) await this.durationTile.click()
     await this.durationInput.fill(String(minutes))
   }

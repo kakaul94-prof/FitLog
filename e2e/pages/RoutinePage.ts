@@ -13,7 +13,8 @@ export class RoutinePage extends BasePage {
   readonly newTemplateButton = this.page.getByRole('button', { name: 'New template' })
   readonly nameInput = this.page.getByLabel('Template name')
   readonly saveButton = this.page.getByRole('button', { name: 'Save template' })
-  readonly backButton = this.page.getByRole('button', { name: 'Back' })
+  // exact: names match as substrings by default, and "Back" would also match "Back Squat".
+  readonly backButton = this.page.getByRole('button', { name: 'Back', exact: true })
 
   /** A template in the list; the link opens the editor. */
   templateLink(name: string): Locator {

@@ -120,14 +120,6 @@ export async function routineExercises(db: SupabaseClient, routineId: string) {
   return data
 }
 
-/** A completed workout from a template, logged today: what the program's "Next up" reads. */
-export async function logRoutineWorkout(db: SupabaseClient, routine: SeededRoutine): Promise<void> {
-  const { error } = await db
-    .from('workouts')
-    .insert({ workout_date: todayISO(), name: routine.name, source_routine_id: routine.id, completed: true })
-  if (error) throw new Error(`logRoutineWorkout(${routine.name}): ${error.message}`)
-}
-
 /** Replace the user's whole program record (profiles.program); null = no program. */
 export async function setProgram(db: SupabaseClient, userId: string, program: object | null): Promise<void> {
   const { error } = await db.from('profiles').update({ program }).eq('id', userId)

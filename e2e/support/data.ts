@@ -139,6 +139,22 @@ export async function getProgram(db: SupabaseClient, userId: string) {
   return data?.program
 }
 
+/** Empty a day's exercise log, so a test that owns that date starts clean on every run. */
+export async function clearExerciseDay(db: SupabaseClient, date: string): Promise<void> {
+  const { error } = await db.from('exercise_entries').delete().eq('entry_date', date)
+  if (error) throw new Error(`clearExerciseDay(${date}): ${error.message}`)
+}
+
+/** A day's exercise entries, as saved. */
+export async function exerciseEntries(db: SupabaseClient, date: string) {
+  const { data } = await db
+    .from('exercise_entries')
+    .select('id, name, met, duration_min, distance_mi, calories')
+    .eq('entry_date', date)
+    .order('created_at')
+  return data ?? []
+}
+
 /** What actually reached the diary for a food name: the source of truth for "it was saved". */
 export async function diaryEntries(db: SupabaseClient, foodName: string) {
   const { data } = await db.from('diary_entries').select('meal, servings, food_id, nutrients').eq('food_name', foodName)

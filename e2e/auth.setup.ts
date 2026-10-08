@@ -5,7 +5,7 @@ import { authFile, USERS } from './support/env'
 // keeps it in localStorage) so every other spec starts authenticated. Alice is
 // the default (playwright.config.ts); specs for per-user areas switch with
 // test.use({ storageState: authFile('carol') }).
-for (const user of ['alice', 'carol', 'dave'] as const) {
+for (const user of ['alice', 'carol', 'dave', 'erin'] as const) {
   setup(`sign in as ${user}`, async ({ page, loginPage, diaryPage }) => {
     await loginPage.goto()
     await loginPage.signIn(USERS[user].email, USERS[user].password)

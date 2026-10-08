@@ -1,6 +1,6 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   ChevronLeft,
   EyeOff,
@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Trophy,
   AlertTriangle,
+  Video,
 } from 'lucide-react'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { ActionSheet } from '@/components/ActionSheet'
@@ -84,7 +85,12 @@ const MAX_CLIP_SEC = 33
 export function ExerciseDetailPage() {
   const { key } = useParams()
   const nav = useNavigate()
-  const [tab, setTab] = useState<Tab>('history')
+  // Tab lives in the URL so returning from the recorder lands back on Videos.
+  const [params, setParams] = useSearchParams()
+  const tab = (TABS as readonly string[]).includes(params.get('tab') ?? '')
+    ? (params.get('tab') as Tab)
+    : 'history'
+  const setTab = (t: Tab) => setParams({ tab: t }, { replace: true })
   const { data: custom } = useCustomExercises()
 
   const builtin = EXERCISES.find((e) => e.key === key)
@@ -860,6 +866,7 @@ function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
   const { data, isLoading } = useFormVideo(exerciseKey)
   const upload = useUploadFormVideo()
   const del = useDeleteFormVideo()
+  const nav = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
   const err = (upload.error ?? del.error) as Error | null
 
@@ -937,23 +944,30 @@ function VideosTab({ exerciseKey }: { exerciseKey: string | undefined }) {
         </Card>
       )}
 
-      <Button
-        className="w-full"
-        onClick={() => inputRef.current?.click()}
-        disabled={upload.isPending}
-      >
-        {upload.isPending
-          ? 'Uploading…'
-          : data
-            ? 'Replace clip'
-            : 'Record / add clip'}
-      </Button>
+      <div className="space-y-2">
+        <Button
+          className="w-full"
+          onClick={() => nav(`/lift/exercise/${exerciseKey}/record`)}
+          disabled={!exerciseKey || upload.isPending}
+        >
+          <Video className="mr-2 h-4 w-4" />
+          Record clip
+        </Button>
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => inputRef.current?.click()}
+          disabled={upload.isPending}
+        >
+          {upload.isPending ? 'Uploading…' : 'Upload from gallery'}
+        </Button>
+      </div>
 
       {err && <p className="px-1 text-xs text-destructive">{err.message}</p>}
 
       <p className="px-1 text-xs text-muted-foreground">
-        One clip is kept per exercise — a new recording replaces it. Clips must
-        be under 30s; film ~20–30s at 720p to keep files small.
+        One clip is kept per exercise — a new one replaces it. Clips must be
+        under 30s.
       </p>
     </div>
   )

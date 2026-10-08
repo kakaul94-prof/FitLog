@@ -40,11 +40,11 @@ export function LibraryPage() {
 
   const action =
     tab === 'foods' ? (
-      <Button size="icon" onClick={() => setSourceOpen(true)}>
+      <Button size="icon" aria-label="New food" onClick={() => setSourceOpen(true)}>
         <Plus className="h-5 w-5" />
       </Button>
     ) : tab === 'recipes' ? (
-      <Button size="icon" onClick={newRecipe} disabled={create.isPending}>
+      <Button size="icon" aria-label="New recipe" onClick={newRecipe} disabled={create.isPending}>
         <Plus className="h-5 w-5" />
       </Button>
     ) : undefined

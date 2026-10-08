@@ -13,10 +13,14 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // Two retries in CI so an intermittent failure doesn't block a release, but a
+  // test that needed one is reported as "flaky" (not "passed") and tracked on
+  // the quality dashboard (metrics/), so retries surface flakiness, not hide it.
+  retries: process.env.CI ? 2 : 0,
   reporter: [
     [process.env.CI ? 'github' : 'list'],
     ['html', { open: 'never' }],
+    ['json', { outputFile: 'reports/playwright.json' }],
   ],
   use: {
     baseURL,
@@ -44,7 +48,9 @@ export default defineConfig({
     env: {
       VITE_SUPABASE_URL: SUPABASE_URL,
       VITE_SUPABASE_ANON_KEY: SUPABASE_ANON_KEY,
-      VITE_USDA_API_KEY: '',
+      // A dummy key so the app shows its USDA search UI. It is never valid:
+      // every USDA request is answered by the `usda` fixture (e2e/support/usda.ts).
+      VITE_USDA_API_KEY: 'e2e-dummy-key',
     },
   },
 })

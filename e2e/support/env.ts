@@ -34,6 +34,49 @@ export const USERS = {
     email: 'bob@e2e.test',
     password: 'bob-password',
   },
+  // One account per area with per-user state, so specs running in parallel
+  // can't change each other's: Carol owns the program spec, Dave the routines
+  // spec (templates change what Alice's Exercise tab shows), Erin cardio + GPS.
+  carol: {
+    id: 'cccccccc-0000-4000-8000-000000000003',
+    email: 'carol@e2e.test',
+    password: 'carol-password',
+  },
+  dave: {
+    id: 'dddddddd-0000-4000-8000-000000000004',
+    email: 'dave@e2e.test',
+    password: 'dave-password',
+  },
+  // Cardio + GPS: weighs exactly 80 kg (seed.sql), so calorie estimates are known.
+  erin: {
+    id: 'eeeeeeee-0000-4000-8000-000000000005',
+    email: 'erin@e2e.test',
+    password: 'erin-password',
+  },
+  // Trainer: memory is one record per user; 200 lb + 2000/day goal for the snapshot.
+  frank: {
+    id: 'ffffffff-0000-4000-8000-000000000006',
+    email: 'frank@e2e.test',
+    password: 'frank-password',
+  },
+  // Backup: restoring wipes the account first, so nobody else may share it.
+  grace: {
+    id: '77777777-0000-4000-8000-000000000007',
+    email: 'grace@e2e.test',
+    password: 'grace-password',
+  },
+  // Entries: edits and deletes diary entries and weigh-ins.
+  heidi: {
+    id: '88888888-0000-4000-8000-000000000008',
+    email: 'heidi@e2e.test',
+    password: 'heidi-password',
+  },
 } as const
 
 export type TestUser = (typeof USERS)[keyof typeof USERS]
+
+export type SessionUser = 'alice' | 'carol' | 'dave' | 'erin' | 'frank' | 'grace' | 'heidi'
+export const SESSION_USERS: SessionUser[] = ['alice', 'carol', 'dave', 'erin', 'frank', 'grace', 'heidi']
+
+/** Saved browser session for a user who signs in during setup (auth.setup.ts). */
+export const authFile = (user: SessionUser) => `e2e/.auth/${user}.json`

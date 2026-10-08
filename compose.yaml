@@ -21,3 +21,4 @@ services:
       # Reports are written straight to the host, so they outlive the container.
       - ./playwright-report:/app/playwright-report
       - ./test-results:/app/test-results
+      - ./reports:/app/reports # JSON results for the quality dashboard

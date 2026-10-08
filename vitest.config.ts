@@ -12,8 +12,13 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'metrics/**/*.test.mjs'],
     environment: 'node',
+    // CI also writes machine-readable results for the quality dashboard
+    // (metrics/). Naming reporters replaces Vitest's defaults, so the
+    // github-actions one (inline failure annotations) is listed explicitly.
+    reporters: process.env.CI ? ['default', 'github-actions', 'json'] : ['default'],
+    outputFile: { json: 'reports/vitest.json' },
     // A dummy USDA key so barcode/USDA code paths are exercised deterministically
     // (real key lives in .env, which is gitignored and absent in CI). All network
     // calls are mocked in the tests.

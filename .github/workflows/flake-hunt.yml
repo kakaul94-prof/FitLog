@@ -1,0 +1,54 @@
+name: Flake hunt
+
+# Manual only (Actions → Flake hunt → Run workflow). Runs every E2E test N times
+# with retries OFF and reports how often each one failed. Normal CI retries
+# hide a test that fails 1 run in 20 — this finds it on purpose. Results go to
+# the job summary only, so these repeats never skew the dashboard's trends,
+# and nothing here can deploy.
+on:
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: Times to run each test
+        type: number
+        default: 10
+        required: true
+
+jobs:
+  hunt:
+    name: Run each E2E test ${{ inputs.repeat }}×
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Start test database
+        run: supabase start
+
+      # Same container as CI; only the Playwright arguments change. The input
+      # goes through an env var rather than being pasted into the script.
+      - name: Run the suite repeatedly
+        run: docker compose run --rm --build e2e npx playwright test --repeat-each="$REPEAT" --retries=0
+        env:
+          CI: 'true'
+          REPEAT: ${{ inputs.repeat }}
+
+      - uses: actions/setup-node@v4
+        if: ${{ !cancelled() }}
+        with:
+          node-version: 22
+      - name: Flake report
+        if: ${{ !cancelled() }}
+        run: node metrics/flake-report.mjs reports/playwright.json
+
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-hunt
+          path: |
+            reports/playwright.json
+            playwright-report/
+          retention-days: 14

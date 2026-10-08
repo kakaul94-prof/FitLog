@@ -25,7 +25,8 @@ async function resetIvan(db: SupabaseClient): Promise<void> {
       calorie_goal_mode: 'manual',
       manual_calorie_goal: 2000,
       calorie_goal_history: [],
-      macro_targets: null,
+      // The column default (NOT NULL): 0.9 g/lb protein, 30% fat, carbs = the rest.
+      macro_targets: { protein: { mode: 'g_per_lb', value: 0.9 }, fat: { mode: 'pct', value: 30 }, carb: { mode: 'remainder' } },
     })
     .eq('id', ivan.id)
   if (error) throw new Error(`resetIvan: ${error.message}`)

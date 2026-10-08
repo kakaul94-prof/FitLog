@@ -81,7 +81,9 @@ test.describe('saved meals', () => {
     await page.getByRole('button', { name: `Rename ${before}` }).click()
 
     await expect.poll(() => savedMeal(aliceDb, after)).toEqual({ name: after, items: [oats.name] })
-    await diary.gotoDate('2025-06-04')
+    // Navigate inside the app: a full reload can restore the offline cache
+    // from before the rename, which counts as fresh for 60 s.
+    await diary.navTab('Diary').click()
     await diary.openAddFood('Snacks')
     await picker.tab('Meals').click()
     await expect(page.getByRole('button', { name: new RegExp(`^${after}`) })).toBeVisible()

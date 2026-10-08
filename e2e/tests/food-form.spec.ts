@@ -12,7 +12,7 @@ test('creates a food from the picker and logs it', async ({ aliceDb, diaryPage: 
   await diary.openAddFood('Snacks')
 
   await picker.newFoodButton.click()
-  await form.enterManually.click()
+  await form.startManually()
   await form.fill({
     name,
     brand: 'Test Mill',
@@ -78,7 +78,8 @@ test('a blank nutrient is stored as unknown and shown as "—", not 0', async ({
   await logFood(aliceDb, { id: food!.id, name, nutrients: food!.nutrients }, { date: day }) // the app's own snapshot
   await diary.gotoDate(day)
   await diary.entryRow(name, 200).click()
-  await expect(page.getByText('Carbs', { exact: true }).locator('..')).toContainText('—')
+  // "Carbs" also labels the macro chart, so pick the nutrient row showing "—".
+  await expect(page.getByText('Carbs', { exact: true }).locator('..').filter({ hasText: '—' })).toBeVisible()
 })
 
 test('an extra serving unit logs by its own weight', async ({ aliceDb, foodFormPage: form, diaryPage: diary, foodPickerPage: picker, page }) => {
@@ -179,7 +180,7 @@ test('creates a food from Library → Foods', async ({ foodFormPage: form, page 
   const name = `E2E Hummus ${runId()}`
   await page.goto('/foods')
   await page.getByRole('button', { name: 'New food' }).click()
-  await form.enterManually.click()
+  await form.startManually()
   await form.fill({ name, nutrients: { Calories: 70 } })
   await form.saveButton.click()
 
@@ -197,7 +198,7 @@ test('a food created from the recipe editor becomes an ingredient', async ({ ali
 
   await recipePage.addIngredientButton.click()
   await page.getByRole('button', { name: 'Create a new food' }).click()
-  await form.enterManually.click()
+  await form.startManually()
   await form.fill({ name: sauce, nutrients: { Calories: 200 } })
   await form.saveButton.click() // "Save & add to recipe"
 

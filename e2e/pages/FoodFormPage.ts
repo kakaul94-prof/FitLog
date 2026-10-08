@@ -1,4 +1,4 @@
-import type { Locator } from '@playwright/test'
+import { expect, type Locator } from '@playwright/test'
 import { BasePage } from './BasePage'
 
 /**
@@ -19,6 +19,16 @@ export class FoodFormPage extends BasePage {
 
   /** "Enter manually" on the New food sheet (the other choices are USDA and scanning). */
   readonly enterManually = this.page.getByRole('button', { name: 'Enter manually' })
+
+  /**
+   * Choose "Enter manually" and wait for the form. The click starts a
+   * client-side route change, and typing before it lands would go into the
+   * page underneath (the recipe editor has a "Name" field too).
+   */
+  async startManually(): Promise<void> {
+    await this.enterManually.click()
+    await expect(this.page).toHaveURL(/\/foods\/new/)
+  }
 
   /** A nutrient's input by its label: "Calories", "Protein", "Sodium"… */
   nutrient(label: string): Locator {

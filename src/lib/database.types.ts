@@ -229,6 +229,8 @@ export interface MobilityStretch {
   /** Per-sitting hold length in seconds: the timer counts down from here and
    *  chimes at zero. null/absent = open-ended count-up (e.g. dead hangs). */
   holdSec?: number | null
+  /** The item template warm-ups bank into (lib/warmup.ts), auto-created. */
+  warmup?: boolean
 }
 
 // One banking of time against a stretch. Seconds, not minutes, so a 1:24 hold
@@ -239,6 +241,9 @@ export interface MobilityLogEntry {
   /** 'YYYY-MM-DD' the time was banked on. */
   date: string
   seconds: number
+  /** Set on a ticked warm-up drill: the workout + drill key it came from. */
+  workoutId?: string
+  drill?: string
 }
 
 export interface MobilityState {

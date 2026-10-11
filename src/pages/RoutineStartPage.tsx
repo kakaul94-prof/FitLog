@@ -11,7 +11,7 @@ import {
   useSetExerciseOptional,
 } from '@/features/strength/useRoutines'
 import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
-import { isCardioKey } from '@/lib/cardio'
+import { isLiftKey } from '@/lib/warmup'
 import {
   ASSUMED_SETS,
   minutesPerSet,
@@ -40,7 +40,7 @@ export function RoutineStartPage() {
   const routine = data?.routine
   // Cardio items aren't copied into the workout, so they're not trimmed here.
   const lifts = useMemo(
-    () => (data?.exercises ?? []).filter((e) => !isCardioKey(e.exercise_key)),
+    () => (data?.exercises ?? []).filter((e) => isLiftKey(e.exercise_key)),
     [data],
   )
 

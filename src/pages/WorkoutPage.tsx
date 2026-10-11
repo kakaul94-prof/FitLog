@@ -56,6 +56,8 @@ import {
   type SessionPlan,
 } from '@/features/strength/useStrengthGoals'
 import { useRoutine } from '@/features/strength/useRoutines'
+import { WarmupChecklist } from '@/components/strength/WarmupChecklist'
+import { isWarmupKey, warmupDrillKey } from '@/lib/warmup'
 import { useCoachEnabled, useUpdateProfile } from '@/features/profile/useProfile'
 import { FuelFeedbackPrompt } from '@/components/PreWorkoutFuel'
 import { useExerciseEntries } from '@/features/exercise/useExercise'
@@ -186,6 +188,10 @@ export function WorkoutPage() {
   const cardioItems = (routineData?.exercises ?? []).filter((e) =>
     isCardioKey(e.exercise_key),
   )
+  // The template's warm-up drills: a tick-off list, never workout exercises.
+  const warmupDrills = (routineData?.exercises ?? [])
+    .filter((e) => isWarmupKey(e.exercise_key))
+    .map((e) => warmupDrillKey(e.exercise_key))
   // Today's plan + last session's warnings for the lifts in this workout,
   // computed from PRIOR sessions only (one batched query, not one per card).
   // Skipped entirely with the coach off — passing no workout id disables it.
@@ -448,6 +454,13 @@ export function WorkoutPage() {
             {workout.checkin.skipped.length > 0 &&
               ` · skipped ${workout.checkin.skipped.join(', ')}`}
           </div>
+        )}
+        {workout && warmupDrills.length > 0 && (
+          <WarmupChecklist
+            workoutId={workout.id}
+            date={workout.workout_date}
+            drills={warmupDrills}
+          />
         )}
         {activeBlocks.map(renderBlock)}
 
@@ -1174,7 +1187,7 @@ function ExerciseCard({
               className="flex w-full items-center gap-1.5 text-xs font-medium text-primary"
             >
               <Flame className="h-3.5 w-3.5" />
-              <span className="flex-1 text-left">Warm-up</span>
+              <span className="flex-1 text-left">Ramp-up sets</span>
               {warmupOpen ? (
                 <ChevronUp className="h-3.5 w-3.5" />
               ) : (
@@ -1188,7 +1201,7 @@ function ExerciseCard({
                 </p>
               ) : ramp.length === 0 ? (
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Light working weight — no warm-up needed.
+                  Light working weight — no ramp-up needed.
                 </p>
               ) : (
                 <>

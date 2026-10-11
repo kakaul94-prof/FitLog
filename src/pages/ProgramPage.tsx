@@ -62,6 +62,7 @@ import {
 } from '@/lib/program'
 import { programById } from '@/data/programs'
 import { isCardioKey } from '@/lib/cardio'
+import { isWarmupKey } from '@/lib/warmup'
 import type { DeloadState, NextOverride, ProgramItem } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
@@ -991,7 +992,7 @@ function targetLabel(e: {
 function DayExercises({ routineId }: { routineId: string }) {
   const nav = useNavigate()
   const { data, isLoading } = useRoutine(routineId)
-  const exercises = data?.exercises ?? []
+  const exercises = (data?.exercises ?? []).filter((e) => !isWarmupKey(e.exercise_key))
 
   return (
     <div

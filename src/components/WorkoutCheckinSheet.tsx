@@ -12,7 +12,6 @@ import { useRecoveryTarget, useSaveRecovery } from '@/features/strength/useRecov
 import { useRehab } from '@/features/rehab/useRehab'
 import { REGION_LABEL, type RegionId } from '@/data/bodyMap'
 import { supabase } from '@/lib/supabase'
-import { isCardioKey } from '@/lib/cardio'
 import { todayISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { cancelRecoveryCheck } from '@/lib/reminders'
@@ -26,6 +25,7 @@ import {
   type SwapAction,
 } from '@/lib/checkin'
 import { agoLabel, isRecent, musclesWorked, sorenessHeadsUp } from '@/lib/recovery'
+import { isLiftKey } from '@/lib/warmup'
 import type {
   BodySide,
   CheckinFlag,
@@ -203,7 +203,7 @@ function CheckinSheet({
         ? (routineData?.exercises ?? [])
             .filter(
               (re) =>
-                !isCardioKey(re.exercise_key) &&
+                isLiftKey(re.exercise_key) &&
                 (!vars.plan || (vars.plan[re.id] ?? 0) > 0),
             )
             .map((re) => ({ id: re.id, key: re.exercise_key, name: re.exercise_name }))

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { isCardioKey } from '@/lib/cardio'
+import { isLiftKey } from '@/lib/warmup'
 import type { Routine, RoutineExercise, WorkoutCheckin } from '@/lib/database.types'
 
 export function useRoutines() {
@@ -209,7 +210,7 @@ export function useStartFromRoutine() {
       // normal exercise_entries row.
       const exs = ((rex ?? []) as RoutineExercise[]).filter(
         (re) =>
-          !isCardioKey(re.exercise_key) &&
+          isLiftKey(re.exercise_key) &&
           (!plan || (plan[re.id] ?? 0) > 0) &&
           !skip?.includes(re.id),
       )

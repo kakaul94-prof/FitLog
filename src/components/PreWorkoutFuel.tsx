@@ -40,9 +40,15 @@ const hhmm = (iso: string) => {
 const clockAt = (ateAt: string, min: number) =>
   timeLabel(new Date(new Date(ateAt).getTime() + min * 60_000).toISOString())
 
-// Lift tab: pick today's pre-workout meal from the diary and get a comfort
-// window to train in (lib/fuel.ts). Collapses to one button until used.
-export function PreWorkoutFuelCard() {
+// h:mm with no AM/PM, so the full window fits under the tile's icon.
+const shortClockAt = (ateAt: string, min: number) => {
+  const d = new Date(new Date(ateAt).getTime() + min * 60_000)
+  return `${d.getHours() % 12 || 12}:${pad(d.getMinutes())}`
+}
+
+// Lift tab tile: pick today's pre-workout meal from the diary and get a comfort
+// window to train in (lib/fuel.ts). Reads "Fuel" until a meal is timed.
+export function PreWorkoutFuelTile({ className }: { className?: string }) {
   const { data: profile } = useProfile()
   const today = todayISO()
   const { data: entries } = useDiary(today)
@@ -55,49 +61,29 @@ export function PreWorkoutFuelCard() {
   )
   const w = picked.length ? preWorkoutWindow(picked, state?.offsetMin ?? 0) : null
 
-  if (profile === undefined) return null
-  const sheet = open && (
-    <FuelSheet entries={entries ?? []} state={state} initial={last} today={today} onClose={() => setOpen(false)} />
-  )
-
-  if (!last || !w) {
-    return (
-      <>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="flex w-full items-center gap-2 rounded-xl border border-border bg-card p-3 text-left text-sm font-medium active:bg-accent"
-        >
-          <UtensilsCrossed className="h-4 w-4 text-primary" /> Time your pre-workout meal
-        </button>
-        {sheet}
-      </>
-    )
-  }
-
+  const timed =
+    last && w
+      ? {
+          label: `${shortClockAt(last.ateAt, w.earliestMin)}–${shortClockAt(last.ateAt, w.latestMin)}`,
+          aria: `Pre-workout fuel: train ${clockAt(last.ateAt, w.earliestMin)} to ${clockAt(last.ateAt, w.latestMin)}`,
+        }
+      : null
   return (
-    <Card className="space-y-2 p-3 text-left text-sm">
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 font-semibold">
-          <UtensilsCrossed className="h-4 w-4 text-primary" /> Pre-workout fuel
-        </span>
-        <button type="button" onClick={() => setOpen(true)} className="text-sm font-medium text-primary">
-          Change
-        </button>
-      </div>
-      <div>
-        <p className="text-lg font-bold">
-          Train {clockAt(last.ateAt, w.earliestMin)} – {clockAt(last.ateAt, w.latestMin)}
-        </p>
-        <p className="text-xs text-muted-foreground">Best around {clockAt(last.ateAt, w.bestMin)}</p>
-      </div>
-      <ul className="space-y-0.5 border-t border-border pt-2 text-xs text-muted-foreground">
-        {w.reasons.map((r) => (
-          <li key={r}>· {r}</li>
-        ))}
-      </ul>
-      {sheet}
-    </Card>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={profile === undefined}
+        aria-label={timed?.aria ?? 'Time your pre-workout meal'}
+        className={cn(className, timed && 'bg-primary/15 font-medium text-primary active:bg-primary/25')}
+      >
+        <UtensilsCrossed className={cn('h-5 w-5', timed ? 'text-primary' : 'text-foreground')} />
+        {timed?.label ?? 'Fuel'}
+      </button>
+      {open && (
+        <FuelSheet entries={entries ?? []} state={state} initial={last} today={today} onClose={() => setOpen(false)} />
+      )}
+    </>
   )
 }
 
@@ -128,6 +114,10 @@ function FuelSheet({
   const ateAtMs = new Date(`${today}T${shown}`).getTime()
   const future = ateAtMs > Date.now()
   const total = Math.round(chosen.reduce((s, e) => s + kcalOf(e), 0))
+  // Live preview of the window, so the reasons the old card listed still
+  // show somewhere now that the tile only carries the times.
+  const ateISO = new Date(ateAtMs).toISOString()
+  const preview = chosen.length && !future ? preWorkoutWindow(chosen, state?.offsetMin ?? 0) : null
 
   const toggle = (id: string) => setIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
 
@@ -196,6 +186,19 @@ function FuelSheet({
             <p className="text-xs text-destructive">That's later than now. Set when you actually ate.</p>
           ) : (
             <p className="text-[11px] text-muted-foreground">Defaults to when you logged it, or now if it was logged ahead of time</p>
+          )}
+          {preview && (
+            <div className="space-y-1 rounded-lg bg-primary/10 p-2.5">
+              <p className="text-sm font-semibold text-primary">
+                Train {clockAt(ateISO, preview.earliestMin)} – {clockAt(ateISO, preview.latestMin)}
+              </p>
+              <p className="text-xs text-muted-foreground">Best around {clockAt(ateISO, preview.bestMin)}</p>
+              <ul className="space-y-0.5 text-[11px] text-muted-foreground">
+                {preview.reasons.map((r) => (
+                  <li key={r}>· {r}</li>
+                ))}
+              </ul>
+            </div>
           )}
           {update.isError && <p className="text-xs text-destructive">Couldn't save. Try again.</p>}
           <div className="flex gap-2">

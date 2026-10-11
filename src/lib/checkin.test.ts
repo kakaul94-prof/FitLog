@@ -81,6 +81,6 @@ describe('summaries', () => {
         swaps: [{ fromKey: 'a', fromName: 'Back Squat', toKey: 'b', toName: 'Belt Squat' }],
         skipped: ['Lunge'],
       }),
-    ).toBe('left knee sore · swapped Back Squat → Belt Squat · skipped Lunge')
+    ).toBe('left knee achy · swapped Back Squat → Belt Squat · skipped Lunge')
   })
 })

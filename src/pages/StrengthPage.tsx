@@ -1,7 +1,7 @@
-import { useWorkoutCheckin } from '@/components/WorkoutCheckinSheet'
+import { RecoverySheet, useWorkoutCheckin } from '@/components/WorkoutCheckinSheet'
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus,
   Brain,
@@ -22,7 +22,6 @@ import { Button } from '@/components/ui/button'
 import {
   useWorkouts,
   useWorkout,
-  useCreateWorkout,
 } from '@/features/strength/useStrength'
 import { useRoutines } from '@/features/strength/useRoutines'
 import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
@@ -51,7 +50,9 @@ export function StrengthPage() {
   const { data: workouts } = useWorkouts()
   const { data: routines } = useRoutines()
   const { data: profile } = useProfile()
-  const create = useCreateWorkout()
+  // ?recovery=<workoutId> — the 9:00 "how's your body?" notification lands here.
+  const [params, setParams] = useSearchParams()
+  const recoveryId = params.get('recovery')
   const checkin = useWorkoutCheckin()
   const [menuOpen, setMenuOpen] = useState(false)
   // Rehab lives in the Tools sheet; the header only grows an icon while
@@ -115,8 +116,8 @@ export function StrengthPage() {
   }, [meta])
 
   const startEmpty = async () => {
-    const w = await create.mutateAsync({ workout_date: todayISO(), name: 'Workout' })
-    nav(`/workout/${w.id}`)
+    const id = await checkin.start({ name: 'Workout', date: todayISO() })
+    if (id) nav(`/workout/${id}`)
   }
   const startNext = async () => {
     if (!nextRoutine) return
@@ -131,6 +132,12 @@ export function StrengthPage() {
   return (
     <div className="flex min-h-[calc(100svh-4.25rem-env(safe-area-inset-bottom))] flex-col">
       {checkin.sheet}
+      {recoveryId && (
+        <RecoverySheet
+          workoutId={recoveryId}
+          onClose={() => setParams({}, { replace: true })}
+        />
+      )}
       <PageHeader
         title="Exercise"
         action={
@@ -243,10 +250,10 @@ export function StrengthPage() {
                 variant="ghost"
                 className="mt-3 text-primary"
                 onClick={startEmpty}
-                disabled={create.isPending}
+                disabled={checkin.isPending}
               >
                 <Dumbbell className="h-4 w-4" />
-                {create.isPending ? 'Starting…' : 'Start empty workout'}
+                {checkin.isPending ? 'Starting…' : 'Start empty workout'}
               </Button>
             </>
           )}
@@ -296,7 +303,7 @@ export function StrengthPage() {
                     setMenuOpen(false)
                     startEmpty()
                   }}
-                  disabled={create.isPending}
+                  disabled={checkin.isPending}
                   className="flex w-full items-center gap-3 p-4 text-left active:bg-accent disabled:opacity-50"
                 >
                   <Dumbbell className="h-4 w-4 text-muted-foreground" />

@@ -589,6 +589,21 @@ export interface WorkoutCheckin {
   swaps: CheckinSwap[]
   /** Names of planned lifts left out because of the check-in. */
   skipped: string[]
+  /** Next-day recovery for THIS workout: the 9:00 notification's answer and
+   *  the one given at the next start. Both kept. */
+  after?: { morning?: RecoveryAnswer; pre?: RecoveryAnswer }
+}
+
+export type MuscleFeel = 'fine' | 'sore' | 'very_sore' | 'sharp'
+export type JointFeel = 'fine' | 'achy' | 'sharp'
+
+export interface RecoveryAnswer {
+  /** ISO timestamp it was answered. */
+  at: string
+  /** Heatmap RegionId → feel, for the main muscles the workout worked. */
+  muscles: Record<string, { feel: MuscleFeel; side?: BodySide }>
+  /** PAIN_SITES value → feel, for the joints it loaded. */
+  joints: Record<string, { feel: JointFeel; side?: BodySide }>
 }
 
 export interface WorkoutExercise {

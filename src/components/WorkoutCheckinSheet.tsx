@@ -7,48 +7,60 @@ import { Segmented } from '@/components/ui/segmented'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { TrainerChat } from '@/components/TrainerChat'
 import { useRoutine, useStartFromRoutine } from '@/features/strength/useRoutines'
+import { useCreateWorkout } from '@/features/strength/useStrength'
+import { useRecoveryTarget, useSaveRecovery } from '@/features/strength/useRecovery'
 import { useRehab } from '@/features/rehab/useRehab'
+import { REGION_LABEL, type RegionId } from '@/data/bodyMap'
+import { supabase } from '@/lib/supabase'
 import { isCardioKey } from '@/lib/cardio'
 import { todayISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
-import {
-  PAIN_SITES,
-  formatPain,
-  injuryDay,
-  injuryLabel,
-  isPaired,
-  painMatchesInjury,
-} from '@/lib/rehab'
+import { cancelRecoveryCheck } from '@/lib/reminders'
+import { PAIN_SITES, formatPain, isPaired, painMatchesInjury } from '@/lib/rehab'
 import {
   flagsLabel,
+  loadsFor,
   planSwaps,
   sitesWorked,
   type PlannedLift,
   type SwapAction,
 } from '@/lib/checkin'
+import { agoLabel, isRecent, musclesWorked, sorenessHeadsUp } from '@/lib/recovery'
 import type {
   BodySide,
   CheckinFlag,
-  PainLevel,
+  Injury,
+  JointFeel,
+  MuscleFeel,
+  RecoveryAnswer,
   WorkoutCheckin,
 } from '@/lib/database.types'
 
-// Pre-workout check-in. Every start-from-routine goes through here: one tap on
-// "All good" when nothing hurts; otherwise flag sore/sharp spots and review the
-// swaps lib/checkin.ts suggests. Swaps change today's workout only — the
-// routine itself is never touched.
+// The one check-in sheet. Before a workout: how the last one (< 3 days ago)
+// landed — its main muscles and joints — plus the joints today loads. Achy or
+// sharp joints drive today's swaps (lib/checkin.ts); very sore muscles only get
+// a "go lighter" heads-up. The same rows open from the 9:00 notification with
+// Save instead of Start. Swaps change today's workout only, never the routine.
 
 export interface StartVars {
-  routineId: string
+  /** Absent = a blank workout. */
+  routineId?: string
   name: string
   date: string
   plan?: Record<string, number>
 }
 
-/** Drop-in for useStartFromRoutine: `await start(vars)` opens the check-in and
+type StartExtra = {
+  swaps?: Record<string, { key: string; name: string }>
+  skip?: string[]
+  checkin: WorkoutCheckin | null
+}
+
+/** Drop-in for starting a workout: `await start(vars)` opens the check-in and
  *  resolves to the new workout id, or null if it was closed. Render `sheet`. */
 export function useWorkoutCheckin() {
   const startFrom = useStartFromRoutine()
+  const create = useCreateWorkout()
   const [vars, setVars] = useState<StartVars | null>(null)
   const resolver = useRef<((id: string | null) => void) | null>(null)
 
@@ -64,73 +76,175 @@ export function useWorkoutCheckin() {
       setVars(v)
     })
 
+  const begin = async (v: StartVars, extra: StartExtra): Promise<string> => {
+    if (v.routineId)
+      return startFrom.mutateAsync({ ...v, routineId: v.routineId, ...extra })
+    const w = await create.mutateAsync({ workout_date: v.date, name: v.name })
+    // Best-effort, like the routine path: no column yet = no record, still starts.
+    if (extra.checkin)
+      await supabase.from('workouts').update({ checkin: extra.checkin }).eq('id', w.id)
+    return w.id
+  }
+
   const sheet = vars ? (
-    <WorkoutCheckinSheet
+    <CheckinSheet
       vars={vars}
-      busy={startFrom.isPending}
+      busy={startFrom.isPending || create.isPending}
       onCancel={() => finish(null)}
-      onStart={async (extra) => finish(await startFrom.mutateAsync({ ...vars, ...extra }))}
+      onDone={async (extra) => finish(await begin(vars, extra))}
     />
   ) : null
 
-  return { start, sheet, isPending: startFrom.isPending }
+  return { start, sheet, isPending: startFrom.isPending || create.isPending }
 }
 
-type Flags = Record<string, { level: PainLevel; side: BodySide }>
+/** Morning mode, opened from the 9:00 notification (Lift tab `?recovery=<id>`). */
+export function RecoverySheet({ workoutId, onClose }: { workoutId: string; onClose: () => void }) {
+  return <CheckinSheet recoveryId={workoutId} busy={false} onCancel={onClose} onDone={async () => onClose()} />
+}
+
+type MuscleRow = { feel: MuscleFeel; side?: BodySide }
+type JointRow = { feel: JointFeel; side?: BodySide }
 type Choice = { action: SwapAction; toKey?: string }
 
-const NEXT_LEVEL: Record<string, PainLevel | null> = {
-  none: 'sore',
-  sore: 'sharp',
-  sharp: null,
+const MUSCLE_OPTS: { value: MuscleFeel; label: string }[] = [
+  { value: 'fine', label: 'Fine' },
+  { value: 'sore', label: 'Sore' },
+  { value: 'very_sore', label: 'Very sore' },
+  { value: 'sharp', label: 'Sharp pain' },
+]
+const JOINT_OPTS: { value: JointFeel; label: string }[] = [
+  { value: 'fine', label: 'Fine' },
+  { value: 'achy', label: 'Achy' },
+  { value: 'sharp', label: 'Sharp pain' },
+]
+const SIDE_OPTS: { value: Exclude<BodySide, null>; label: string }[] = [
+  { value: 'left', label: 'Left' },
+  { value: 'right', label: 'Right' },
+  { value: 'both', label: 'Both' },
+]
+const TONE: Record<string, string> = {
+  fine: 'border-foreground/40 bg-foreground/10 font-medium',
+  sore: 'border-amber-500/60 bg-amber-500/15 text-amber-800 dark:text-amber-200',
+  achy: 'border-amber-500/60 bg-amber-500/15 text-amber-800 dark:text-amber-200',
+  very_sore: 'border-orange-500/70 bg-orange-500/20 text-orange-800 dark:text-orange-200',
+  sharp: 'border-red-500/60 bg-red-500/15 text-red-800 dark:text-red-200',
+  side: 'border-primary bg-primary/10 text-primary',
 }
 
-function WorkoutCheckinSheet({
+function Pills<T extends string>({
+  value,
+  options,
+  onChange,
+  tone,
+}: {
+  value: T | null | undefined
+  options: { value: T; label: string }[]
+  onChange: (v: T) => void
+  tone?: string
+}) {
+  return (
+    <div className="flex flex-wrap justify-end gap-1">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            'whitespace-nowrap rounded-full border px-2.5 py-1 text-xs transition-colors',
+            value === o.value && TONE[tone ?? o.value],
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+const cleanRow = <R extends { feel: string; side?: BodySide }>(r: R): R =>
+  r.feel === 'sharp' ? r : ({ feel: r.feel } as R)
+
+function CheckinSheet({
   vars,
+  recoveryId,
   busy,
   onCancel,
-  onStart,
+  onDone,
 }: {
-  vars: StartVars
+  vars?: StartVars
+  recoveryId?: string
   busy: boolean
   onCancel: () => void
-  onStart: (extra: {
-    swaps?: Record<string, { key: string; name: string }>
-    skip?: string[]
-    checkin: WorkoutCheckin | null
-  }) => Promise<void>
+  onDone: (extra: StartExtra) => Promise<void>
 }) {
-  const { data } = useRoutine(vars.routineId)
-  const rehab = useRehab()
+  const saveMode = !vars
   const today = todayISO()
-  const [flags, setFlags] = useState<Flags>({})
+  const { data: routineData, isLoading: routineLoading } = useRoutine(vars?.routineId)
+  const { data: target, isLoading: targetLoading } = useRecoveryTarget(recoveryId)
+  const saveRecovery = useSaveRecovery()
+  const rehab = useRehab()
+  const prev =
+    target && (saveMode || isRecent(target.workout.workout_date, today)) ? target : null
+  const prefill = prev?.workout.checkin?.after?.morning
+
+  const [muscleOv, setMuscleOv] = useState<Record<string, MuscleRow>>({})
+  const [jointOv, setJointOv] = useState<Record<string, JointRow>>({})
+  const [rehabOn, setRehabOn] = useState<Set<string>>(new Set())
+  const [more, setMore] = useState(false)
   const [step, setStep] = useState<'check' | 'swaps'>('check')
   const [choices, setChoices] = useState<Record<string, Choice>>({})
   const [askOpen, setAskOpen] = useState(false)
-  const [tracked, setTracked] = useState<string[]>([])
   const [error, setError] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const lifts: PlannedLift[] = useMemo(
     () =>
-      (data?.exercises ?? [])
-        .filter(
-          (re) =>
-            !isCardioKey(re.exercise_key) &&
-            (!vars.plan || (vars.plan[re.id] ?? 0) > 0),
-        )
-        .map((re) => ({ id: re.id, key: re.exercise_key, name: re.exercise_name })),
-    [data, vars.plan],
+      vars?.routineId
+        ? (routineData?.exercises ?? [])
+            .filter(
+              (re) =>
+                !isCardioKey(re.exercise_key) &&
+                (!vars.plan || (vars.plan[re.id] ?? 0) > 0),
+            )
+            .map((re) => ({ id: re.id, key: re.exercise_key, name: re.exercise_name }))
+        : [],
+    [routineData, vars],
   )
+  const loading = (!!vars?.routineId && routineLoading) || targetLoading
 
-  const flagList: CheckinFlag[] = Object.entries(flags).map(([site, f]) => ({
-    site,
-    ...f,
-  }))
-  const plan = useMemo(() => planSwaps(lifts, flagList), [lifts, flags]) // eslint-disable-line react-hooks/exhaustive-deps
-  const worked = useMemo(() => sitesWorked(lifts), [lifts])
-  const openInjuries = rehab.state.injuries.filter(
-    (i) => i.status === 'active' && !flags[i.site],
+  const muscle = (r: string): MuscleRow => muscleOv[r] ?? prefill?.muscles[r] ?? { feel: 'fine' }
+  const joint = (s: string): JointRow => jointOv[s] ?? prefill?.joints[s] ?? { feel: 'fine' }
+
+  // Joints shown as rows: the last workout's plus the ones today loads. The
+  // rest (and "other") sit behind "Something else hurts".
+  const todayJoints = sitesWorked(lifts)
+  const baseJoints = PAIN_SITES.filter(
+    (s) => (prev?.joints ?? []).includes(s) || (!saveMode && todayJoints.includes(s)),
   )
+  const extraJoints = PAIN_SITES.filter((s) => !baseJoints.includes(s))
+  const showExtras =
+    more || baseJoints.length === 0 || extraJoints.some((s) => joint(s).feel !== 'fine')
+  const allJoints = showExtras ? [...baseJoints, ...extraJoints] : baseJoints
+
+  const flagList: CheckinFlag[] = allJoints
+    .map((site) => ({ site, row: joint(site) }))
+    .filter(({ row }) => row.feel !== 'fine')
+    .map(({ site, row }) => ({
+      site,
+      side: row.side ?? null,
+      level: row.feel === 'sharp' ? 'sharp' : 'sore',
+    }))
+  const flagKey = JSON.stringify(flagList)
+  const plan = useMemo(() => planSwaps(lifts, flagList), [lifts, flagKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const headsUp =
+    prev && !saveMode
+      ? sorenessHeadsUp(
+          lifts,
+          { muscles: Object.fromEntries(prev.muscles.map((r) => [r, muscle(r)])) },
+          prev.customTag,
+        )
+      : []
+
   const choiceFor = (id: string): Choice => {
     const s = plan.suggestions.find((x) => x.lift.id === id)!
     const c = choices[id]
@@ -141,74 +255,87 @@ function WorkoutCheckinSheet({
     return { action: c.action === 'swap' && !toKey ? s.action : c.action, toKey }
   }
 
-  const cycle = (site: string) =>
-    setFlags((f) => {
-      const next = NEXT_LEVEL[f[site]?.level ?? 'none']
-      const { [site]: _, ...rest } = f // eslint-disable-line @typescript-eslint/no-unused-vars
-      return next ? { ...f, [site]: { level: next, side: f[site]?.side ?? null } } : rest
+  // --- Rehab: a sharp row can open an injury dated to the workout. ----------
+  const active = rehab.state.injuries.filter((i) => i.status === 'active')
+  const inRehab = (kind: 'm' | 'j', id: string, side: BodySide) =>
+    kind === 'j'
+      ? active.some((i) => painMatchesInjury(formatPain(id, side), i))
+      : active.some((i) => i.site === 'other' && i.note === REGION_LABEL[id as RegionId])
+  const liftsHitting = (kind: 'm' | 'j', id: string) =>
+    [...(prev?.lifts ?? []), ...lifts]
+      .filter((l) =>
+        kind === 'j'
+          ? (loadsFor(l.key, l.name) ?? []).includes(id)
+          : musclesWorked([l], prev?.customTag ?? new Map()).includes(id as RegionId),
+      )
+      .map((l) => l.key)
+  const injuriesToAdd = (): Omit<Injury, 'id'>[] =>
+    [...rehabOn].flatMap((k) => {
+      const [kind, id] = k.split(':') as ['m' | 'j', string]
+      const row = kind === 'm' ? muscle(id) : joint(id)
+      if (row.feel !== 'sharp') return []
+      const side = kind === 'j' && !isPaired(id) ? null : row.side ?? null
+      if (inRehab(kind, id, side)) return []
+      return [
+        {
+          site: kind === 'j' ? id : 'other',
+          side,
+          note: kind === 'm' ? REGION_LABEL[id as RegionId] : null,
+          started: prev?.workout.workout_date ?? today,
+          status: 'active' as const,
+          resolved: null,
+          aggravates: [...new Set(liftsHitting(kind, id))],
+          plan: [],
+        },
+      ]
     })
-  const setSide = (site: string, side: BodySide) =>
-    setFlags((f) => ({ ...f, [site]: { ...f[site], side: f[site].side === side ? null : side } }))
 
-  const go = async (withSwaps: boolean) => {
+  const buildAnswer = (): RecoveryAnswer => ({
+    at: new Date().toISOString(),
+    muscles: Object.fromEntries((prev?.muscles ?? []).map((r) => [r, cleanRow(muscle(r))])),
+    joints: Object.fromEntries(
+      allJoints
+        .filter((s) => (prev?.joints ?? []).includes(s) || joint(s).feel !== 'fine')
+        .map((s) => [s, cleanRow(joint(s))]),
+    ),
+  })
+
+  const submit = async ({ record, withSwaps }: { record: boolean; withSwaps: boolean }) => {
     setError(false)
-    const swaps: Record<string, { key: string; name: string }> = {}
-    const skip: string[] = []
-    const record: WorkoutCheckin = { flags: flagList, swaps: [], skipped: [] }
-    if (withSwaps) {
-      for (const s of plan.suggestions) {
-        const c = choiceFor(s.lift.id)
-        const to = s.options.find((o) => o.key === c.toKey)
-        if (c.action === 'skip') {
-          skip.push(s.lift.id)
-          record.skipped.push(s.lift.name)
-        } else if (c.action === 'swap' && to) {
-          swaps[s.lift.id] = { key: to.key, name: to.name }
-          record.swaps.push({
-            fromKey: s.lift.key,
-            fromName: s.lift.name,
-            toKey: to.key,
-            toName: to.name,
-          })
-        }
-      }
-    }
+    setSaving(true)
     try {
-      await onStart({ swaps, skip, checkin: flagList.length ? record : null })
+      if (record) {
+        if (prev)
+          await saveRecovery(prev.workout, saveMode ? 'morning' : 'pre', buildAnswer()).catch(
+            () => {},
+          )
+        if (rehab.ready) await rehab.addInjuries(injuriesToAdd()).catch(() => {})
+      }
+      void cancelRecoveryCheck()
+      if (saveMode) return await onDone({ checkin: null })
+
+      const swaps: Record<string, { key: string; name: string }> = {}
+      const skip: string[] = []
+      const rec: WorkoutCheckin = { flags: flagList, swaps: [], skipped: [] }
+      if (withSwaps)
+        for (const s of plan.suggestions) {
+          const c = choiceFor(s.lift.id)
+          const to = s.options.find((o) => o.key === c.toKey)
+          if (c.action === 'skip') {
+            skip.push(s.lift.id)
+            rec.skipped.push(s.lift.name)
+          } else if (c.action === 'swap' && to) {
+            swaps[s.lift.id] = { key: to.key, name: to.name }
+            rec.swaps.push({ fromKey: s.lift.key, fromName: s.lift.name, toKey: to.key, toName: to.name })
+          }
+        }
+      await onDone({ swaps, skip, checkin: record && flagList.length ? rec : null })
     } catch {
       setError(true)
+    } finally {
+      setSaving(false)
     }
   }
-
-  // Sharp spots with no open injury get a one-tap "track it in Rehab"; the
-  // planned lifts that load it become the injury's aggravating list, which is
-  // what drives the existing in-workout warning.
-  const sharpUntracked = flagList.filter(
-    (f) =>
-      rehab.ready &&
-      f.level === 'sharp' &&
-      f.site !== 'other' &&
-      !tracked.includes(f.site) &&
-      !rehab.state.injuries.some(
-        (i) => i.status === 'active' && painMatchesInjury(formatPain(f.site, f.side), i),
-      ),
-  )
-  const track = async (f: CheckinFlag) => {
-    if (!rehab.ready) return
-    await rehab.addInjury({
-      site: f.site,
-      side: f.side,
-      started: today,
-      status: 'active',
-      resolved: null,
-      aggravates: plan.suggestions
-        .filter((s) => s.hits.includes(f.site))
-        .map((s) => s.lift.key),
-      plan: [],
-    })
-    setTracked((t) => [...t, f.site])
-  }
-  const trackSafe = (f: CheckinFlag) => track(f).catch(() => {})
 
   const nChanges = plan.suggestions.filter((s) => choiceFor(s.lift.id).action !== 'keep').length
   const affected = new Set([
@@ -216,16 +343,83 @@ function WorkoutCheckinSheet({
     ...plan.unknown.map((l) => l.id),
   ])
   const clear = lifts.filter((l) => !affected.has(l.id))
+  const toReview = flagList.length > 0 && plan.suggestions.length + plan.unknown.length > 0
+  const pending = busy || saving || loading
   const trainerDraft = `My ${flagsLabel(flagList)} today. What should I do instead of ${plan.unknown
     .map((l) => l.name)
     .join(', ')}?`
+
+  const setRow = (
+    kind: 'm' | 'j',
+    id: string,
+    patch: { feel?: MuscleFeel | JointFeel; side?: BodySide },
+  ) =>
+    kind === 'm'
+      ? setMuscleOv((o) => ({ ...o, [id]: { ...muscle(id), ...patch } as MuscleRow }))
+      : setJointOv((o) => ({ ...o, [id]: { ...joint(id), ...patch } as JointRow }))
+
+  const renderRow = (kind: 'm' | 'j', id: string, label: string) => {
+    const row = kind === 'm' ? muscle(id) : joint(id)
+    const key = `${kind}:${id}`
+    const sided = kind === 'm' || isPaired(id)
+    const tracked = inRehab(kind, id, sided ? row.side ?? null : null)
+    return (
+      <div key={key} className="border-t py-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+          <span className="text-sm capitalize">{label}</span>
+          {kind === 'm' ? (
+            <Pills value={row.feel as MuscleFeel} options={MUSCLE_OPTS} onChange={(feel) => setRow(kind, id, { feel })} />
+          ) : (
+            <Pills value={row.feel as JointFeel} options={JOINT_OPTS} onChange={(feel) => setRow(kind, id, { feel })} />
+          )}
+        </div>
+        {row.feel === 'sharp' && (
+          <div className="space-y-2 pt-2">
+            {sided && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Side</span>
+                <Pills
+                  value={row.side ?? null}
+                  options={SIDE_OPTS}
+                  tone="side"
+                  onChange={(side) => setRow(kind, id, { side: row.side === side ? null : side })}
+                />
+              </div>
+            )}
+            {tracked ? (
+              <p className="text-xs text-muted-foreground">Already in the Rehab centre.</p>
+            ) : (
+              rehab.ready && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-primary"
+                    checked={rehabOn.has(key)}
+                    onChange={(e) =>
+                      setRehabOn((s) => {
+                        const n = new Set(s)
+                        if (e.target.checked) n.add(key)
+                        else n.delete(key)
+                        return n
+                      })
+                    }
+                  />
+                  Track in Rehab centre
+                </label>
+              )
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   if (askOpen)
     return createPortal(
       <div className="fixed inset-0 z-50 mx-auto flex w-full max-w-md flex-col bg-background">
         <PageHeader
           title="Ask"
-          subtitle={vars.name}
+          subtitle={vars?.name}
           left={
             <Button variant="ghost" size="icon" onClick={() => setAskOpen(false)} aria-label="Back">
               <ArrowLeft className="h-5 w-5" />
@@ -237,20 +431,34 @@ function WorkoutCheckinSheet({
       document.body,
     )
 
+  const weekday = prev
+    ? new Date(`${prev.workout.workout_date}T12:00:00`).toLocaleDateString(undefined, {
+        weekday: 'short',
+      })
+    : ''
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onCancel}>
       <div
         className="mx-auto w-full max-w-md p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
         onClick={(e) => e.stopPropagation()}
       >
-        <Card className="max-h-[85svh] space-y-4 overflow-y-auto p-4 text-foreground">
+        <Card className="max-h-[85svh] space-y-3 overflow-y-auto p-4 text-foreground">
           {step === 'check' ? (
             <>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="font-semibold">Before you lift</p>
+                  <p className="text-lg font-semibold leading-snug">
+                    {prev
+                      ? `How did ${prev.workout.name || 'your last workout'} land?`
+                      : 'Before you lift'}
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    {vars.name} · {lifts.length} exercise{lifts.length === 1 ? '' : 's'}
+                    {prev
+                      ? `${weekday} · ${agoLabel(prev.workout.workout_date, today)}. ${
+                          prefill && !saveMode ? 'Pre-filled from this morning.' : 'Everything starts as Fine.'
+                        }`
+                      : `${vars?.name ?? ''}${lifts.length ? ` · ${lifts.length} exercises` : ''}`}
                   </p>
                 </div>
                 <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Close">
@@ -258,104 +466,70 @@ function WorkoutCheckinSheet({
                 </Button>
               </div>
 
-              {worked.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-xs text-muted-foreground">Today works</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {worked.map((s) => (
-                      <span key={s} className="rounded-full border px-2.5 py-0.5 text-xs capitalize">
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground">
-                  Anything hurting? Tap once for sore, twice for sharp
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {PAIN_SITES.map((site) => {
-                    const lvl = flags[site]?.level
-                    return (
-                      <button
-                        key={site}
-                        onClick={() => cycle(site)}
-                        className={cn(
-                          'rounded-full border px-3 py-1 text-sm capitalize transition-colors',
-                          lvl === 'sore' && 'border-amber-500/60 bg-amber-500/15 text-amber-700 dark:text-amber-300',
-                          lvl === 'sharp' && 'border-red-500/60 bg-red-500/15 text-red-700 dark:text-red-300',
-                        )}
-                      >
-                        {site}
-                        {lvl && ` · ${lvl}`}
-                      </button>
-                    )
-                  })}
-                </div>
-                {flagList
-                  .filter((f) => isPaired(f.site))
-                  .map((f) => (
-                    <div key={f.site} className="flex items-center gap-1.5 pt-1 text-sm">
-                      <span className="w-20 capitalize text-muted-foreground">{f.site}</span>
-                      {(['left', 'right', 'both'] as const).map((side) => (
-                        <button
-                          key={side}
-                          onClick={() => setSide(f.site, side)}
-                          className={cn(
-                            'rounded-md border px-2.5 py-0.5 text-xs capitalize',
-                            f.side === side && 'border-primary bg-primary/10 text-primary',
-                          )}
-                        >
-                          {side}
-                        </button>
-                      ))}
+              {loading ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>
+              ) : (
+                <>
+                  {prev && prev.muscles.length > 0 && (
+                    <div>
+                      <p className="pb-1 text-xs text-muted-foreground">Muscles</p>
+                      {prev.muscles.map((r) => renderRow('m', r, REGION_LABEL[r]))}
                     </div>
+                  )}
+                  {allJoints.length > 0 && (
+                    <div>
+                      <p className="pb-1 pt-1 text-xs text-muted-foreground">Joints</p>
+                      {allJoints.map((s) => renderRow('j', s, s))}
+                    </div>
+                  )}
+                  {!showExtras && (
+                    <button className="text-sm font-medium text-primary" onClick={() => setMore(true)}>
+                      + Something else hurts
+                    </button>
+                  )}
+                  {headsUp.map((h) => (
+                    <p
+                      key={h.lift}
+                      className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
+                    >
+                      {h.lift} today works your {h.regions.join(' and ')} — go lighter.
+                    </p>
                   ))}
-              </div>
-
-              {openInjuries.map((inj) => (
-                <button
-                  key={inj.id}
-                  onClick={() =>
-                    setFlags((f) => ({ ...f, [inj.site]: { level: 'sore', side: inj.side } }))
-                  }
-                  className="w-full rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-sm text-amber-800 dark:text-amber-200"
-                >
-                  Open injury: {injuryLabel(inj).toLowerCase()} (day {injuryDay(inj, today)}).
-                  Still bothering you? <span className="font-medium underline">Mark sore</span>
-                </button>
-              ))}
+                  <p className="text-xs text-muted-foreground">
+                    Sharp pain that sticks around for more than a few days is worth a physio visit.
+                  </p>
+                </>
+              )}
 
               {error && (
-                <p className="text-sm text-red-600 dark:text-red-400">Couldn't start. Try again.</p>
+                <p className="text-sm text-red-600 dark:text-red-400">Couldn't save. Try again.</p>
               )}
-              <div className="space-y-2">
-                {flagList.length === 0 ? (
-                  <Button className="w-full" disabled={busy || !data} onClick={() => go(false)}>
-                    {busy ? 'Starting…' : 'All good, start'}
-                  </Button>
-                ) : plan.suggestions.length + plan.unknown.length > 0 ? (
-                  <>
-                    <Button className="w-full" onClick={() => setStep('swaps')}>
-                      Review {plan.suggestions.length || ''} swap
-                      {plan.suggestions.length === 1 ? '' : 's'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      disabled={busy}
-                      onClick={() => go(false)}
-                    >
-                      Start as planned
-                    </Button>
-                  </>
-                ) : (
-                  <Button className="w-full" disabled={busy || !data} onClick={() => go(false)}>
-                    {busy ? 'Starting…' : 'Start — nothing today loads it'}
-                  </Button>
-                )}
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  disabled={busy || saving}
+                  onClick={() => (saveMode ? onCancel() : submit({ record: false, withSwaps: false }))}
+                >
+                  Skip
+                </Button>
+                <Button
+                  className="flex-[2]"
+                  disabled={pending}
+                  onClick={() =>
+                    toReview ? setStep('swaps') : submit({ record: true, withSwaps: false })
+                  }
+                >
+                  {busy || saving
+                    ? saveMode
+                      ? 'Saving…'
+                      : 'Starting…'
+                    : saveMode
+                      ? 'Save'
+                      : toReview
+                        ? `Review ${plan.suggestions.length || ''} swap${plan.suggestions.length === 1 ? '' : 's'}`
+                        : 'Start workout'}
+                </Button>
               </div>
             </>
           ) : (
@@ -419,7 +593,7 @@ function WorkoutCheckinSheet({
                                 onClick={() => set({ toKey: o.key })}
                                 className={cn(
                                   'rounded-full border px-2.5 py-0.5 text-xs',
-                                  o.key === c.toKey && 'border-primary bg-primary/10 text-primary',
+                                  o.key === c.toKey && TONE.side,
                                 )}
                               >
                                 {o.name}
@@ -441,7 +615,9 @@ function WorkoutCheckinSheet({
               {plan.unknown.length > 0 && (
                 <div className="space-y-2 rounded-lg border p-3">
                   <p className="text-sm">{plan.unknown.map((l) => l.name).join(', ')}</p>
-                  <p className="text-xs text-muted-foreground">No swap rule for {plan.unknown.length === 1 ? 'this one' : 'these'}.</p>
+                  <p className="text-xs text-muted-foreground">
+                    No swap rule for {plan.unknown.length === 1 ? 'this one' : 'these'}.
+                  </p>
                   <Button variant="outline" size="sm" onClick={() => setAskOpen(true)}>
                     <Brain className="mr-1.5 h-4 w-4" /> Ask trainer
                   </Button>
@@ -455,30 +631,19 @@ function WorkoutCheckinSheet({
                 </p>
               )}
 
-              {sharpUntracked.map((f) => (
-                <div
-                  key={f.site}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-800 dark:text-red-200"
-                >
-                  <span>Sharp {formatPain(f.site, f.side)} — keep an eye on it?</span>
-                  <Button size="sm" variant="outline" disabled={rehab.isSaving} onClick={() => trackSafe(f)}>
-                    Track in Rehab
-                  </Button>
-                </div>
-              ))}
-              {tracked.length > 0 && (
-                <p className="text-xs text-muted-foreground">Added to Rehab.</p>
-              )}
-
               {error && (
                 <p className="text-sm text-red-600 dark:text-red-400">Couldn't start. Try again.</p>
               )}
-              <Button className="w-full" disabled={busy || !data} onClick={() => go(true)}>
-                {busy
+              <Button
+                className="w-full"
+                disabled={pending}
+                onClick={() => submit({ record: true, withSwaps: true })}
+              >
+                {busy || saving
                   ? 'Starting…'
                   : nChanges
                     ? `Start with ${nChanges} change${nChanges === 1 ? '' : 's'}`
-                    : 'Start'}
+                    : 'Start workout'}
               </Button>
             </>
           )}

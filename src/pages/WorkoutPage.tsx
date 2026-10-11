@@ -26,6 +26,8 @@ import {
 } from 'lucide-react'
 import { useUndoSwap } from '@/features/strength/useCheckin'
 import { flagsLabel } from '@/lib/checkin'
+import { nextMorning9 } from '@/lib/recovery'
+import { scheduleRecoveryCheck } from '@/lib/reminders'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { TrainerChat } from '@/components/TrainerChat'
 import { Card } from '@/components/ui/card'
@@ -159,6 +161,21 @@ export function WorkoutPage() {
   const workout = data?.workout
   const exercises = data?.exercises ?? []
   const sets = data?.sets ?? []
+
+  // Arm tomorrow's 9:00 "how's your body?" once a set is logged. Re-arming is
+  // harmless (one slot, same time); once the workout's recovery is answered it
+  // stays quiet. Past workouts are skipped inside (fire time already gone).
+  const recoveryArmed = useRef(false)
+  const hasLoggedSet = sets.some((s) => s.reps != null || s.weight_lb != null)
+  useEffect(() => {
+    if (recoveryArmed.current || !workout || !hasLoggedSet || workout.checkin?.after) return
+    recoveryArmed.current = true
+    void scheduleRecoveryCheck(
+      workout.id,
+      workout.name || 'your workout',
+      nextMorning9(workout.workout_date),
+    )
+  }, [workout, hasLoggedSet])
 
   // Cardio items programmed on the source template. They never become workout
   // exercises — they render as a checklist here, and logging one writes a

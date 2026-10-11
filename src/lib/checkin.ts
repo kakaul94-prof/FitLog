@@ -94,14 +94,17 @@ export function planSwaps(lifts: PlannedLift[], flags: CheckinFlag[]): CheckinPl
   return out
 }
 
-/** "left knee sore, low back sharp" — banner + trainer line. */
+/** "left knee achy, low back sharp" — banner + trainer line. A 'sore' joint
+ *  is shown as achy, the word the check-in asks with. */
 export function flagsLabel(flags: CheckinFlag[]): string {
-  return flags.map((f) => `${formatPain(f.site, f.side)} ${f.level}`).join(', ')
+  return flags
+    .map((f) => `${formatPain(f.site, f.side)} ${f.level === 'sore' ? 'achy' : f.level}`)
+    .join(', ')
 }
 
 /** One line for the trainer snapshot. */
 export function checkinSummary(c: WorkoutCheckin): string {
-  const parts = [flagsLabel(c.flags)]
+  const parts = c.flags.length ? [flagsLabel(c.flags)] : []
   if (c.swaps.length)
     parts.push(`swapped ${c.swaps.map((s) => `${s.fromName} → ${s.toName}`).join('; ')}`)
   if (c.skipped.length) parts.push(`skipped ${c.skipped.join(', ')}`)

@@ -9,6 +9,7 @@ import {
 import { NUTRIENT_BY_KEY, scaleNutrients, sumNutrients } from './nutrients'
 import { injuryDay, injuryLabel, painTrend, rehabWeek } from './rehab'
 import { checkinSummary } from './checkin'
+import { recoverySummary } from './recovery'
 import type {
   Food,
   Nutrients,
@@ -390,11 +391,17 @@ export async function buildTrainerContext(
 
   const { data: ckRows } = await checkinsP
   const checkins = ((ckRows ?? []) as { workout_date: string; checkin: WorkoutCheckin }[])
-    .filter((r) => r.checkin?.flags?.length)
+    .filter((r) => r.checkin?.flags?.length || r.checkin?.after)
   if (checkins.length) {
     out.push(
-      `Pre-workout check-ins (sore/sharp going in, and what was swapped): ${checkins
-        .map((r) => `${r.workout_date}: ${checkinSummary(r.checkin)}`)
+      `Soreness and pain check-ins (joints achy/sharp before a workout + what was swapped; and how each workout felt the next morning / before the next one): ${checkins
+        .map((r) => {
+          const parts = [
+            checkinSummary(r.checkin),
+            r.checkin.after ? `afterwards ${recoverySummary(r.checkin.after)}` : '',
+          ].filter(Boolean)
+          return `${r.workout_date}: ${parts.join(' · ')}`
+        })
         .join('; ')}.`,
     )
   }

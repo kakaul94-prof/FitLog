@@ -561,6 +561,34 @@ export interface Workout {
   rest_seconds: number
   completed: boolean
   created_at: string
+  /** Pre-workout check-in. Null when skipped/"all good", or when started some
+   *  other way; absent until migration_workout_checkin.sql has been run. */
+  checkin?: WorkoutCheckin | null
+}
+
+/** How a flagged spot feels before lifting: sore → swap, sharp → skip. */
+export type PainLevel = 'sore' | 'sharp'
+
+export interface CheckinFlag {
+  /** A PAIN_SITES value ('low back', 'knee'…). */
+  site: string
+  side: BodySide
+  level: PainLevel
+}
+
+export interface CheckinSwap {
+  fromKey: string
+  fromName: string
+  toKey: string
+  toName: string
+}
+
+/** `workouts.checkin` jsonb — what hurt going in, and what that changed. */
+export interface WorkoutCheckin {
+  flags: CheckinFlag[]
+  swaps: CheckinSwap[]
+  /** Names of planned lifts left out because of the check-in. */
+  skipped: string[]
 }
 
 export interface WorkoutExercise {

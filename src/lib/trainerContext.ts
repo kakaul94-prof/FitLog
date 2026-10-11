@@ -8,11 +8,13 @@ import {
 } from './calc'
 import { NUTRIENT_BY_KEY, scaleNutrients, sumNutrients } from './nutrients'
 import { injuryDay, injuryLabel, painTrend, rehabWeek } from './rehab'
+import { checkinSummary } from './checkin'
 import type {
   Food,
   Nutrients,
   Profile,
   StrengthGoal,
+  WorkoutCheckin,
 } from './database.types'
 
 // Builds the plain-text snapshot of the user's own training that gets sent up
@@ -110,6 +112,15 @@ export async function buildTrainerContext(
   const nutritionSince = addDaysISO(today, -NUTRITION_WINDOW_DAYS)
   const recentSince = addDaysISO(today, -RECENT_NUTRITION_DAYS)
 
+  // Pre-workout check-ins (soreness going in + the swaps it caused). Its own
+  // query so a missing column (migration not run) can't sink the lift data.
+  const checkinsP = supabase
+    .from('workouts')
+    .select('workout_date,checkin')
+    .not('checkin', 'is', null)
+    .gte('workout_date', painSince)
+    .order('workout_date', { ascending: false })
+    .limit(10)
   const [
     profileRes,
     workoutsRes,
@@ -374,6 +385,17 @@ export async function buildTrainerContext(
     }
     out.push(
       `Pain flagged on logged sets in the last ${PAIN_WINDOW_DAYS} days: ${notes.join('; ')}.`,
+    )
+  }
+
+  const { data: ckRows } = await checkinsP
+  const checkins = ((ckRows ?? []) as { workout_date: string; checkin: WorkoutCheckin }[])
+    .filter((r) => r.checkin?.flags?.length)
+  if (checkins.length) {
+    out.push(
+      `Pre-workout check-ins (sore/sharp going in, and what was swapped): ${checkins
+        .map((r) => `${r.workout_date}: ${checkinSummary(r.checkin)}`)
+        .join('; ')}.`,
     )
   }
 

@@ -1,3 +1,4 @@
+import { useWorkoutCheckin } from '@/components/WorkoutCheckinSheet'
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
@@ -23,7 +24,7 @@ import {
   useWorkout,
   useCreateWorkout,
 } from '@/features/strength/useStrength'
-import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
+import { useRoutines } from '@/features/strength/useRoutines'
 import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
 import { useRehab } from '@/features/rehab/useRehab'
 import { activeInjuries } from '@/lib/rehab'
@@ -51,7 +52,7 @@ export function StrengthPage() {
   const { data: routines } = useRoutines()
   const { data: profile } = useProfile()
   const create = useCreateWorkout()
-  const startFrom = useStartFromRoutine()
+  const checkin = useWorkoutCheckin()
   const [menuOpen, setMenuOpen] = useState(false)
   // Rehab lives in the Tools sheet; the header only grows an icon while
   // something is actually open, so it's a live signal rather than chrome.
@@ -119,16 +120,17 @@ export function StrengthPage() {
   }
   const startNext = async () => {
     if (!nextRoutine) return
-    const id = await startFrom.mutateAsync({
+    const id = await checkin.start({
       routineId: nextRoutine.id,
       name: nextRoutine.name,
       date: todayISO(),
     })
-    nav(`/workout/${id}`)
+    if (id) nav(`/workout/${id}`)
   }
 
   return (
     <div className="flex min-h-[calc(100svh-4.25rem-env(safe-area-inset-bottom))] flex-col">
+      {checkin.sheet}
       <PageHeader
         title="Exercise"
         action={
@@ -209,10 +211,10 @@ export function StrengthPage() {
                 size="lg"
                 className="mt-8 w-full max-w-xs"
                 onClick={startNext}
-                disabled={startFrom.isPending}
+                disabled={checkin.isPending}
               >
                 <Play className="h-4 w-4" />
-                {startFrom.isPending ? 'Starting…' : 'Start workout'}
+                {checkin.isPending ? 'Starting…' : 'Start workout'}
               </Button>
               {/* Full session stays one tap; the budget screen is opt-in. */}
               <button

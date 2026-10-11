@@ -41,12 +41,19 @@ const WORKOUT_STARTERS = [
   'My shoulder is niggling on this one.',
 ]
 
-export function TrainerChat({ workoutId }: { workoutId?: string }) {
+export function TrainerChat({
+  workoutId,
+  initialDraft,
+}: {
+  workoutId?: string
+  /** Pre-filled question (the pre-workout check-in's "Ask trainer"). */
+  initialDraft?: string
+}) {
   const memory = useTrainerMemory()
   const { add: addFact } = useAddTrainerFact()
 
   const [bubbles, setBubbles] = useState<Bubble[]>([])
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(initialDraft ?? '')
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState<string | null>(null)
 

@@ -1,27 +1,28 @@
+import { useWorkoutCheckin } from '@/components/WorkoutCheckinSheet'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ChevronLeft, Play, Plus } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
+import { useRoutines } from '@/features/strength/useRoutines'
 import { todayISO } from '@/lib/date'
 
 export function TemplatesPage() {
   const nav = useNavigate()
   const { data: routines } = useRoutines()
-  const startFrom = useStartFromRoutine()
+  const checkin = useWorkoutCheckin()
   const [startingId, setStartingId] = useState<string | null>(null)
 
   const start = async (rid: string, name: string) => {
     setStartingId(rid)
     try {
-      const id = await startFrom.mutateAsync({
+      const id = await checkin.start({
         routineId: rid,
         name,
         date: todayISO(),
       })
-      nav(`/workout/${id}`)
+      if (id) nav(`/workout/${id}`)
     } finally {
       setStartingId(null)
     }
@@ -29,6 +30,7 @@ export function TemplatesPage() {
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
+      {checkin.sheet}
       <PageHeader
         title="Templates"
         left={
@@ -56,7 +58,7 @@ export function TemplatesPage() {
               <Button
                 size="sm"
                 onClick={() => start(r.id, r.name)}
-                disabled={startFrom.isPending}
+                disabled={checkin.isPending}
               >
                 <Play className="h-3.5 w-3.5" />
                 {startingId === r.id ? 'Starting…' : 'Start'}

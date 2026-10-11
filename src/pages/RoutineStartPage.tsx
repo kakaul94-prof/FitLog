@@ -1,3 +1,4 @@
+import { useWorkoutCheckin } from '@/components/WorkoutCheckinSheet'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, Play } from 'lucide-react'
@@ -7,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import {
   useRoutine,
-  useStartFromRoutine,
   useSetExerciseOptional,
 } from '@/features/strength/useRoutines'
 import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
@@ -33,7 +33,7 @@ export function RoutineStartPage() {
   const nav = useNavigate()
   const { data } = useRoutine(id)
   const { data: meta } = useRoutineMeta(id)
-  const startFrom = useStartFromRoutine()
+  const checkin = useWorkoutCheckin()
   const setOptional = useSetExerciseOptional()
   const [budget, setBudget] = useState<number | null>(null)
 
@@ -66,17 +66,18 @@ export function RoutineStartPage() {
 
   const start = async (full: boolean) => {
     if (!routine) return
-    const wid = await startFrom.mutateAsync({
+    const wid = await checkin.start({
       routineId: routine.id,
       name: routine.name,
       date: todayISO(),
       plan: full || !trimmed ? undefined : plan,
     })
-    nav(`/workout/${wid}`)
+    if (wid) nav(`/workout/${wid}`)
   }
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
+      {checkin.sheet}
       <PageHeader
         title={routine?.name ?? 'Start workout'}
         left={
@@ -217,10 +218,10 @@ export function RoutineStartPage() {
           size="lg"
           className="w-full"
           onClick={() => start(false)}
-          disabled={startFrom.isPending || !routine}
+          disabled={checkin.isPending || !routine}
         >
           <Play className="h-4 w-4" />
-          {startFrom.isPending
+          {checkin.isPending
             ? 'Starting…'
             : trimmed
               ? `Start ${trim.estMinutes} min workout`
@@ -231,7 +232,7 @@ export function RoutineStartPage() {
             variant="ghost"
             className="w-full"
             onClick={() => start(true)}
-            disabled={startFrom.isPending}
+            disabled={checkin.isPending}
           >
             Start the full session anyway
           </Button>

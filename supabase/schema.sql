@@ -572,3 +572,7 @@ create trigger strength_goals_updated_at before update on public.strength_goals
 -- ============================================================
 -- Done. All tables have RLS enabled with owner-only access.
 -- ============================================================
+
+-- Pre-workout check-in (migration_workout_checkin.sql)
+alter table public.workouts
+  add column if not exists checkin jsonb;

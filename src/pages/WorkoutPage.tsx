@@ -22,7 +22,10 @@ import {
   Target,
   Sparkles,
   Brain,
+  ArrowLeftRight,
 } from 'lucide-react'
+import { useUndoSwap } from '@/features/strength/useCheckin'
+import { flagsLabel } from '@/lib/checkin'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { TrainerChat } from '@/components/TrainerChat'
 import { Card } from '@/components/ui/card'
@@ -420,6 +423,15 @@ export function WorkoutPage() {
       />
       <div className="space-y-4 p-4 pb-32">
         {workout && <FuelFeedbackPrompt startedAt={workout.created_at} />}
+        {workout?.checkin && workout.checkin.flags.length > 0 && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 first-letter:uppercase dark:text-amber-200">
+            {flagsLabel(workout.checkin.flags)} today
+            {workout.checkin.swaps.length > 0 &&
+              ` · ${workout.checkin.swaps.length} swap${workout.checkin.swaps.length === 1 ? '' : 's'}`}
+            {workout.checkin.skipped.length > 0 &&
+              ` · skipped ${workout.checkin.skipped.join(', ')}`}
+          </div>
+        )}
         {activeBlocks.map(renderBlock)}
 
         {completedBlocks.length > 0 && (
@@ -963,6 +975,14 @@ function ExerciseCard({
     [rehabState, ex.exercise_key],
   )
 
+  // Swapped in by the pre-workout check-in. Undo is only offered while the
+  // exercise is untouched — once sets are logged they belong to this lift.
+  const { data: wd } = useWorkout(workoutId)
+  const checkin = wd?.workout?.checkin
+  const swap = checkin?.swaps.find((s) => s.toKey === ex.exercise_key)
+  const undoSwap = useUndoSwap()
+  const anyLogged = sets.some((s) => s.weight_lb != null || s.reps != null)
+
   // Whole-exercise timing: Start stamps the beginning of the first set, Done
   // stamps the end (and rolls the exercise into "Completed"). Tapping the
   // filled Done again clears ended_at and reopens the exercise.
@@ -1089,6 +1109,23 @@ function ExerciseCard({
                 .join('; ')}
               {' — you flagged this lift as aggravating.'}
             </span>
+          </div>
+        )}
+        {swap && checkin && (
+          <div className="mb-1.5 flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+            <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
+            <span>Swapped from {swap.fromName}</span>
+            {!anyLogged && (
+              <button
+                className="ml-auto font-medium text-primary"
+                disabled={undoSwap.isPending}
+                onClick={() =>
+                  undoSwap.mutate({ workoutId, exerciseId: ex.id, swap, checkin })
+                }
+              >
+                Undo
+              </button>
+            )}
           </div>
         )}
         {!done && plan?.warning && (

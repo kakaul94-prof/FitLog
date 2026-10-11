@@ -163,12 +163,16 @@ export const EXERCISE_OVERRIDE: Record<string, Partial<Record<RegionId, number>>
   barbell_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   db_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   seated_cable_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
+  chest_supported_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   face_pull: { rear_delts: 1, upper_back: 0.5 },
   // posterior chain
   deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5, upper_back: 0.5 },
   romanian_deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5 },
+  cable_pull_through: { glutes: 1, hams: 0.5 },
   // legs
   front_squat: { quads: 1, glutes: 0.5 },
+  belt_squat: { quads: 1, glutes: 0.5 },
+  goblet_squat: { quads: 1, glutes: 0.5 },
   leg_curl: { hams: 1 },
   lunge: { quads: 1, glutes: 1 },
   // shoulders — the dumbbell press path lets the side delt work too

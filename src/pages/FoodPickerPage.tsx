@@ -369,7 +369,7 @@ export function FoodPickerPage() {
             <Camera className="h-4 w-4" /> Snap meal
           </Button>
           <Button variant="outline" onClick={() => setCopyOpen(true)}>
-            <Copy className="h-4 w-4" /> Copy day
+            <Copy className="h-4 w-4" /> Copy meal
           </Button>
         </div>
         <Card className="divide-y divide-border overflow-hidden">

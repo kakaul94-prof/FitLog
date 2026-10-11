@@ -512,21 +512,51 @@ export function registerDiaryMutationDefaults(qc: QueryClient) {
   qc.setMutationDefaults(KEYS.updateEntry, updateEntryMutation(qc))
 }
 
-/** Copy all entries of one meal from another day into a target day/meal.
+/** A slim diary row for searching past meals — calories only, no full panel. */
+export interface PastMealRow {
+  id: string
+  entry_date: string
+  meal: Meal
+  food_name: string
+  servings: number
+  kcal: number | null
+}
+
+/** The last 60 days of diary rows, newest day first — feeds "search past
+ *  meals" in the copy sheet. Pulls only `kcal` out of the nutrients jsonb. */
+export function useMealHistory() {
+  return useQuery({
+    queryKey: ['mealHistory'],
+    queryFn: async (): Promise<PastMealRow[]> => {
+      const { data, error } = await supabase
+        .from('diary_entries')
+        .select('id, entry_date, meal, food_name, servings, kcal:nutrients->kcal')
+        .gte('entry_date', addDaysISO(todayISO(), -60))
+        .order('entry_date', { ascending: false })
+        .order('created_at')
+        .limit(3000)
+      if (error) throw error
+      return (data ?? []) as PastMealRow[]
+    },
+  })
+}
+
+/** Copy the given diary entries (by id) into a target day/meal — the source
+ *  meal slot doesn't matter, so a past Lunch can land in today's Dinner.
  *  Left non-optimistic (a remote read + insert); queues but may stall offline. */
 export function useCopyMeal() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (e: {
-      from: string
+      ids: string[]
       to: string
       meal: Meal
     }): Promise<number> => {
+      if (e.ids.length === 0) return 0
       const { data, error } = await supabase
         .from('diary_entries')
         .select('*')
-        .eq('entry_date', e.from)
-        .eq('meal', e.meal)
+        .in('id', e.ids)
         .order('created_at')
       if (error) throw error
       const src = (data ?? []) as DiaryEntry[]
@@ -552,6 +582,7 @@ export function useCopyMeal() {
       qc.invalidateQueries({ queryKey: ['diary', v.to] })
       qc.invalidateQueries({ queryKey: ['streak'] })
       qc.invalidateQueries({ queryKey: ['foodHistory'] })
+      qc.invalidateQueries({ queryKey: ['mealHistory'] })
     },
   })
 }

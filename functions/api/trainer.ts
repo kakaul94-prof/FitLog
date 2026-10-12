@@ -167,6 +167,7 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
   const encoder = new TextEncoder()
   let buffer = ''
   let refused = false
+  let said = false // has anything reached the bubble yet?
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -195,6 +196,7 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
             data.delta.text
           ) {
             controller.enqueue(encoder.encode(data.delta.text))
+            said = true
           } else if (
             data.type === 'message_delta' &&
             data.delta?.stop_reason === 'refusal'
@@ -206,6 +208,7 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
                 '\n\n[The trainer was cut off. Try asking again.]',
               ),
             )
+            said = true
           }
         }
       }
@@ -218,6 +221,12 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
           encoder.encode(
             "I can't help with that one. Try rephrasing, or ask me something about your training.",
           ),
+        )
+      // Likewise a "successful" answer with no usable text in it (an error page
+      // from a proxy, a garbled or empty stream) must not leave the bubble empty.
+      else if (!said)
+        controller.enqueue(
+          encoder.encode("The trainer didn't send an answer. Try asking again."),
         )
     },
   })

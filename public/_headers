@@ -1,0 +1,17 @@
+# Security headers for every response Cloudflare Pages serves (also applied by
+# `wrangler pages dev`, so the OWASP ZAP scan in scripts/security-scan.sh sees
+# them). Only headers that can't break the app are set here; a full
+# Content-Security-Policy is a separate, device-tested change (SECURITY-FINDINGS.md).
+/*
+  # Nobody may frame the app (clickjacking). frame-ancestors is the modern
+  # form; X-Frame-Options covers older browsers.
+  Content-Security-Policy: frame-ancestors 'none'
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # The app opens no pop-ups, so it can keep its window to itself.
+  Cross-Origin-Opener-Policy: same-origin
+  # Camera (barcode + form videos), location (GPS cardio) and Bluetooth (heart
+  # rate strap) keep their same-origin default. Switch off what's never used:
+  # form videos are recorded without audio.
+  Permissions-Policy: microphone=(), payment=(), usb=(), serial=(), hid=(), midi=()

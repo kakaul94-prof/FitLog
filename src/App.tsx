@@ -241,8 +241,11 @@ function App() {
       persistOptions={{ persister, maxAge: PERSIST_MAX_AGE, buster: PERSIST_BUSTER }}
       onSuccess={() => {
         // After the cache restores, fire any writes that were paused offline in
-        // a previous session (they also auto-resume on reconnect).
-        void queryClient.resumePausedMutations()
+        // a previous session (they also auto-resume on reconnect), then mark the
+        // restored data stale. It still shows instantly, but is refetched: the
+        // copy on disk can predate a save made just before a reload (log cardio,
+        // pull to refresh), and would otherwise count as fresh for staleTime.
+        void queryClient.resumePausedMutations().then(() => queryClient.invalidateQueries())
       }}
     >
       <AuthProvider>

@@ -1,5 +1,6 @@
 import { expect, type Locator } from '@playwright/test'
 import { BasePage } from './BasePage'
+import { CheckinSheet } from './CheckinSheet'
 
 /** Exercise tab (/strength) plus the live workout page it opens. */
 export class WorkoutPage extends BasePage {
@@ -8,6 +9,7 @@ export class WorkoutPage extends BasePage {
   readonly startEmptyButton = this.page.getByRole('button', { name: 'Start empty workout' })
   readonly addExerciseButton = this.page.getByRole('button', { name: 'Add exercise' })
   readonly markDoneButton = this.page.getByRole('button', { name: 'Mark as done' })
+  readonly checkin = new CheckinSheet(this.page)
 
   /** The "Next up" card's template name (the card's only level-2 heading). */
   nextUp(templateName: string): Locator {
@@ -17,6 +19,7 @@ export class WorkoutPage extends BasePage {
   /** Train the Next up template the way a user does: start it, log a set, mark it done. */
   async trainNextUp(): Promise<void> {
     await this.page.getByRole('button', { name: 'Start workout', exact: true }).click()
+    await this.checkin.startWorkout()
     await expect(this.page).toHaveURL(/\/workout\/[0-9a-f-]+$/)
     await this.logSet(1, 135, 5)
     await this.markDone()
@@ -24,6 +27,7 @@ export class WorkoutPage extends BasePage {
 
   async startEmptyWorkout(): Promise<void> {
     await this.startEmptyButton.click()
+    await this.checkin.startWorkout()
     await expect(this.page).toHaveURL(/\/workout\/[0-9a-f-]+$/)
   }
 

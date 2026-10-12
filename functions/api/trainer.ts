@@ -288,23 +288,42 @@ function untilSilent(
 }
 
 /**
- * Turn an upstream failure into a message that says what to DO about it. This
- * is a single-user app, so a diagnostic beats a polite one — a bare "the
- * trainer is unavailable" sent us hunting through app code once when the real
- * problem was a stale API key in the Cloudflare dashboard. The raw upstream
- * body goes to the function log (Cloudflare → Pages → Functions → logs), never
- * to the browser.
+ * Why the trainer couldn't answer. The browser gets `message` plus a short
+ * reason `code`; `fix` (which secret, which dashboard) goes only to the function
+ * log (Cloudflare → Pages → Functions → logs). The code keeps the diagnosis one
+ * look-up away (table in ai-evals/README.md): a bare "the trainer is
+ * unavailable" once sent us hunting through app code when the real problem was
+ * a stale API key, but naming the secret in the browser told every caller how
+ * the deploy is wired.
  */
-function upstreamMessage(status: number, body: string): string {
-  if (status === 401 || /authentication_error/.test(body))
-    return "The trainer can't sign in to Claude. The ANTHROPIC_API_KEY secret on this Cloudflare Pages project is missing, invalid or expired — check Settings → Variables and secrets."
-  if (/credit balance/i.test(body))
-    return 'The Claude account is out of credits — top it up at console.anthropic.com.'
-  if (status === 429)
-    return 'Too many requests just now. Wait a few seconds and ask again.'
-  if (status >= 500) return 'Claude is having a moment. Try again shortly.'
-  return 'The trainer is unavailable right now.'
+interface Failure {
+  code: string
+  message: string
+  fix?: string
 }
+
+function upstreamFailure(status: number, body: string): Failure {
+  if (status === 401 || /authentication_error/.test(body))
+    return {
+      code: 'key',
+      message: "The trainer isn't set up correctly right now.",
+      fix: 'The ANTHROPIC_API_KEY secret on this Pages project is missing, invalid or expired: check Settings → Variables and secrets, then redeploy.',
+    }
+  if (/credit balance/i.test(body))
+    return {
+      code: 'credits',
+      message: "The trainer's AI account needs attention.",
+      fix: 'The Claude account is out of credits: top it up at console.anthropic.com.',
+    }
+  if (status === 429)
+    return { code: 'rate', message: 'Too many requests just now. Wait a few seconds and ask again.' }
+  if (status >= 500)
+    return { code: 'upstream', message: 'Claude is having a moment. Try again shortly.' }
+  return { code: 'unavailable', message: 'The trainer is unavailable right now.' }
+}
+
+const failed = (f: Failure, status: number) =>
+  json({ error: `${f.message} (code: ${f.code})` }, status)
 
 export const onRequestPost = async (context: {
   request: Request
@@ -316,8 +335,10 @@ export const onRequestPost = async (context: {
   // which is indistinguishable from a revoked key until you look at the bytes.
   const raw = env.ANTHROPIC_API_KEY ?? ''
   const key = raw.trim()
-  if (!key)
-    return json({ error: 'The trainer is not configured (no API key).' }, 503)
+  if (!key) {
+    console.error('trainer: ANTHROPIC_API_KEY is not set on this Pages project')
+    return failed({ code: 'no-key', message: "The trainer isn't set up correctly right now." }, 503)
+  }
 
   let body: { messages?: unknown; context?: unknown; memory?: unknown }
   try {
@@ -359,8 +380,8 @@ export const onRequestPost = async (context: {
   } catch (e) {
     console.error('trainer: Claude request failed', e)
     return startup.signal.aborted
-      ? json({ error: 'Claude took too long to answer. Try again in a moment.' }, 504)
-      : json({ error: 'The trainer is unavailable right now.' }, 502)
+      ? failed({ code: 'timeout', message: 'Claude took too long to answer. Try again in a moment.' }, 504)
+      : failed({ code: 'unreachable', message: 'The trainer is unavailable right now.' }, 502)
   } finally {
     clearTimeout(timer)
   }
@@ -372,11 +393,14 @@ export const onRequestPost = async (context: {
     // failure, describe the stored secret WITHOUT revealing it: a length plus a
     // whitespace flag tells you whether the value is malformed, truncated or
     // something else pasted by mistake.
+    const failure = upstreamFailure(res.status, detail)
     console.error('trainer: Claude answered', res.status, detail.slice(0, 400), {
+      code: failure.code,
+      fix: failure.fix,
       keyLength: key.length,
       keyHadWhitespace: raw !== key,
     })
-    return json({ error: upstreamMessage(res.status, detail) }, 502)
+    return failed(failure, 502)
   }
 
   let lastProgress = Date.now()

@@ -27,14 +27,19 @@ const json = (data: unknown, status: number) =>
 
 /** Why the caller may not proceed, or null when they're a signed-in user.
  *  The reasons are specific so a misconfigured deploy is obvious instead of
- *  looking like "you're logged out". */
+ *  looking like "you're logged out", but the variable names go to the function
+ *  log, not to whoever is calling. */
 async function authFailure(env: Env, request: Request): Promise<string | null> {
   const url = env.VITE_SUPABASE_URL
   const anon = env.VITE_SUPABASE_ANON_KEY
   // Fail CLOSED: an unconfigured gate that waves everyone through is worse than
-  // a broken feature, and this message says exactly what to fix.
-  if (!url || !anon)
-    return 'This feature cannot verify sign-ins (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not readable by this Pages project).'
+  // a broken feature. The log says exactly what to fix.
+  if (!url || !anon) {
+    console.error(
+      'api: VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not readable by this Pages project, so sign-ins cannot be checked',
+    )
+    return "This feature isn't set up correctly right now. (code: auth-config)"
+  }
 
   const header = request.headers.get('authorization') ?? ''
   const token = /^bearer /i.test(header) ? header.slice(7).trim() : ''

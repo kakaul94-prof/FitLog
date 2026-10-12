@@ -109,18 +109,40 @@ def test_deleting_your_workout_never_deletes_another_users_rows(
     assert intruder_api.rows("workout_sets") == sets_before
 
 
-def test_every_foreign_key_between_user_tables_is_listed(db: Connection[DictRow]) -> None:
-    """A new foreign key must be added to REFERENCES, so its cross-user case gets tested."""
-    rows = db.execute(
+def _links_between_user_tables(db: Connection[DictRow]) -> list[DictRow]:
+    return db.execute(
         """
-        select c.conrelid::regclass::text as child, a.attname as column,
-               c.confrelid::regclass::text as parent
+        select c.conrelid::regclass::text as child,
+               c.confrelid::regclass::text as parent,
+               array(
+                 select a.attname::text from pg_attribute a
+                 where a.attrelid = c.conrelid and a.attnum = any (c.conkey)
+               ) as columns
         from pg_constraint c
-        join pg_attribute a on a.attrelid = c.conrelid and a.attnum = any (c.conkey)
         where c.contype = 'f'
           and c.connamespace = 'public'::regnamespace
           and c.confrelid <> 'auth.users'::regclass
         """
     ).fetchall()
 
-    assert {Reference(r["child"], r["column"], r["parent"]) for r in rows} == set(REFERENCES)
+
+def test_every_foreign_key_between_user_tables_is_listed(db: Connection[DictRow]) -> None:
+    """A new foreign key must be added to REFERENCES, so its cross-user case gets tested."""
+    found = {
+        Reference(link["child"], next(c for c in link["columns"] if c != "user_id"), link["parent"])
+        for link in _links_between_user_tables(db)
+    }
+
+    assert found == set(REFERENCES)
+
+
+def test_every_foreign_key_between_user_tables_includes_the_owner(
+    db: Connection[DictRow],
+) -> None:
+    """The schema-level guarantee behind the tests above: (column, user_id) -> (id, user_id).
+
+    See supabase/migration_owner_scoped_links.sql.
+    """
+    links = _links_between_user_tables(db)
+
+    assert [link for link in links if "user_id" not in link["columns"]] == []

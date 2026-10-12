@@ -576,3 +576,77 @@ create trigger strength_goals_updated_at before update on public.strength_goals
 -- Pre-workout check-in (migration_workout_checkin.sql)
 alter table public.workouts
   add column if not exists checkin jsonb;
+
+-- ============================================================
+-- Owner-scoped links: a row may only point at rows its own user owns.
+-- RLS checks the owner of the row being written, but Postgres checks a
+-- foreign key WITHOUT applying RLS, so the plain `references <table>(id)`
+-- links above let one user attach rows to another user's food, meal,
+-- routine or workout. This replaces each of them with a link that includes
+-- user_id, so both rows must share an owner. Same SQL as
+-- migration_owner_scoped_links.sql (which has a pre-flight check for hosted
+-- databases). Guarded by api-tests/tests/validation/test_cross_user_references.py.
+-- ============================================================
+-- 1. Every table that is linked to gets an (id, user_id) key to point at.
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['foods', 'meals', 'routines', 'workouts', 'workout_exercises'] loop
+    if not exists (
+      select 1 from pg_constraint
+      where conrelid = format('public.%I', t)::regclass and conname = t || '_id_user_id_key'
+    ) then
+      execute format('alter table public.%I add constraint %I unique (id, user_id)',
+                     t, t || '_id_user_id_key');
+    end if;
+  end loop;
+end $$;
+
+-- 2. Replace each one-column link with one that includes user_id. ON DELETE
+--    behaviour is unchanged; "set null (col)" clears only the link, never user_id.
+do $$
+declare
+  link record;
+  old_fk text;
+begin
+  for link in
+    select * from (values
+      ('recipe_ingredients', 'recipe_food_id',      'foods',             'cascade'),
+      ('recipe_ingredients', 'ingredient_food_id',  'foods',             'restrict'),
+      ('diary_entries',      'food_id',             'foods',             'set null (food_id)'),
+      ('meal_items',         'meal_id',             'meals',             'cascade'),
+      ('meal_items',         'food_id',             'foods',             'set null (food_id)'),
+      ('routine_exercises',  'routine_id',          'routines',          'cascade'),
+      ('workouts',           'source_routine_id',   'routines',          'set null (source_routine_id)'),
+      ('workout_exercises',  'workout_id',          'workouts',          'cascade'),
+      ('workout_sets',       'workout_id',          'workouts',          'cascade'),
+      ('workout_sets',       'workout_exercise_id', 'workout_exercises', 'cascade')
+    ) as l(child, col, parent, on_delete)
+  loop
+    -- The old key, whatever it was named: a one-column foreign key on `col`.
+    for old_fk in
+      select c.conname
+      from pg_constraint c
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+      where c.contype = 'f'
+        and c.conrelid = format('public.%I', link.child)::regclass
+        and cardinality(c.conkey) = 1
+        and a.attname = link.col
+    loop
+      execute format('alter table public.%I drop constraint %I', link.child, old_fk);
+    end loop;
+
+    if not exists (
+      select 1 from pg_constraint
+      where conrelid = format('public.%I', link.child)::regclass
+        and conname = link.child || '_' || link.col || '_owner_fkey'
+    ) then
+      execute format(
+        'alter table public.%I add constraint %I foreign key (%I, user_id) '
+        'references public.%I (id, user_id) on delete %s',
+        link.child, link.child || '_' || link.col || '_owner_fkey', link.col,
+        link.parent, link.on_delete);
+    end if;
+  end loop;
+end $$;

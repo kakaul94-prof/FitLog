@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { fromJUnit } from './adapters/junit.mjs'
 import { fromPlaywright } from './adapters/playwright.mjs'
 import { fromVitest } from './adapters/vitest.mjs'
-import { aggregateRepeats, appendRun, buildRun, runStatus } from './lib.mjs'
+import { aggregateRepeats, appendRun, buildRun, feedbackMs, runStatus } from './lib.mjs'
 
 // Trimmed-down Playwright JSON report: one passing, one flaky (failed, then
 // passed on retry), one failing after all retries, one skipped.
@@ -107,5 +108,62 @@ describe('aggregateRepeats (flake hunt)', () => {
     const rows = aggregateRepeats([t('a', 'passed', 10), t('b', 'failed', 50), t('a', 'passed', 30), t('b', 'passed', 20)])
     expect(rows[0]).toMatchObject({ name: 'b', runs: 2, failures: 1, failRate: 0.5, maxMs: 50 })
     expect(rows[1]).toMatchObject({ name: 'a', failures: 0, medianMs: 30 })
+  })
+})
+
+// Trimmed pytest JUnit report: a pass, a failure, an error, a skip, and a name
+// with escaped characters (parametrize ids carry quotes and brackets).
+const junitReport = `<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests">
+<testsuite name="api" errors="1" failures="1" skipped="1" tests="5" time="42.5">
+<testcase classname="tests.auth.test_tokens" name="test_refused[alg-none]" time="0.120" />
+<testcase classname="tests.validation.test_constraints" name="test_range[effort=0 &quot;refused&quot;]" time="1.5">
+  <failure message="assert 201 == 400">AssertionError: 201 &gt; 200</failure>
+</testcase>
+<testcase classname="tests.functions.test_trainer" name="test_streams" time="2"><error message="boom">setup failed</error></testcase>
+<testcase classname="tests.bdd.test_journeys" name="test_weighing_in" time="0.01"><skipped message="no stack" /></testcase>
+<testcase classname="tests.authz.test_rls_api" name="test_read[foods]" time="0.300"></testcase>
+</testsuite></testsuites>`
+
+describe('fromJUnit', () => {
+  it('reads each outcome from the test case and the wall clock from the suite', () => {
+    const block = fromJUnit(junitReport)
+    expect(block).toMatchObject({ kind: 'tests', tool: 'pytest', retries: 0, testCount: 5, durationMs: 42500 })
+    expect(block.totals).toEqual({ passed: 2, failed: 2, flaky: 0, skipped: 1 })
+  })
+
+  it('unescapes names and maps module paths to repo-relative files', () => {
+    const failed = fromJUnit(junitReport).tests.find((t) => t.name.startsWith('test_range'))
+    expect(failed).toEqual({
+      name: 'test_range[effort=0 "refused"]',
+      file: 'api-tests/tests/validation/test_constraints.py',
+      status: 'failed',
+      durationMs: 1500,
+    })
+  })
+
+  it('keeps every failure even when it is not among the slowest', () => {
+    const kept = fromJUnit(junitReport, { keepSlowest: 1 }).tests.map((t) => t.status)
+    expect(kept.filter((s) => s === 'failed')).toHaveLength(2)
+  })
+})
+
+describe('feedbackMs', () => {
+  const now = new Date('2026-10-12T12:10:00Z')
+
+  it('measures from a push (epoch seconds) or a PR update (ISO date)', () => {
+    expect(feedbackMs(String(Date.parse('2026-10-12T12:04:00Z') / 1000), now)).toBe(6 * 60 * 1000)
+    expect(feedbackMs('2026-10-12T12:08:30Z', now)).toBe(90 * 1000)
+  })
+
+  it('is null when the trigger time is missing or nonsense', () => {
+    expect(feedbackMs(undefined, now)).toBeNull()
+    expect(feedbackMs('', now)).toBeNull()
+    expect(feedbackMs('not a date', now)).toBeNull()
+    expect(feedbackMs('2099-01-01T00:00:00Z', now)).toBeNull() // clock skew: never negative
+  })
+
+  it('is stored on the run record', () => {
+    const run = buildRun({ env: { TRIGGERED_AT: '2026-10-12T12:09:00Z' }, sources: {}, now })
+    expect(run.feedbackMs).toBe(60 * 1000)
   })
 })

@@ -35,8 +35,22 @@ export function buildRun({ env, sources, jobs = {}, now = new Date() }) {
     event: env.GITHUB_EVENT_NAME ?? 'local',
     runUrl: env.GITHUB_RUN_ID ? `${server}/${repo}/actions/runs/${env.GITHUB_RUN_ID}` : null,
     jobs,
+    // Push (or PR update) → this record: how long a developer waits to know.
+    feedbackMs: feedbackMs(env.TRIGGERED_AT, now),
     sources,
   }
+}
+
+/**
+ * Milliseconds from the push that triggered the run to `now`, or null.
+ * `triggeredAt` is what the workflow passes in: the pull request's updated_at
+ * (an ISO date) or the repository's pushed_at (epoch seconds) on a push.
+ */
+export function feedbackMs(triggeredAt, now = new Date()) {
+  if (triggeredAt == null || triggeredAt === '') return null
+  const start = /^\d+$/.test(String(triggeredAt)) ? Number(triggeredAt) * 1000 : Date.parse(triggeredAt)
+  const ms = now.getTime() - start
+  return Number.isFinite(ms) && ms >= 0 ? ms : null
 }
 
 /** Append a run (replacing a re-run of the same attempt id) and keep the newest `cap`. */
@@ -62,13 +76,14 @@ export function runStatus(run) {
 }
 
 const ICON = { passed: '✅', flaky: '⚠️', failed: '❌' }
-const LABEL = { e2e: 'E2E', unit: 'Unit' }
+const LABEL = { e2e: 'E2E', api: 'API', unit: 'Unit' }
 const md = (s) => String(s).replaceAll('|', '\\|')
 
 /** Markdown for the GitHub Actions job summary (shown on every run, PRs included). */
 export function summaryMarkdown(run, { expected = [] } = {}) {
   const status = runStatus(run)
   const out = [`### ${ICON[status]} Test quality: \`${run.sha.slice(0, 7)}\` on \`${run.branch}\``, '']
+  if (run.feedbackMs != null) out.push(`Feedback time (push → all results): **${formatDuration(run.feedbackMs)}**`, '')
   out.push('| Suite | Passed | Failed | Flaky | Skipped | Duration |', '|---|--:|--:|--:|--:|--:|')
   for (const [key, s] of Object.entries(run.sources)) {
     const t = s.totals

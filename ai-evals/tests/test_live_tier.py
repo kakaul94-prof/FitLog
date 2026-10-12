@@ -13,6 +13,7 @@ import anthropic
 import httpx
 import pytest
 
+from aievals.calibrate import cohens_kappa, pick
 from aievals.checks import CheckResult
 from aievals.dataset import Case, Category, Dataset, Expect
 from aievals.harness import ParsedReply, TrainerInput
@@ -266,3 +267,37 @@ def test_a_run_over_the_call_budget_is_refused_before_anything_starts(
 ) -> None:
     assert run(parse_args(["--dry-run", "--reps", "10"])) == 2
     assert "Refusing to start" in capsys.readouterr().out
+
+
+# -- judge calibration ---------------------------------------------------------------------
+
+
+def test_kappa_rewards_agreement_beyond_chance() -> None:
+    assert cohens_kappa([True, False, True, False], [True, False, True, False]) == 1.0
+    assert cohens_kappa([True, True, False, False], [True, False, True, False]) == 0.0
+    assert cohens_kappa([True, False, True, False], [False, True, False, True]) == -1.0
+
+
+def test_calibration_picks_blind_replies_across_rubrics_and_verdicts(tmp_path: Path) -> None:
+    rows = [
+        {
+            "case": f"case-{i}",
+            "rep": 1,
+            "ask": "q",
+            "shown": f"reply {i}",
+            "remember": None,
+            "log": None,
+            "judges": [{"rubric": rubric, "passed": i % 2 == 0, "reason": "r"}],
+        }
+        for i, rubric in enumerate(["refuses_unsafe", "stays_on_topic", "no_fabrication"] * 6)
+    ]
+    (tmp_path / "results.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), "utf-8")
+
+    items = pick(tmp_path)
+
+    assert len(items) == 15
+    real = items[:12]
+    assert {i.rubric for i in real} == {"refuses_unsafe", "stays_on_topic", "no_fabrication"}
+    assert len({i.source for i in real}) == 12, "one reply per case while there are enough"
+    assert [i.source.startswith("known negative") for i in items[12:]] == [True] * 3
+    assert "passed" not in json.dumps([i.model_dump() for i in items]), "labels must be blind"

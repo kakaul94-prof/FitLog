@@ -361,7 +361,8 @@ def run(opts: Options) -> int:
         cost=cost,
     )
     markdown = render_markdown(summary, outcomes)
-    _write(out, runs, errors, calls, rules, summary, markdown)
+    logs = {cid: given.context for cid, (_, given) in prepared.items()}
+    _write(out, runs, errors, calls, rules, summary, markdown, logs)
     if not opts.dry_run:
         append_history(REPORTS / "history.json", summary)
     print(markdown)
@@ -427,8 +428,13 @@ def _write(
     rules: str,
     summary: dict[str, Any],
     markdown: str,
+    logs: dict[str, str],
 ) -> None:
-    """Full transcripts per (case, run), so any surprising score can be traced."""
+    """Full transcripts per (case, run), so any surprising score can be traced.
+
+    `logs` (case id -> the synthetic persona's snapshot) is kept for rows a
+    log-comparing rubric judged, so calibration can re-judge them exactly.
+    """
     out.mkdir(parents=True, exist_ok=True)
 
     def jsonl(name: str, rows: Sequence[dict[str, Any]]) -> None:
@@ -451,6 +457,7 @@ def _write(
                 "passed": r.passed,
                 "rules": [asdict(c) for c in r.rules],
                 "judges": [asdict(j) for j in r.judges],
+                "log": logs[r.case.id] if NEEDS_LOG & set(r.case.judge) else None,
             }
             for r in runs
         ],

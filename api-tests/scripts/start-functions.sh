@@ -83,13 +83,19 @@ start_bg "$RUN_DIR/wrangler.log" npx --no-install wrangler pages dev "$ASSETS" \
   --binding "ANTHROPIC_TIMEOUT_MS=$ANTHROPIC_TIMEOUT_MS"
 echo "$BG_PID" >>"$RUN_DIR/pids"
 
+stub_ready() {
+  [ -n "$UPSTREAM_URL" ] || curl -sf "http://127.0.0.1:$STUB_PORT/__stub/calls" >/dev/null
+}
+
 # Ready when an unauthenticated trainer call is refused (the function is
-# loaded and answering) and the stub answers its control endpoint.
+# loaded and answering) and the stub, if there is one, answers its control
+# endpoint.
 for _ in $(seq 1 60); do
   status=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
     "http://127.0.0.1:$FUNCTIONS_PORT/api/trainer" || true)
-  if [ "$status" = "401" ] && curl -sf "http://127.0.0.1:$STUB_PORT/__stub/calls" >/dev/null; then
-    env_lines="FITLOG_FUNCTIONS_URL=http://127.0.0.1:$FUNCTIONS_PORT
+  if [ "$status" = "401" ] && stub_ready; then
+    env_lines="FITLOG_FUNCTIONS_URL=http://127.0.0.1:$FUNCTIONS_PORT"
+    [ -n "$UPSTREAM_URL" ] || env_lines="$env_lines
 FITLOG_STUB_URL=http://127.0.0.1:$STUB_PORT"
     if [ -n "${GITHUB_ENV:-}" ]; then echo "$env_lines" >>"$GITHUB_ENV"; fi
     echo "start-functions: ready. Export these for pytest:"

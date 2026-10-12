@@ -249,6 +249,39 @@ class StrengthGoal(Owned):
     updated_at: datetime
 
 
+# -- what the Pages Functions send and return -------------------------------------------
+
+
+class ClaudeMessage(Contract):
+    role: Literal["user", "assistant"]
+    content: str | list[dict[str, Json]]
+
+
+class ClaudeRequest(Contract):
+    """The body a function sends to the Claude Messages API.
+
+    Strict like the table contracts: a new request parameter (temperature,
+    tools, a bigger budget) fails the function tests until it's reviewed here.
+    """
+
+    model: str
+    max_tokens: int
+    messages: list[ClaudeMessage]
+    system: str | None = None
+    stream: bool | None = None
+    output_config: dict[str, Json] | None = None
+
+
+class FunctionError(Contract):
+    """Every error a Pages Function returns to the browser: one readable message.
+
+    No upstream bodies, request ids, key fragments or stack traces: anything
+    extra fails the contract.
+    """
+
+    error: str
+
+
 class PostgrestError(Contract):
     """The error body PostgREST returns for a rejected request."""
 

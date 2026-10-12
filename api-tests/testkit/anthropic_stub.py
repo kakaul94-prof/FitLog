@@ -28,7 +28,7 @@ from typing import Any, Literal
 
 import httpx
 
-ReplyKind = Literal["stream", "message", "error", "raw", "hang", "stream_error", "refusal"]
+ReplyKind = Literal["stream", "message", "error", "raw", "hang", "drop", "stream_error", "refusal"]
 
 
 @dataclass(frozen=True)
@@ -67,6 +67,11 @@ class Reply:
     def hang(cls, seconds: float) -> "Reply":
         """Say nothing for `seconds`, then answer normally (for timeout tests)."""
         return cls("hang", delay_s=seconds, text="Too late.")
+
+    @classmethod
+    def drop(cls) -> "Reply":
+        """Close the connection without answering (Claude unreachable mid-request)."""
+        return cls("drop")
 
     @classmethod
     def stream_error(cls, text_before: str) -> "Reply":
@@ -149,6 +154,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _play(self, reply: Reply, *, model: str) -> None:
         match reply.kind:
+            case "drop":
+                self.close_connection = True  # no status line, no body: a dead socket
             case "hang":
                 time.sleep(reply.delay_s)
                 self._send_events(_text_events(reply.text, model))

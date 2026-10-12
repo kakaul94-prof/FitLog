@@ -22,7 +22,14 @@ export interface TrainerReply {
 
 /** Mirrors REMEMBER_TAG in functions/api/trainer.ts — keep the two in sync. */
 const OPEN = '[[REMEMBER'
-const FULL = /\[\[REMEMBER:\s*([\s\S]*?)\]\]/
+// Any complete marker, with the space before it, wherever it is.
+const MARKER = / ?\[\[REMEMBER:[\s\S]*?\]\]/g
+// A marker still being written at the end: no closing ]] after it yet.
+const UNCLOSED = /\[\[REMEMBER(?:(?!\]\])[\s\S])*$/
+// A marker that is the reply's whole last line: the only place the prompt asks
+// the model to put one. Anywhere else it is text the model repeated, e.g. a
+// product name from the user's log, and must never become a chip.
+const LAST_LINE = /(?:^|\n)[ \t]*\[\[REMEMBER:\s*([^\n]*?)\]\][ \t]*$/
 const MAX_REMEMBER_CHARS = 200
 
 /** Hide a marker the stream is still in the middle of writing, so the raw
@@ -34,15 +41,18 @@ function stripTrailingPartial(s: string): string {
   return s
 }
 
-/** The bubble text for a stream so far: everything before the memory marker,
- *  including while that marker is still half-written. Exported for tests. */
+/** The bubble text for a stream so far: every complete memory marker removed,
+ *  keeping the words around it, and one still being written hidden. Exported
+ *  for tests. */
 export function displayText(raw: string): string {
-  return stripTrailingPartial(raw.replace(/\[\[REMEMBER[\s\S]*$/, '')).trimEnd()
+  return stripTrailingPartial(raw.replace(MARKER, '').replace(UNCLOSED, '')).trimEnd()
 }
 
-/** The fact the trainer wants to remember, or null. Exported for tests. */
+/** The fact the trainer wants to remember, or null: only from a marker on the
+ *  reply's last line (see LAST_LINE). Exported for tests; guarded by
+ *  ai-evals/tests/test_unintended_actions.py. */
 export function parseRemember(raw: string): string | null {
-  const fact = raw.match(FULL)?.[1]?.trim()
+  const fact = raw.trimEnd().match(LAST_LINE)?.[1]?.trim()
   if (!fact) return null
   return fact.slice(0, MAX_REMEMBER_CHARS)
 }

@@ -158,6 +158,7 @@ class Workout(Owned):
     notes: str | None
     rest_seconds: int
     completed: bool
+    checkin: Json | None  # pre-workout check-in answers (migration_workout_checkin.sql)
 
 
 class WorkoutExercise(Owned):

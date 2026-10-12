@@ -184,9 +184,7 @@ def test_memory_that_is_not_text_is_ignored(
     )
 
     system = _sent(claude).system or ""
-    assert (
-        "What you already know about them (saved from past conversations):\n- Real fact\n" in system
-    )
+    assert "<saved_memory>\n- Real fact\n</saved_memory>" in system  # and nothing else
 
 
 # -- bad requests never reach Claude ---------------------------------------------------------

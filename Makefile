@@ -9,7 +9,7 @@
 SHELL := bash
 RUN := bash scripts/test-all.sh
 
-.PHONY: help stack-up test-unit test-api test-ai test-e2e test-security test report stack-down
+.PHONY: help stack-up test-unit test-api test-ai eval-ai-live test-e2e test-security test report stack-down
 
 help: ## List the targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{ printf "  make %-14s ", $$1; print $$2 }'
@@ -25,6 +25,9 @@ test-api: ## API, database and security tests (pytest + pytest-bdd), JUnit + All
 
 test-ai: ## AI trainer evals, tier 1: Claude replaced by a scripted stub (no key, no cost)
 	@$(RUN) test-ai
+
+eval-ai-live: ## AI trainer evals, tier 2: real Claude, capped (~$1.25); ARGS="--only <id>" to narrow
+	@$(RUN) eval-ai-live $(ARGS)
 
 test-e2e: ## Playwright end-to-end tests, in their container
 	@$(RUN) test-e2e

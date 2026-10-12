@@ -8,6 +8,7 @@
 #   test-unit      Vitest unit tests
 #   test-api       API / database / security suite (pytest + pytest-bdd)
 #   test-ai        AI trainer evals, tier 1: deterministic, Claude replaced by a stub
+#   eval-ai-live   AI trainer evals, tier 2: real Claude (key in ai-evals/.env.live), capped
 #   test-e2e       Playwright E2E, in its container
 #   test-security  security scans: gitleaks, npm audit, pip-audit, ZAP (report only)
 #   test           unit, API, AI evals, then E2E; stops at the first failing layer
@@ -82,6 +83,18 @@ test_ai() {
   (cd ai-evals && "$py" -m pytest     --junitxml=../reports/ai-evals-junit.xml     --alluredir=../reports/allure-results-ai --clean-alluredir "$@")
 }
 
+eval_ai_live() {
+  local py
+  py="$(python_bin ai-evals)"
+  "$py" -c 'import testkit, yaml, anthropic' 2>/dev/null || die "the AI evals' packages are missing (see make test-ai)"
+  need node "install Node 22+ (the evals run the app's own trainer code)"
+  stack_running || die "the local Supabase stack isn't running: make stack-up"
+  # shellcheck source=/dev/null
+  source api-tests/scripts/local-env.sh >/dev/null
+  # Checks the key and every limit before spending anything; see ai-evals/aievals/live.py.
+  (cd ai-evals && "$py" -m aievals.live "$@")
+}
+
 test_e2e() {
   stack_running || die "the local Supabase stack isn't running: make stack-up"
   docker compose run --rm --build e2e
@@ -115,10 +128,11 @@ case "$command" in
   test-unit) test_unit ;;
   test-api) test_api "$@" ;;
   test-ai) test_ai "$@" ;;
+  eval-ai-live) eval_ai_live "$@" ;;
   test-e2e) test_e2e ;;
   test-security) test_security ;;
   test) stack_up && test_unit && test_api && test_ai && test_e2e ;;
   report) report ;;
   stack-down) stack_down ;;
-  *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; [ -z "$command" ] || exit 1 ;;
+  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; [ -z "$command" ] || exit 1 ;;
 esac

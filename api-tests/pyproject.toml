@@ -1,0 +1,66 @@
+[project]
+name = "fitlog-api-tests"
+version = "1.0.0"
+description = "API, database and security tests for FitLog's Supabase backend and Pages Functions"
+requires-python = ">=3.12"
+
+# `testkit` is a real package so another suite can reuse it:
+#   pip install -e api-tests   then   from testkit.rest import RestClient
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["testkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# importlib: test files in different folders may share a name (no __init__.py needed).
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+xfail_strict = true
+junit_family = "xunit2"
+junit_suite_name = "api"
+bdd_features_base_dir = "tests/bdd/features"
+markers = [
+  "functions: needs the local Pages Functions server (scripts/start-functions.sh)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F",  # pycodestyle + pyflakes
+  "I",            # import order
+  "B",            # bugbear
+  "UP",           # modern syntax
+  "SIM",          # simplifications
+  "ANN",          # type hints on every function
+  "PT",           # pytest style
+  "N",            # naming
+  "S",            # bandit security checks
+  "RUF",
+]
+ignore = [
+  "S101",  # assert is how pytest checks things
+]
+
+[tool.ruff.lint.per-file-ignores]
+# One line per table by design: adding a table to the suite is a one-line change.
+"testkit/tables.py" = ["E501"]
+# Throwaway passwords for users created and deleted inside a test run.
+"tests/**" = ["S105", "S106"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["testkit", "tests"]
+explicit_package_bases = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["allure", "allure_commons.*"]
+ignore_missing_imports = true

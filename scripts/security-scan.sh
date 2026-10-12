@@ -23,9 +23,11 @@ for tool in docker npx "$PYTHON"; do
 done
 docker info >/dev/null 2>&1 || { echo "security-scan: Docker isn't running" >&2; exit 1; }
 
-# Docker on Windows (Git Bash) wants D:/... paths and no MSYS path rewriting.
+# Docker on Windows (Git Bash) wants D:/... paths, and no MSYS rewriting of the
+# container-side paths (MSYS_NO_PATHCONV on the docker calls only).
 host_path() { if command -v cygpath >/dev/null; then cygpath -m "$1"; else echo "$1"; fi; }
-export MSYS_NO_PATHCONV=1
+# shellcheck source=lib/background.sh
+source "$ROOT/scripts/lib/background.sh"
 
 mkdir -p "$OUT"
 chmod a+w "$OUT" # ZAP's container user writes its reports here
@@ -40,7 +42,10 @@ else
   echo "   (git worktree: scanning the working tree, not the history)"
   scan=(dir /repo)
 fi
-docker run --rm -v "$(host_path "$ROOT"):/repo:ro" -v "$(host_path "$OUT"):/out" \
+# safe.directory: inside the container the checkout belongs to another user,
+# which git otherwise refuses to read.
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(host_path "$ROOT"):/repo:ro" -v "$(host_path "$OUT"):/out" \
+  -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
   "$GITLEAKS_IMAGE" "${scan[@]}" --config /repo/.gitleaks.toml --redact \
   --report-format json --report-path /out/gitleaks.json --exit-code 0 --no-banner
 
@@ -58,11 +63,11 @@ if [ ! -d dist ]; then
     VITE_SUPABASE_ANON_KEY="${VITE_SUPABASE_ANON_KEY:-dummy-anon-key}" npm run build
 fi
 # wrangler serves dist/ with public/_headers and _redirects applied, like Pages.
-WRANGLER_SEND_METRICS=false npx --no-install wrangler pages dev dist \
-  --ip 127.0.0.1 --port "$APP_PORT" --compatibility-date 2025-01-01 \
-  >"$OUT/app-server.log" 2>&1 &
-server=$!
-trap 'kill $server 2>/dev/null || true' EXIT
+export WRANGLER_SEND_METRICS=false
+start_bg "$OUT/app-server.log" npx --no-install wrangler pages dev dist \
+  --ip 127.0.0.1 --port "$APP_PORT" --compatibility-date 2025-01-01
+server=$BG_PID
+trap 'stop_tree $server' EXIT
 for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$APP_PORT/" >/dev/null && break; sleep 1; done
 
 if [ "$(uname -s)" = "Linux" ]; then
@@ -72,7 +77,7 @@ else
 fi
 # -I: report warnings without failing. Passive checks only (headers, cookies,
 # leaked info in pages); the baseline never attacks the app.
-docker run --rm "${network[@]}" -v "$(host_path "$OUT"):/zap/wrk:rw" "$ZAP_IMAGE" \
+MSYS_NO_PATHCONV=1 docker run --rm "${network[@]}" -v "$(host_path "$OUT"):/zap/wrk:rw" "$ZAP_IMAGE" \
   zap-baseline.py -t "$target" -J zap.json -r zap.html -I >"$OUT/zap.log" 2>&1 ||
   echo "   ZAP did not finish; see reports/security/zap.log"
 

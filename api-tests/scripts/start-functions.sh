@@ -25,9 +25,12 @@ FAKE_ANTHROPIC_KEY="sk-ant-test-local-stub-key"
 # "Claude never answers" case finishes in seconds.
 ANTHROPIC_TIMEOUT_MS="${ANTHROPIC_TIMEOUT_MS:-2000}"
 
+# shellcheck source=../../scripts/lib/background.sh
+source "$ROOT/scripts/lib/background.sh"
+
 stop() {
   [ -f "$RUN_DIR/pids" ] || return 0
-  while read -r pid; do kill "$pid" 2>/dev/null || true; done <"$RUN_DIR/pids"
+  while read -r pid; do stop_tree "$pid"; done <"$RUN_DIR/pids"
   rm -f "$RUN_DIR/pids"
 }
 
@@ -41,7 +44,7 @@ fi
 : "${SUPABASE_ANON_KEY:?run 'source api-tests/scripts/local-env.sh' first}"
 
 # The functions only need a directory of static assets to sit beside. Use the
-# built app when there is one, so the same server can be scanned by ZAP.
+# built app when there is one: it's the closest to what production serves.
 ASSETS="$ROOT/dist"
 [ -d "$ASSETS" ] || ASSETS="$ROOT/public"
 
@@ -49,20 +52,20 @@ mkdir -p "$RUN_DIR"
 stop
 
 cd "$ROOT/api-tests"
-"$PYTHON" -m testkit.anthropic_stub --port "$STUB_PORT" >"$RUN_DIR/stub.log" 2>&1 &
-echo $! >>"$RUN_DIR/pids"
+start_bg "$RUN_DIR/stub.log" "$PYTHON" -m testkit.anthropic_stub --port "$STUB_PORT"
+echo "$BG_PID" >>"$RUN_DIR/pids"
 
 cd "$ROOT"
-WRANGLER_SEND_METRICS=false npx --no-install wrangler pages dev "$ASSETS" \
+export WRANGLER_SEND_METRICS=false
+start_bg "$RUN_DIR/wrangler.log" npx --no-install wrangler pages dev "$ASSETS" \
   --ip 127.0.0.1 --port "$FUNCTIONS_PORT" \
   --compatibility-date 2025-01-01 \
   --binding "VITE_SUPABASE_URL=$SUPABASE_URL" \
   --binding "VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" \
   --binding "ANTHROPIC_API_KEY=$FAKE_ANTHROPIC_KEY" \
   --binding "ANTHROPIC_BASE_URL=http://127.0.0.1:$STUB_PORT" \
-  --binding "ANTHROPIC_TIMEOUT_MS=$ANTHROPIC_TIMEOUT_MS" \
-  >"$RUN_DIR/wrangler.log" 2>&1 &
-echo $! >>"$RUN_DIR/pids"
+  --binding "ANTHROPIC_TIMEOUT_MS=$ANTHROPIC_TIMEOUT_MS"
+echo "$BG_PID" >>"$RUN_DIR/pids"
 
 # Ready when an unauthenticated trainer call is refused (the function is
 # loaded and answering) and the stub answers its control endpoint.

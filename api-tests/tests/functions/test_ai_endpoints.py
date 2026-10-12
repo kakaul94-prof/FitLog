@@ -160,6 +160,11 @@ def test_scan_plate_failures_return_one_clear_message(
         pytest.param("http://192.168.1.1/", id="private-192"),
         pytest.param("http://169.254.169.254/latest/meta-data/", id="cloud-metadata"),
         pytest.param("http://host.docker.internal:54321/", id="internal-name"),
+        pytest.param("http://localhost.:54321/", id="localhost-with-trailing-dot"),
+        pytest.param("http://intranet/recipes", id="single-label-name"),
+        pytest.param("http://api.localhost:54321/", id="dot-localhost"),
+        pytest.param("http://203.0.113.7/recipe", id="any-ip-address"),
+        pytest.param("http://[2001:db8::1]/recipe", id="any-ipv6-address"),
     ],
 )
 def test_import_recipe_refuses_internal_and_odd_urls_before_fetching(

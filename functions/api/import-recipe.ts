@@ -76,8 +76,14 @@ function parseContent(res: unknown): unknown {
   return JSON.parse(text)
 }
 
-// Reject non-http(s) and obvious internal / link-local / private hosts (basic
-// SSRF hygiene — this endpoint fetches an arbitrary user-supplied URL).
+// This endpoint fetches a URL the user typed, so it must never be pointed at
+// anything internal (SSRF hygiene). Recipe links are web addresses, so refuse
+// IP literals outright: IPv4 in any notation (the URL parser already turns
+// 0x7f.1 or 2130706433 into 127.0.0.1) and every IPv6 form, including
+// IPv4-mapped ones like [::ffff:7f00:1] that a range check misses. Also refuse
+// names that only resolve on a local network. Cloudflare's edge can't reach
+// private addresses anyway; this keeps the rule explicit and testable.
+// Guarded by api-tests/tests/functions/test_ai_endpoints.py.
 function safeUrl(raw: string): URL | null {
   let u: URL
   try {
@@ -87,35 +93,49 @@ function safeUrl(raw: string): URL | null {
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
   if (u.username || u.password) return null
-  const host = u.hostname.toLowerCase()
+  const host = u.hostname.toLowerCase().replace(/\.$/, '')
+  const ipLiteral = host.startsWith('[') || /^\d+(\.\d+){3}$/.test(host)
   if (
-    host === 'localhost' ||
-    host === '0.0.0.0' ||
-    host === '::1' ||
-    host === '[::1]' ||
+    ipLiteral ||
+    !host.includes('.') || // localhost, intranet single-label names
+    host.endsWith('.localhost') ||
     host.endsWith('.local') ||
-    host.endsWith('.internal') ||
-    /^127\./.test(host) ||
-    /^10\./.test(host) ||
-    /^192\.168\./.test(host) ||
-    /^169\.254\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+    host.endsWith('.internal')
   )
     return null
   return u
 }
 
-async function fetchPage(url: URL): Promise<string> {
-  const res = await fetch(url.toString(), {
-    headers: {
-      // Some sites 403 an empty UA; identify as a normal client.
-      'user-agent':
-        'Mozilla/5.0 (compatible; FitLogRecipeBot/1.0; +https://fitlog-9wl.pages.dev)',
-      accept: 'text/html,application/xhtml+xml',
-    },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(9000),
-  })
+const MAX_REDIRECTS = 3
+
+async function fetchPage(start: URL): Promise<string> {
+  const signal = AbortSignal.timeout(9000)
+  let url = start
+  let res: Response
+  for (let hop = 0; ; hop++) {
+    res = await fetch(url.toString(), {
+      headers: {
+        // Some sites 403 an empty UA; identify as a normal client.
+        'user-agent':
+          'Mozilla/5.0 (compatible; FitLogRecipeBot/1.0; +https://fitlog-9wl.pages.dev)',
+        accept: 'text/html,application/xhtml+xml',
+      },
+      // Followed by hand, so every hop passes the same check as the link itself:
+      // a public page must not be able to bounce us to an internal address.
+      redirect: 'manual',
+      signal,
+    })
+    const location = res.headers.get('location')
+    if (res.status < 300 || res.status >= 400 || !location) break
+    let next: URL | null = null
+    try {
+      next = hop < MAX_REDIRECTS ? safeUrl(new URL(location, url).href) : null
+    } catch {
+      next = null
+    }
+    if (!next) throw new Error('the link redirects somewhere we will not fetch')
+    url = next
+  }
   if (!res.ok) throw new Error(`page returned ${res.status}`)
   const ct = (res.headers.get('content-type') ?? '').toLowerCase()
   if (ct && !/html|json|text|xml/.test(ct)) throw new Error('not a web page')

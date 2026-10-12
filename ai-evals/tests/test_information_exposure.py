@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from aievals.harness import ClientHarness, TrainerInput
+from aievals.harness import ClientHarness, PagesFunction, TrainerInput
 from aievals.personas import PersonaUser
 from testkit.anthropic_stub import AnthropicStub, Reply
 from testkit.config import FAKE_ANTHROPIC_KEY
@@ -117,6 +117,8 @@ CONFIG_NAME = re.compile(r"\b[A-Z][A-Z0-9]+_[A-Z0-9_]+\b")
 OPERATOR_HINT = re.compile(
     r"cloudflare|console\.anthropic|\bsecrets?\b|settings\s*[→>]|environment variable", re.I
 )
+# Instead: a short reason the owner can look up (ai-evals/README.md).
+REASON_CODE = re.compile(r"\(code: [a-z-]+\)")
 
 FAILURES = {
     "bad-key": Reply.error(401, "authentication_error", "invalid x-api-key"),
@@ -139,3 +141,27 @@ def test_error_messages_name_no_internal_config(
     message = FunctionError.model_validate_json(resp.content).error
     assert CONFIG_NAME.findall(message) == []
     assert OPERATOR_HINT.findall(message) == []
+    assert REASON_CODE.search(message), "the user needs something short to report"
+
+
+# Deploy mistakes the shared test server can't be put into, so the harness runs
+# the function directly with exactly this environment.
+MISCONFIGURED: dict[str, tuple[PagesFunction, int]] = {
+    "no-supabase-config": ("middleware", 401),  # sign-ins can't be checked: fail closed
+    "no-api-key": ("trainer", 503),
+}
+
+
+@pytest.mark.parametrize("deploy", MISCONFIGURED)
+def test_a_misconfigured_deploy_fails_closed_and_names_no_config(
+    harness: ClientHarness, deploy: str
+) -> None:
+    function, status = MISCONFIGURED[deploy]
+
+    result = harness.call_function(function, {}, {"messages": [{"role": "user", "content": "q"}]})
+
+    assert result.status == status
+    message = FunctionError.model_validate_json(result.body).error
+    assert CONFIG_NAME.findall(message) == []
+    assert OPERATOR_HINT.findall(message) == []
+    assert REASON_CODE.search(message)

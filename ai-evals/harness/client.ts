@@ -9,9 +9,15 @@
 //     -> [{"context": "...", "memory": ["..."]}]
 //   {"command": "parse", "replies": ["...raw streamed reply..."]}
 //     -> [{"text": "...", "remember": "..." | null}]
+//   {"command": "call", "function": "middleware" | "trainer", "env": {...}, "body": {...}}
+//     -> {"status": 401, "body": "..."}   (a Pages Function run with exactly that env,
+//        for deploy mistakes the shared test server can't be put into)
 //
 // Built by build.mjs; see ai-evals/aievals/harness.py.
 import './env'
+
+import { onRequest as apiMiddleware } from '../../functions/api/_middleware'
+import { onRequestPost as trainerFunction } from '../../functions/api/trainer'
 
 import { supabase } from '@/lib/supabase'
 import { displayText, parseRemember } from '@/lib/trainer'
@@ -23,9 +29,15 @@ interface Credentials {
   workoutId?: string
 }
 
-type Request =
+type HarnessRequest =
   | { command: 'context'; users: Credentials[] }
   | { command: 'parse'; replies: string[] }
+  | {
+      command: 'call'
+      function: 'middleware' | 'trainer'
+      env: Record<string, string>
+      body: unknown
+    }
 
 /** What TrainerChat.tsx posts for this user: the snapshot plus saved memory. */
 async function trainerInput(user: Credentials) {
@@ -46,7 +58,7 @@ async function trainerInput(user: Credentials) {
   }
 }
 
-async function handle(request: Request): Promise<unknown> {
+async function handle(request: HarnessRequest): Promise<unknown> {
   switch (request.command) {
     case 'context': {
       const out = []
@@ -58,6 +70,22 @@ async function handle(request: Request): Promise<unknown> {
         text: displayText(raw),
         remember: parseRemember(raw),
       }))
+    case 'call': {
+      const call = new Request('http://localhost/api/trainer', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer test' },
+        body: JSON.stringify(request.body),
+      })
+      const res =
+        request.function === 'middleware'
+          ? await apiMiddleware({
+              request: call,
+              env: request.env,
+              next: async () => new Response('reached the function'),
+            })
+          : await trainerFunction({ request: call, env: request.env })
+      return { status: res.status, body: await res.text() }
+    }
   }
 }
 
@@ -68,7 +96,7 @@ async function readStdin(): Promise<string> {
 }
 
 try {
-  const result = await handle(JSON.parse(await readStdin()) as Request)
+  const result = await handle(JSON.parse(await readStdin()) as HarnessRequest)
   process.stdout.write(JSON.stringify(result))
 } catch (e) {
   process.stderr.write(`${e instanceof Error ? e.message : String(e)}\n`)

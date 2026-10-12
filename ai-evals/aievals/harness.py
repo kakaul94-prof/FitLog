@@ -12,13 +12,16 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from aievals.dataset import ROOT
 from testkit.auth import SignedInUser
 
 BUILD_SCRIPT = ROOT / "harness" / "build.mjs"
 BUNDLE = ROOT / "harness" / "dist" / "client.mjs"
+
+# Pages Functions the harness can run directly with a chosen environment.
+PagesFunction = Literal["middleware", "trainer"]
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,12 @@ class ParsedReply:
     raw: str  # the streamed text, memory marker and all
     text: str  # what the chat bubble shows
     remember: str | None  # the fact offered on a "Remember" chip, if any
+
+
+@dataclass(frozen=True)
+class FunctionResult:
+    status: int
+    body: str
 
 
 class HarnessError(RuntimeError):
@@ -73,6 +82,13 @@ class ClientHarness:
 
     def parse_one(self, reply: str) -> ParsedReply:
         return self.parse([reply])[0]
+
+    def call_function(
+        self, function: PagesFunction, env: dict[str, str], body: object
+    ) -> FunctionResult:
+        """Run a Pages Function with exactly `env`, e.g. a deploy missing a secret."""
+        request = {"command": "call", "function": function, "env": env, "body": body}
+        return FunctionResult(**self._run(request))
 
     def _run(self, request: dict[str, Any]) -> Any:  # noqa: ANN401 (JSON from the harness)
         if not BUNDLE.exists():

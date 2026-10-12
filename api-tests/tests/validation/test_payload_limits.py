@@ -6,6 +6,8 @@ an attempt to bloat the database. Each free-text column should refuse it with a
 """
 
 import pytest
+from psycopg import Connection
+from psycopg.rows import DictRow
 
 from testkit.factories import build_row
 from testkit.models import parse_error
@@ -56,3 +58,27 @@ def test_an_oversized_value_is_refused_cleanly(
 
     assert resp.status_code == 400, f"{resp.status_code}: {resp.text[:300]}"
     assert parse_error(resp).code == CHECK
+
+
+def test_every_text_column_has_a_size_limit(db: Connection[DictRow]) -> None:
+    """A new text column must ship with a limit (supabase/migration_text_limits.sql).
+
+    A column that only allows a fixed list of values (CHECK ... in (...)) counts.
+    """
+    unbounded = db.execute(
+        """
+        select c.table_name || '.' || c.column_name as col
+        from information_schema.columns c
+        where c.table_schema = 'public' and c.data_type = 'text'
+          and not exists (
+            select 1 from pg_constraint k
+            join pg_attribute a on a.attrelid = k.conrelid and a.attnum = any (k.conkey)
+            where k.contype = 'c'
+              and k.conrelid = format('public.%I', c.table_name)::regclass
+              and a.attname = c.column_name
+          )
+        order by 1
+        """
+    ).fetchall()
+
+    assert [r["col"] for r in unbounded] == []

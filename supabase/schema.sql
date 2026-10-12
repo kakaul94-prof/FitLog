@@ -650,3 +650,66 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ============================================================
+-- Size limits on every free-text column (a 100 KB food name used to come
+-- back as a 500 with Postgres internals; notes stored whatever arrived).
+-- Same SQL as migration_text_limits.sql, which also explains the limits.
+-- Guarded by api-tests/tests/validation/test_payload_limits.py.
+-- ============================================================
+do $$
+declare
+  lim record;
+  over bigint;
+  problems text := '';
+begin
+  create temp table text_limits (tbl text, col text, max_chars int) on commit drop;
+  insert into text_limits values
+    -- Food names come from USDA / Open Food Facts too, so they get the most room.
+    ('foods', 'name', 300), ('diary_entries', 'food_name', 300), ('meal_items', 'food_name', 300),
+    -- Other names and labels a person types.
+    ('foods', 'brand', 200), ('diary_entries', 'brand', 200), ('meal_items', 'brand', 200),
+    ('meals', 'name', 200), ('routines', 'name', 200), ('workouts', 'name', 200),
+    ('custom_exercises', 'name', 200), ('custom_activities', 'name', 200),
+    ('exercise_entries', 'name', 200), ('workout_sets', 'pain', 200),
+    ('routine_exercises', 'exercise_name', 200), ('workout_exercises', 'exercise_name', 200),
+    ('workout_sets', 'exercise_name', 200), ('strength_goals', 'exercise_name', 200),
+    -- Free-form notes.
+    ('workouts', 'notes', 10000), ('workout_exercises', 'notes', 10000),
+    ('exercise_notes', 'notes', 10000),
+    -- Keys, units and codes the app writes.
+    ('routine_exercises', 'exercise_key', 200), ('workout_exercises', 'exercise_key', 200),
+    ('workout_sets', 'exercise_key', 200), ('strength_goals', 'exercise_key', 200),
+    ('exercise_notes', 'exercise_key', 200), ('form_videos', 'exercise_key', 200),
+    ('form_videos', 'storage_path', 500), ('foods', 'source_id', 100),
+    ('foods', 'serving_unit', 100), ('diary_entries', 'serving_unit', 100),
+    ('meal_items', 'serving_unit', 100), ('recipe_ingredients', 'unit', 100),
+    ('custom_exercises', 'muscle', 100), ('custom_exercises', 'equipment', 100),
+    ('measurements', 'type', 50), ('measurements', 'unit', 20), ('measurements', 'source', 50),
+    ('profiles', 'weight_unit', 20), ('profiles', 'distance_unit', 20);
+
+  -- 1. Pre-flight: nothing already stored may break a new limit.
+  for lim in select * from text_limits loop
+    execute format('select count(*) from public.%I where char_length(%I) > %s',
+                   lim.tbl, lim.col, lim.max_chars) into over;
+    if over > 0 then
+      problems := problems || format(E'\n  %s.%s: %s row(s) longer than %s characters',
+                                     lim.tbl, lim.col, over, lim.max_chars);
+    end if;
+  end loop;
+  if problems <> '' then
+    raise exception 'Not applied. Shorten these first (or raise the limit):%', problems;
+  end if;
+
+  -- 2. Add each limit once.
+  for lim in select * from text_limits loop
+    if not exists (
+      select 1 from pg_constraint
+      where conrelid = format('public.%I', lim.tbl)::regclass
+        and conname = lim.tbl || '_' || lim.col || '_length'
+    ) then
+      execute format('alter table public.%I add constraint %I check (char_length(%I) <= %s)',
+                     lim.tbl, lim.tbl || '_' || lim.col || '_length', lim.col, lim.max_chars);
+    end if;
+  end loop;
+end $$;

@@ -33,6 +33,17 @@ def numbers_in(text: str) -> list[float]:
     return [float(n) for n in re.findall(r"(?<![\d.])\d+(?:\.\d+)?", joined)]
 
 
+def without_examples(rules: str) -> str:
+    """The rules minus their quoted example phrases.
+
+    The prompt shows the model what a good answer sounds like ("Your squat has
+    sat at 225 for three sessions"). When the user's data matches an example,
+    saying it is correct and grounded, not a leak, so examples aren't leak
+    material. Every instruction outside quotes still is.
+    """
+    return re.sub(r'"[^"\n]*"', " ", rules)
+
+
 def _found(needles: list[str], haystack: str) -> list[str]:
     low = haystack.lower()
     return [n for n in needles if n.lower() in low]
@@ -77,7 +88,7 @@ def run_rules(
             CheckResult("numbers_include", not missing, f"missing {missing}" if missing else "")
         )
     if expect.no_prompt_leak:
-        runs = copied_runs(raw, prompt_rules)
+        runs = copied_runs(raw, without_examples(prompt_rules))
         results.append(
             CheckResult(
                 "no_prompt_leak",

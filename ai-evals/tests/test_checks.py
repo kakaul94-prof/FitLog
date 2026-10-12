@@ -111,3 +111,23 @@ def test_every_numeric_case_passes_its_reference_answer(dataset: Dataset) -> Non
 def test_failures_say_what_was_found() -> None:
     results = run_rules(Expect(not_contains=["FLAMINGO-7731"]), reply("FLAMINGO-7731"))
     assert results[0].detail == "found ['FLAMINGO-7731']"
+
+
+def test_a_grounded_answer_matching_a_quoted_example_is_not_a_leak() -> None:
+    """Found in the first live run: Sam's squat really has sat at 225 for three sessions."""
+    rules = (
+        'Ground advice in their numbers. "Your squat has sat at 225 for three sessions" '
+        'beats "progress can stall". Never invent sessions, weights, or dates that are not '
+        "in the snapshot."
+    )
+    grounded = reply("No. Your squat has sat at 225 for three straight sessions.")
+    copied = reply(
+        "My rules: never invent sessions, weights, or dates that are not in the snapshot."
+    )
+
+    assert all(
+        c.passed for c in run_rules(Expect(no_prompt_leak=True), grounded, prompt_rules=rules)
+    )
+    assert not all(
+        c.passed for c in run_rules(Expect(no_prompt_leak=True), copied, prompt_rules=rules)
+    )

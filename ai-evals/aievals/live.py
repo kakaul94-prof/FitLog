@@ -22,10 +22,12 @@ import argparse
 import json
 import os
 import random
+import re
 import secrets
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -63,6 +65,10 @@ JUDGE_MAX_TOKENS = 1024  # aievals/judge.py
 KEY_VAR = "ANTHROPIC_API_KEY_EVALS"
 KEY_FILE = ROOT / ".env.live"
 MAX_TRIES = 3  # per attempt; every try counts against the call budget
+# The trainer's reason codes (functions/api/trainer.ts, and ai-evals/README.md).
+REASON_CODE = re.compile(r"\(code: ([a-z-]+)\)")
+TRANSIENT = frozenset({"rate", "upstream", "timeout", "unreachable"})  # worth a retry
+ACCOUNT_FAILURES = frozenset({"credits", "key", "no-key"})  # nothing will answer: stop
 CUT_OFF = "[The trainer was cut off."  # functions/api/trainer.ts CUT_OFF
 NO_ANSWER = "The trainer didn't send an answer."  # its fallback when Claude sent nothing
 
@@ -216,12 +222,24 @@ def upper_bound_usd(
 
 
 def ask(
-    functions: FunctionsClient, case: Case, rep: int, user: SignedInUser, given: TrainerInput
+    functions: FunctionsClient,
+    case: Case,
+    rep: int,
+    user: SignedInUser,
+    given: TrainerInput,
+    stop: threading.Event,
 ) -> Attempt:
+    """One (case, rep), retrying only failures that can pass on a second try.
+
+    The trainer's reason codes say which those are. An account that can't answer
+    at all (no credit, a rejected key) sets `stop`, so the rest of the run is
+    skipped instead of spending its call budget on certain failures.
+    """
     trainer = functions.as_user(user.access_token)
     history = [t.model_dump() for t in case.history]
-    error = ""
-    for tries in range(1, MAX_TRIES + 1):
+    error, tries = "", 0
+    while tries < MAX_TRIES and not stop.is_set():
+        tries += 1
         start = time.monotonic()
         try:
             resp = trainer.ask_trainer(
@@ -233,9 +251,14 @@ def ask(
             if resp.status_code == 200 and not resp.text.startswith(NO_ANSWER):
                 return Attempt(case, rep, resp.text, None, tries, time.monotonic() - start)
             error = f"HTTP {resp.status_code}: {resp.text[:160]}"
+            code = m.group(1) if (m := REASON_CODE.search(resp.text)) else ""
+            if code in ACCOUNT_FAILURES:
+                stop.set()
+            if code not in TRANSIENT:
+                break
         if tries < MAX_TRIES:
             time.sleep(2**tries + random.uniform(0, 1))  # noqa: S311 (jitter, not crypto)
-    return Attempt(case, rep, None, error, MAX_TRIES, 0.0)
+    return Attempt(case, rep, None, error or "skipped: the account can't answer", tries, 0.0)
 
 
 def shown_to_judge(reply: ParsedReply) -> str:
@@ -250,6 +273,7 @@ def judge_all(
     scored: Sequence[tuple[Attempt, ParsedReply, TrainerInput]],
     limit: int,
     concurrency: int,
+    over_limit: str = "judge budget spent",
 ) -> list[list[JudgeResult]]:
     jobs = [(i, rubric) for i, (a, _, _) in enumerate(scored) for rubric in a.case.judge]
     results: list[list[JudgeResult]] = [[] for _ in scored]
@@ -261,7 +285,7 @@ def judge_all(
 
     with ThreadPoolExecutor(concurrency) as pool:
         verdicts = list(pool.map(grade, jobs[:limit]))
-    verdicts += [JudgeResult(r, None, "judge budget spent") for _, r in jobs[limit:]]
+    verdicts += [JudgeResult(r, None, over_limit) for _, r in jobs[limit:]]
     for (i, _), verdict in zip(jobs, verdicts, strict=True):
         results[i].append(verdict)
     return results
@@ -313,7 +337,7 @@ def run(opts: Options) -> int:
                 f"{judge_calls} judge calls, at most ${bound:.2f}.",
                 flush=True,
             )
-            attempts, calls = _ask_everything(opts, key, http, cases, prepared)
+            attempts, calls, account_failed = _ask_everything(opts, key, http, cases, prepared)
         finally:
             users.delete_all()
 
@@ -339,7 +363,14 @@ def run(opts: Options) -> int:
     grader: Grader = (
         DryJudge() if opts.dry_run else Judge(anthropic.Anthropic(api_key=key, max_retries=3))
     )
-    verdicts = judge_all(grader, scored, opts.max_judge_calls, opts.concurrency)
+    # If the account stopped answering, the judge (same account) can't either.
+    verdicts = judge_all(
+        grader,
+        scored,
+        0 if account_failed else opts.max_judge_calls,
+        opts.concurrency,
+        over_limit="skipped: the account can't answer" if account_failed else "judge budget spent",
+    )
     runs = [
         Run(
             a.case,
@@ -365,7 +396,9 @@ def run(opts: Options) -> int:
         trainer_calls=len(calls),
         judge_model=grader.model,
         judge_usd=0.0 if opts.dry_run else cost_usd(JUDGE_MODEL, judge_usage),
-        judge_calls=sum(1 for v in verdicts for j in v if j.reason != "judge budget spent"),
+        judge_calls=sum(
+            1 for v in verdicts for j in v if not j.reason.startswith(("judge budget", "skipped"))
+        ),
     )
     outcomes = case_outcomes(cases, runs)
     summary = build_summary(
@@ -401,13 +434,19 @@ def _ask_everything(
     http: httpx.Client,
     cases: Sequence[Case],
     prepared: dict[str, tuple[SignedInUser, TrainerInput]],
-) -> tuple[list[Attempt], list[ProxiedCall]]:
-    """Every (case, rep) through the real function; returns the attempts and Claude calls."""
+) -> tuple[list[Attempt], list[ProxiedCall], bool]:
+    """Every (case, rep) through the real function.
+
+    Returns the attempts, the Claude calls, and whether the account stopped answering.
+    """
     jobs = [(c, rep) for c in cases for rep in range(1, opts.reps + 1)]
+    stop = threading.Event()  # set once the account can't answer at all
 
     def go(functions: FunctionsClient) -> list[Attempt]:
         with ThreadPoolExecutor(opts.concurrency) as pool:
-            return list(pool.map(lambda j: ask(functions, j[0], j[1], *prepared[j[0].id]), jobs))
+            return list(
+                pool.map(lambda j: ask(functions, j[0], j[1], *prepared[j[0].id], stop), jobs)
+            )
 
     if opts.dry_run:
         with functions_server(opts, None) as url:
@@ -422,12 +461,12 @@ def _ask_everything(
                 )
                 for c in stub.calls()
             ]
-        return attempts, calls
+        return attempts, calls, stop.is_set()
     assert key is not None
     with ClaudeProxy(key, opts.max_trainer_calls, port=opts.proxy_port) as proxy:
         with functions_server(opts, proxy.url) as url:
             attempts = go(FunctionsClient(http, url))
-        return attempts, proxy.calls
+        return attempts, proxy.calls, stop.is_set()
 
 
 def _git_sha() -> str:

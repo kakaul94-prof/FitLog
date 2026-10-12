@@ -135,12 +135,13 @@ class _Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("content-length") or 0))
         if not self.proxy._admit():
             # Shaped like the API's own error, so the function handles it as one.
+            # A 400, not a 429: retrying a spent budget would only be refused again.
             self._send_json(
-                429,
+                400,
                 {
                     "type": "error",
                     "error": {
-                        "type": "rate_limit_error",
+                        "type": "invalid_request_error",
                         "message": "the eval run's call budget is spent",
                     },
                 },

@@ -6,6 +6,7 @@ of this were wrong, a live run would report numbers nobody should trust.
 """
 
 import json
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -18,7 +19,8 @@ from aievals.checks import CheckResult
 from aievals.dataset import Case, Category, Dataset, Expect
 from aievals.harness import ParsedReply, TrainerInput
 from aievals.judge import Judge, judge_prompt
-from aievals.live import parse_args, run, upper_bound_usd
+from aievals.live import ask, parse_args, run, upper_bound_usd
+from aievals.personas import PersonaUser
 from aievals.pricing import Usage, cost_usd
 from aievals.proxy import ClaudeProxy
 from aievals.report import HISTORY_LIMIT, Cost, append_history, build_summary
@@ -26,6 +28,7 @@ from aievals.scoring import JudgeResult, Run, case_outcomes, category_gates
 from testkit.anthropic_stub import AnthropicStub, Reply
 from testkit.auth import SignedInUser
 from testkit.config import Settings
+from testkit.functions import FunctionsClient
 
 pytestmark = pytest.mark.functions
 
@@ -67,7 +70,7 @@ def test_the_proxy_adds_the_real_key_records_usage_and_refuses_past_its_budget(
         ]
         recorded = proxy.calls
 
-    assert statuses == [200, 200, 429]
+    assert statuses == [200, 200, 400]  # a 400: a spent budget isn't worth a retry
     assert proxy.refused == 1
     assert [c.headers["x-api-key"] for c in claude.calls()] == [
         "sk-ant-real-key-only-the-proxy-holds"
@@ -236,12 +239,11 @@ def summary(errors: int = 0, failing: bool = False, dry_run: bool = False) -> di
     )
 
 
-def test_a_run_with_unscored_attempts_is_incomplete_not_passed() -> None:
-    assert (summary()["gate"], summary(errors=2)["gate"], summary(failing=True)["gate"]) == (
-        "pass",
-        "incomplete",
-        "fail",
-    )
+def test_a_run_with_unscored_attempts_is_incomplete_not_passed_or_failed() -> None:
+    assert summary()["gate"] == "pass"
+    assert summary(failing=True)["gate"] == "fail"
+    assert summary(errors=2)["gate"] == "incomplete"
+    assert summary(errors=2, failing=True)["gate"] == "incomplete"
 
 
 def test_the_history_keeps_the_newest_runs(tmp_path: Path) -> None:
@@ -301,3 +303,31 @@ def test_calibration_picks_blind_replies_across_rubrics_and_verdicts(tmp_path: P
     assert len({i.source for i in real}) == 12, "one reply per case while there are enough"
     assert [i.source.startswith("known negative") for i in items[12:]] == [True] * 3
     assert "passed" not in json.dumps([i.model_dump() for i in items]), "labels must be blind"
+
+
+# -- retries ---------------------------------------------------------------------------------
+
+
+def test_a_failure_that_can_pass_on_a_retry_is_retried(
+    functions: FunctionsClient, claude: AnthropicStub, sam: PersonaUser, sam_input: TrainerInput
+) -> None:
+    claude.queue(Reply.error(429, "rate_limit_error", "slow down"), Reply.stream("Squat 230."))
+
+    attempt = ask(functions, case("retry"), 1, sam.user, sam_input, threading.Event())
+
+    assert (attempt.raw, attempt.tries) == ("Squat 230.", 2)
+
+
+def test_an_account_that_cannot_answer_stops_the_run_without_retries(
+    functions: FunctionsClient, claude: AnthropicStub, sam: PersonaUser, sam_input: TrainerInput
+) -> None:
+    """Found live: credit errors were retried until the call budget ran out."""
+    claude.queue(Reply.error(400, "invalid_request_error", "Your credit balance is too low"))
+    stop = threading.Event()
+
+    first = ask(functions, case("broke"), 1, sam.user, sam_input, stop)
+    second = ask(functions, case("broke"), 2, sam.user, sam_input, stop)
+
+    assert (first.raw, first.tries, stop.is_set()) == (None, 1, True)
+    assert (second.raw, second.tries) == (None, 0)
+    assert len(claude.calls()) == 1

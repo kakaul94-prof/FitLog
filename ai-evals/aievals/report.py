@@ -56,8 +56,9 @@ def build_summary(
         "judge_model": cost.judge_model,
         "reps": reps,
         "cases": len(outcomes),
-        # "incomplete": every bar met, but some attempts never produced a reply to score.
-        "gate": "fail" if not all(g.met for g in gates) else "incomplete" if errors else "pass",
+        # "incomplete": some attempts never produced a reply to score, so the run
+        # can't claim a pass or a fail; each category still shows what it saw.
+        "gate": "incomplete" if errors else "pass" if all(g.met for g in gates) else "fail",
         "categories": {
             g.category: {
                 "met": g.met,

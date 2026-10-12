@@ -120,13 +120,20 @@ function cleanMessages(input: unknown): ChatMessage[] {
     const role = m?.role === 'assistant' ? 'assistant' : 'user'
     const content = typeof m?.content === 'string' ? m.content.trim() : ''
     if (!content) continue
-    // Collapse a repeated role into the previous turn rather than dropping it.
+    // Collapse a repeated role into the previous turn rather than dropping it,
+    // re-capping the merged turn: otherwise one huge prompt split across many
+    // back-to-back turns would slip past MAX_MESSAGE_CHARS.
     const prev = out[out.length - 1]
-    if (prev && prev.role === role) prev.content += `\n\n${content}`
+    if (prev && prev.role === role)
+      prev.content = `${prev.content}\n\n${content}`.slice(0, MAX_MESSAGE_CHARS)
     else out.push({ role, content: content.slice(0, MAX_MESSAGE_CHARS) })
   }
-  while (out.length && out[0].role !== 'user') out.shift()
-  return out.slice(-MAX_TURNS)
+  // Trim to the most recent turns FIRST, then drop any leading assistant turn:
+  // a chat always ends on the user's question, so the last MAX_TURNS (an even
+  // number) of a longer chat would otherwise start on an assistant reply.
+  const recent = out.slice(-MAX_TURNS)
+  while (recent.length && recent[0].role !== 'user') recent.shift()
+  return recent
 }
 
 function cleanMemory(input: unknown): string[] {

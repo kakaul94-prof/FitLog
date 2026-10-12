@@ -96,11 +96,15 @@ class Attempt:
 
 
 def load_key() -> str | None:
-    """The live tier's Anthropic key: from the environment, else ai-evals/.env.live."""
+    """The live tier's Anthropic key: from the environment, else ai-evals/.env.live.
+
+    Read as utf-8-sig: Notepad and PowerShell may save the file with a byte-order
+    mark, which would otherwise hide the variable name on the first line.
+    """
     if key := os.environ.get(KEY_VAR, "").strip():
         return key
     if KEY_FILE.exists():
-        for line in KEY_FILE.read_text(encoding="utf-8").splitlines():
+        for line in KEY_FILE.read_text(encoding="utf-8-sig").splitlines():
             name, _, value = line.partition("=")
             if name.strip() == KEY_VAR and value.strip():
                 return value.strip().strip("\"'")

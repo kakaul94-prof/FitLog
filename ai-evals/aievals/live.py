@@ -111,6 +111,20 @@ def load_key() -> str | None:
     return None
 
 
+def check_key(key: str) -> None:
+    """Fail in a second, for free, if the key can't use both models (no tokens spent)."""
+    client = anthropic.Anthropic(api_key=key, max_retries=1, timeout=20)
+    try:
+        for model in (TRAINER_MODEL, JUDGE_MODEL):
+            client.models.retrieve(model)
+    except anthropic.AuthenticationError:
+        sys.exit(f"The Anthropic API rejected the key in {KEY_VAR}: check it, or create a new one.")
+    except anthropic.NotFoundError:
+        sys.exit(f"The key can't use {model}: check the workspace's model access.")
+    except anthropic.APIError as e:
+        sys.exit(f"Couldn't reach the Anthropic API to check the key ({type(e).__name__}).")
+
+
 def select(dataset: Dataset, opts: Options) -> list[Case]:
     cases = dataset.cases
     if opts.only:
@@ -273,6 +287,8 @@ def run(opts: Options) -> int:
         )
         return 2
 
+    if key is not None:
+        check_key(key)
     run_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + ("-dry" if opts.dry_run else "")
     out = REPORTS / run_id
     ClientHarness.build()

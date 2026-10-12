@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+# The bundled Node harness (built at test start from harness/*.ts + src/lib)
+harness/dist/
+# The live tier's Anthropic key for local runs. Never commit it.
+.env.live

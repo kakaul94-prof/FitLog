@@ -18,6 +18,7 @@ import { buildRun, parseJobResults, summaryMarkdown } from './lib.mjs'
 const SOURCES = [
   { key: 'e2e', file: 'playwright.json', adapt: (r) => fromPlaywright(r) },
   { key: 'api', file: 'api-junit.xml', adapt: (xml) => fromJUnit(xml) },
+  { key: 'ai', file: 'ai-evals-junit.xml', adapt: (xml) => fromJUnit(xml, { root: 'ai-evals' }) },
   { key: 'unit', file: 'vitest.json', adapt: (r) => fromVitest(r) },
 ]
 

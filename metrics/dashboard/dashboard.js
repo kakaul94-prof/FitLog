@@ -7,8 +7,8 @@
 // shows up with no dashboard change. A new kind (e.g. "a11y" from axe, "load"
 // from k6) is ignored until it gets panels of its own, so it can't break the page.
 
-const LABELS = { e2e: 'E2E', api: 'API', unit: 'Unit' }
-const ORDER = ['e2e', 'api', 'unit'] // top of the test pyramid first
+const LABELS = { e2e: 'E2E', api: 'API', ai: 'AI evals', unit: 'Unit' }
+const ORDER = ['e2e', 'api', 'ai', 'unit'] // top of the test pyramid first
 const SLOTS = ['--s1', '--s2', '--s3', '--s4']
 const RECENT = 20
 

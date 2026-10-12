@@ -76,7 +76,7 @@ export function runStatus(run) {
 }
 
 const ICON = { passed: '✅', flaky: '⚠️', failed: '❌' }
-const LABEL = { e2e: 'E2E', api: 'API', unit: 'Unit' }
+const LABEL = { e2e: 'E2E', api: 'API', ai: 'AI evals', unit: 'Unit' }
 const md = (s) => String(s).replaceAll('|', '\\|')
 
 /** Markdown for the GitHub Actions job summary (shown on every run, PRs included). */

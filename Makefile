@@ -4,11 +4,12 @@
 #
 # First time: npm ci, then create the API suite's environment:
 #   python3 -m venv api-tests/.venv && api-tests/.venv/bin/pip install -r api-tests/requirements.txt
+#   python3 -m venv ai-evals/.venv && ai-evals/.venv/bin/pip install -r ai-evals/requirements.txt
 
 SHELL := bash
 RUN := bash scripts/test-all.sh
 
-.PHONY: help stack-up test-unit test-api test-e2e test-security test report stack-down
+.PHONY: help stack-up test-unit test-api test-ai test-e2e test-security test report stack-down
 
 help: ## List the targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{ printf "  make %-14s ", $$1; print $$2 }'
@@ -22,6 +23,9 @@ test-unit: ## Vitest unit tests
 test-api: ## API, database and security tests (pytest + pytest-bdd), JUnit + Allure output
 	@$(RUN) test-api
 
+test-ai: ## AI trainer evals, tier 1: Claude replaced by a scripted stub (no key, no cost)
+	@$(RUN) test-ai
+
 test-e2e: ## Playwright end-to-end tests, in their container
 	@$(RUN) test-e2e
 
@@ -31,7 +35,7 @@ test-security: ## Security scans: gitleaks, npm audit, pip-audit, OWASP ZAP (rep
 test: ## Every layer, bottom of the pyramid first; stops at the first failure
 	@$(RUN) test
 
-report: ## Build the Allure report from the last API run and open it
+report: ## Build the Allure report from the last API and AI-eval runs and open it
 	@$(RUN) report
 
 stack-down: ## Stop the local stack

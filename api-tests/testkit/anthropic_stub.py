@@ -188,9 +188,14 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_events(_text_events(reply.text, model, stop_reason="max_tokens"))
             case "stall" | "cut":
                 # The start and the text, but no stop events: the answer never finishes.
-                # "stall" then holds the connection open; "cut" closes it at once.
+                # "stall" then holds the connection open, sending keepalive pings as
+                # the real API does, so only a timeout that ignores pings can end it;
+                # "cut" closes it at once.
                 self._send_events(_text_events(reply.text, model)[:-3])
-                time.sleep(reply.delay_s)
+                deadline = time.monotonic() + reply.delay_s
+                while time.monotonic() < deadline:
+                    time.sleep(0.5)
+                    self._write_event("ping", {"type": "ping"})
             case "message":
                 self._send(200, json.dumps(_message(reply.text, model)).encode())
             case "error":
@@ -223,9 +228,12 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("content-type", "text/event-stream")
         self.end_headers()
         for name, data in events:
-            self.wfile.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())
-            self.wfile.flush()
+            self._write_event(name, data)
             time.sleep(0.005)  # real chunks arrive apart; make the function stream them
+
+    def _write_event(self, name: str, data: dict[str, Any]) -> None:
+        self.wfile.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())
+        self.wfile.flush()
 
     def log_message(self, format: str, *args: object) -> None:
         pass  # keep the functions server's log readable

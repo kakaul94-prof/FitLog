@@ -26,11 +26,15 @@ interface Env {
 
 const MODEL = 'claude-haiku-4-5'
 
-// How long to wait for Claude to START answering. Once the stream begins a
-// slow answer is fine (the user watches it arrive), so this only catches a call
-// that never starts, which would otherwise hold the spinner until Cloudflare
-// kills the request.
+// How long to wait for Claude to START answering, and the longest the answer
+// may then stand still. A slow answer is fine (the user watches it arrive), but
+// one that stops moving would hold the spinner until Cloudflare kills the
+// request. Keepalive pings don't count as moving (see untilSilent).
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000
+
+// Appended when an answer stops before Claude finished it, so half a sentence
+// ("drop the weight to 205 lb and") is never read as the whole advice.
+const CUT_OFF = '\n\n[The trainer was cut off. Try asking again.]'
 
 const messagesUrl = (env: Env) =>
   `${(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1/messages`
@@ -161,13 +165,23 @@ function buildSystem(context: string, memory: string[]): string {
 }
 
 /** Anthropic SSE -> plain text. Emits only assistant text, so the client can
- *  append chunks straight into the bubble. */
-function sseToText(): TransformStream<Uint8Array, Uint8Array> {
+ *  append chunks straight into the bubble. `onProgress` fires whenever the
+ *  answer moves forward; keepalive pings don't count. */
+function sseToText(onProgress: () => void): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder()
   const encoder = new TextEncoder()
   let buffer = ''
   let refused = false
   let said = false // has anything reached the bubble yet?
+  let finished = false // did Claude say the answer was complete?
+  let truncated = false // did it stop at MAX_TOKENS?
+  let toldCutOff = false
+
+  const cutOff = (controller: TransformStreamDefaultController<Uint8Array>) => {
+    if (toldCutOff) return
+    controller.enqueue(encoder.encode(CUT_OFF))
+    toldCutOff = said = true
+  }
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -197,18 +211,16 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
           ) {
             controller.enqueue(encoder.encode(data.delta.text))
             said = true
-          } else if (
-            data.type === 'message_delta' &&
-            data.delta?.stop_reason === 'refusal'
-          ) {
-            refused = true
+            onProgress()
+          } else if (data.type === 'message_delta') {
+            const reason = data.delta?.stop_reason
+            if (reason === 'refusal') refused = true
+            if (reason === 'max_tokens') truncated = true
+            onProgress()
+          } else if (data.type === 'message_stop') {
+            finished = true
           } else if (data.type === 'error') {
-            controller.enqueue(
-              encoder.encode(
-                '\n\n[The trainer was cut off. Try asking again.]',
-              ),
-            )
-            said = true
+            cutOff(controller)
           }
         }
       }
@@ -228,6 +240,49 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
         controller.enqueue(
           encoder.encode("The trainer didn't send an answer. Try asking again."),
         )
+      // Text arrived but the answer never finished: Claude went quiet, the
+      // connection closed early, or the reply hit MAX_TOKENS.
+      else if (!finished || truncated) cutOff(controller)
+    },
+  })
+}
+
+/**
+ * The upstream body, ended early once the answer has not moved for `ms`.
+ * Silence is measured from the last real progress (`lastProgress`, set by
+ * sseToText), not the last byte: the API sends keepalive pings, so a stalled
+ * answer can keep the connection busy indefinitely. Ending the body here lets
+ * sseToText add the cut-off notice.
+ */
+function untilSilent(
+  body: ReadableStream<Uint8Array>,
+  ms: number,
+  lastProgress: () => number,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader()
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const silence = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), Math.max(0, lastProgress() + ms - Date.now()))
+      })
+      try {
+        const next = await Promise.race([reader.read(), silence])
+        if (next === null) {
+          console.error(`trainer: the answer stopped moving for ${ms} ms; ending it`)
+          reader.cancel().catch(() => {})
+          controller.close()
+        } else if (next.done) controller.close()
+        else controller.enqueue(next.value)
+      } catch (e) {
+        console.error('trainer: the answer stream broke', e)
+        controller.close()
+      } finally {
+        clearTimeout(timer)
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
     },
   })
 }
@@ -279,12 +334,10 @@ export const onRequestPost = async (context: {
       ? body.context.slice(0, MAX_CONTEXT_CHARS)
       : ''
 
+  const timeoutMs = Number(env.ANTHROPIC_TIMEOUT_MS) || DEFAULT_UPSTREAM_TIMEOUT_MS
   // Aborts only while waiting for Claude to start answering (cleared below).
   const startup = new AbortController()
-  const timer = setTimeout(
-    () => startup.abort(),
-    Number(env.ANTHROPIC_TIMEOUT_MS) || DEFAULT_UPSTREAM_TIMEOUT_MS,
-  )
+  const timer = setTimeout(() => startup.abort(), timeoutMs)
   let res: Response
   try {
     res = await fetch(messagesUrl(env), {
@@ -326,7 +379,13 @@ export const onRequestPost = async (context: {
     return json({ error: upstreamMessage(res.status, detail) }, 502)
   }
 
-  return new Response(res.body.pipeThrough(sseToText()), {
+  let lastProgress = Date.now()
+  const answer = untilSilent(res.body, timeoutMs, () => lastProgress).pipeThrough(
+    sseToText(() => {
+      lastProgress = Date.now()
+    }),
+  )
+  return new Response(answer, {
     headers: {
       'content-type': 'text/plain; charset=utf-8',
       'cache-control': 'no-store',

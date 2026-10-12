@@ -200,9 +200,12 @@ jobs:
           name: security-reports
           path: reports/security/
           retention-days: 14
-      # GitHub's own check of what a PR adds to the dependency tree.
+      # GitHub's own check of what a PR adds to the dependency tree. It needs
+      # Settings -> Code security -> Dependency graph switched on; until then
+      # it can't run, which shouldn't mark the scans themselves as failed.
       - name: Dependency review
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         uses: actions/dependency-review-action@v4
         with:
           warn-only: true

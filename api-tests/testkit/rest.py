@@ -65,6 +65,11 @@ class RestClient:
             f"{self._url}/{table}", params=params, headers=self._headers(schema=schema)
         )
 
+    def search(self, table: str, column: str, text: str) -> httpx.Response:
+        """Case-insensitive "contains" search, the way the app's food search queries."""
+        params = {"select": "*", column: f"ilike.*{text}*"}
+        return self._http.get(f"{self._url}/{table}", params=params, headers=self._headers())
+
     def insert(
         self,
         table: str,

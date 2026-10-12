@@ -189,3 +189,24 @@ def claude(http: httpx.Client, settings: Settings) -> AnthropicStub:
     stub = AnthropicStub(http, settings.stub_url)
     stub.reset()
     return stub
+
+
+# -- reporting -------------------------------------------------------------------------
+
+# Folder -> the feature it reports under in Allure ("Behaviors" view).
+AREAS = {
+    "auth": "Authentication",
+    "authz": "Authorization and data isolation",
+    "contracts": "API contracts",
+    "validation": "Validation and constraints",
+    "security": "Sensitive data",
+    "functions": "Pages Functions",
+    "bdd": "Scenarios (BDD)",
+}
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        area = AREAS.get(item.path.parent.name)
+        if area:
+            item.add_marker(pytest.mark.allure_label(area, label_type="feature"))

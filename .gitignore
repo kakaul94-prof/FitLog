@@ -29,6 +29,9 @@ src/data/patchNotes.generated.ts
 /playwright-report
 /reports
 /playwright/.cache
+
+# Local Pages Functions server state (api-tests/scripts/start-functions.sh)
+.wrangler
 /e2e/.auth
 
 # Editor directories and files

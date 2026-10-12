@@ -11,17 +11,29 @@
 // read as it lands, and waiting ~4s for a paragraph feels broken. We transform
 // Anthropic's SSE into plain UTF-8 text chunks so the client just appends what
 // it reads — no event parsing in the browser.
+//
+// Only signed-in users get here: functions/api/_middleware.ts checks the
+// session before any /api function runs.
 
 interface Env {
   ANTHROPIC_API_KEY?: string
-  // Already set on both Pages projects for the browser build. The VITE_ prefix
-  // is only a Vite convention for client-side inlining — Functions read the same
-  // variables at runtime, so gating on a Supabase session costs no new secrets.
-  VITE_SUPABASE_URL?: string
-  VITE_SUPABASE_ANON_KEY?: string
+  // Unset in production. The API tests point it at a local stand-in for the
+  // Claude API (api-tests/testkit/anthropic_stub.py) to see what we send.
+  ANTHROPIC_BASE_URL?: string
+  // Unset in production (DEFAULT_UPSTREAM_TIMEOUT_MS applies); tests shorten it.
+  ANTHROPIC_TIMEOUT_MS?: string
 }
 
 const MODEL = 'claude-haiku-4-5'
+
+// How long to wait for Claude to START answering. Once the stream begins a
+// slow answer is fine (the user watches it arrive), so this only catches a call
+// that never starts, which would otherwise hold the spinner until Cloudflare
+// kills the request.
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000
+
+const messagesUrl = (env: Env) =>
+  `${(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1/messages`
 
 // A ceiling, NOT a target — the model can't see it, so lowering it truncates
 // mid-sentence rather than producing a shorter answer. Length is steered by the
@@ -108,13 +120,20 @@ function cleanMessages(input: unknown): ChatMessage[] {
     const role = m?.role === 'assistant' ? 'assistant' : 'user'
     const content = typeof m?.content === 'string' ? m.content.trim() : ''
     if (!content) continue
-    // Collapse a repeated role into the previous turn rather than dropping it.
+    // Collapse a repeated role into the previous turn rather than dropping it,
+    // re-capping the merged turn: otherwise one huge prompt split across many
+    // back-to-back turns would slip past MAX_MESSAGE_CHARS.
     const prev = out[out.length - 1]
-    if (prev && prev.role === role) prev.content += `\n\n${content}`
+    if (prev && prev.role === role)
+      prev.content = `${prev.content}\n\n${content}`.slice(0, MAX_MESSAGE_CHARS)
     else out.push({ role, content: content.slice(0, MAX_MESSAGE_CHARS) })
   }
-  while (out.length && out[0].role !== 'user') out.shift()
-  return out.slice(-MAX_TURNS)
+  // Trim to the most recent turns FIRST, then drop any leading assistant turn:
+  // a chat always ends on the user's question, so the last MAX_TURNS (an even
+  // number) of a longer chat would otherwise start on an assistant reply.
+  const recent = out.slice(-MAX_TURNS)
+  while (recent.length && recent[0].role !== 'user') recent.shift()
+  return recent
 }
 
 function cleanMemory(input: unknown): string[] {
@@ -148,6 +167,7 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
   const encoder = new TextEncoder()
   let buffer = ''
   let refused = false
+  let said = false // has anything reached the bubble yet?
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -176,6 +196,7 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
             data.delta.text
           ) {
             controller.enqueue(encoder.encode(data.delta.text))
+            said = true
           } else if (
             data.type === 'message_delta' &&
             data.delta?.stop_reason === 'refusal'
@@ -187,6 +208,7 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
                 '\n\n[The trainer was cut off. Try asking again.]',
               ),
             )
+            said = true
           }
         }
       }
@@ -200,52 +222,23 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
             "I can't help with that one. Try rephrasing, or ask me something about your training.",
           ),
         )
+      // Likewise a "successful" answer with no usable text in it (an error page
+      // from a proxy, a garbled or empty stream) must not leave the bubble empty.
+      else if (!said)
+        controller.enqueue(
+          encoder.encode("The trainer didn't send an answer. Try asking again."),
+        )
     },
   })
-}
-
-/**
- * Is the caller a signed-in FitLog user? Every real request comes from behind
- * the app's auth gate, so this costs nothing in normal use — it exists because
- * the endpoint is otherwise open to anyone who learns the URL, and each call
- * spends real money on the Anthropic account.
- *
- * Validates against Supabase rather than checking the signature locally: it is
- * a single extra round trip, but it needs no JWT secret and it honours expiry
- * and sign-out for free.
- *
- * Returns a reason string on failure so a misconfigured deploy is obvious
- * instead of looking like "you're logged out".
- */
-async function authFailure(env: Env, request: Request): Promise<string | null> {
-  const url = env.VITE_SUPABASE_URL
-  const anon = env.VITE_SUPABASE_ANON_KEY
-  // Fail CLOSED: an unconfigured gate that waves everyone through is worse than
-  // a broken feature, and this message says exactly what to fix.
-  if (!url || !anon)
-    return 'The trainer cannot verify sign-ins (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not readable by this Pages project).'
-
-  const header = request.headers.get('authorization') ?? ''
-  const token = /^bearer /i.test(header) ? header.slice(7).trim() : ''
-  if (!token) return 'Sign in to use the trainer.'
-
-  try {
-    const res = await fetch(`${url.replace(/\/+$/, '')}/auth/v1/user`, {
-      headers: { authorization: `Bearer ${token}`, apikey: anon },
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) return 'Your session has expired. Sign in again.'
-  } catch {
-    return 'Could not verify your session. Check your connection and try again.'
-  }
-  return null
 }
 
 /**
  * Turn an upstream failure into a message that says what to DO about it. This
  * is a single-user app, so a diagnostic beats a polite one — a bare "the
  * trainer is unavailable" sent us hunting through app code once when the real
- * problem was a stale API key in the Cloudflare dashboard.
+ * problem was a stale API key in the Cloudflare dashboard. The raw upstream
+ * body goes to the function log (Cloudflare → Pages → Functions → logs), never
+ * to the browser.
  */
 function upstreamMessage(status: number, body: string): string {
   if (status === 401 || /authentication_error/.test(body))
@@ -266,10 +259,6 @@ export const onRequestPost = async (context: {
   // Trim: a trailing newline or space survives a copy-paste into the Cloudflare
   // secrets field and makes an otherwise-valid key fail as authentication_error,
   // which is indistinguishable from a revoked key until you look at the bytes.
-  // Gate first: never spend a token on an unauthenticated caller.
-  const denied = await authFailure(env, request)
-  if (denied) return json({ error: denied }, 401)
-
   const raw = env.ANTHROPIC_API_KEY ?? ''
   const key = raw.trim()
   if (!key)
@@ -290,9 +279,15 @@ export const onRequestPost = async (context: {
       ? body.context.slice(0, MAX_CONTEXT_CHARS)
       : ''
 
+  // Aborts only while waiting for Claude to start answering (cleared below).
+  const startup = new AbortController()
+  const timer = setTimeout(
+    () => startup.abort(),
+    Number(env.ANTHROPIC_TIMEOUT_MS) || DEFAULT_UPSTREAM_TIMEOUT_MS,
+  )
   let res: Response
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch(messagesUrl(env), {
       method: 'POST',
       headers: {
         'x-api-key': key,
@@ -306,37 +301,29 @@ export const onRequestPost = async (context: {
         system: buildSystem(snapshot, cleanMemory(body.memory)),
         messages,
       }),
+      signal: startup.signal,
     })
   } catch (e) {
-    return json(
-      {
-        error: 'The trainer is unavailable right now.',
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      502,
-    )
+    console.error('trainer: Claude request failed', e)
+    return startup.signal.aborted
+      ? json({ error: 'Claude took too long to answer. Try again in a moment.' }, 504)
+      : json({ error: 'The trainer is unavailable right now.' }, 502)
+  } finally {
+    clearTimeout(timer)
   }
 
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => '')
-    return json(
-      {
-        error: upstreamMessage(res.status, detail),
-        detail: detail.slice(0, 400),
-        // On an auth failure only, describe the stored secret WITHOUT revealing
-        // it: the prefix is identical across all Anthropic keys, and a length
-        // plus a whitespace flag is what actually tells you whether the value is
-        // malformed, truncated, or something else pasted by mistake.
-        ...(res.status === 401 || /authentication_error/.test(detail)
-          ? {
-              keyShape: `starts "${key.slice(0, 8)}", ${key.length} chars${
-                raw !== key ? ', HAD surrounding whitespace (now trimmed)' : ''
-              }`,
-            }
-          : {}),
-      },
-      502,
-    )
+    // Logged, not returned: the upstream body and anything about the key are
+    // for whoever reads the function log, not for the browser. On an auth
+    // failure, describe the stored secret WITHOUT revealing it: a length plus a
+    // whitespace flag tells you whether the value is malformed, truncated or
+    // something else pasted by mistake.
+    console.error('trainer: Claude answered', res.status, detail.slice(0, 400), {
+      keyLength: key.length,
+      keyHadWhitespace: raw !== key,
+    })
+    return json({ error: upstreamMessage(res.status, detail) }, 502)
   }
 
   return new Response(res.body.pipeThrough(sseToText()), {

@@ -1,0 +1,23 @@
+# Exact pins: a run today and a run in six months use the same tools.
+# Install: pip install -r api-tests/requirements.txt
+
+# Test runner, BDD and parallel runs
+pytest==9.1.1
+pytest-bdd==9.0.0
+pytest-xdist==3.8.0
+
+# Reporting (JUnit XML comes from pytest itself)
+allure-pytest==2.16.2
+
+# HTTP (PostgREST, GoTrue, Storage, Pages Functions) and Postgres
+httpx==0.28.1
+psycopg[binary]==3.3.6
+
+# Response contracts and hand-made JWTs (expired / forged token tests)
+pydantic==2.14.1
+PyJWT==2.15.1
+
+# Lint, format, type-check and audit this suite's own dependencies
+ruff==0.17.0
+mypy==2.4.0
+pip-audit==2.10.1

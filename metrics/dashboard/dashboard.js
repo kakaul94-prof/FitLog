@@ -2,13 +2,13 @@
 // appended by metrics/publish.sh) and renders everything in the browser: no
 // build step, no server.
 //
-// Each run carries `sources: { e2e: {...}, unit: {...} }`. Sources of kind
+// Each run carries `sources: { e2e: {...}, api: {...}, unit: {...} }`. Sources of kind
 // "tests" share one shape and feed every panel here, so another test suite
 // shows up with no dashboard change. A new kind (e.g. "a11y" from axe, "load"
 // from k6) is ignored until it gets panels of its own, so it can't break the page.
 
-const LABELS = { e2e: 'E2E', unit: 'Unit' }
-const ORDER = ['e2e', 'unit']
+const LABELS = { e2e: 'E2E', api: 'API', unit: 'Unit' }
+const ORDER = ['e2e', 'api', 'unit'] // top of the test pyramid first
 const SLOTS = ['--s1', '--s2', '--s3', '--s4']
 const RECENT = 20
 
@@ -132,9 +132,14 @@ function kpis(runs, keys) {
     const ds = runs.slice(-10).map((r) => r.sources[k]?.durationMs).filter((v) => v != null)
     return tile(`${label(k)} suite time`, dur(runs.at(-1).sources[k]?.durationMs), `latest · median of last ${ds.length}: ${dur(median(ds))}`)
   })
+  const waits = runs.slice(-10).map((r) => r.feedbackMs).filter((v) => v != null)
+  const feedback = waits.length
+    ? tile('Feedback time', dur(waits.at(-1)), `push → all results · median of last ${waits.length}: ${dur(median(waits))}`)
+    : ''
   return `<section class="grid kpis" aria-label="Summary">
     ${tile('Runs passing', `${green}/${recent.length}`, `last ${recent.length} runs, flaky still passes`)}
     ${tile('Flaky rate', ran ? pct((flaky / ran) * 100) : '—', `${flaky} flaky of ${ran} retry-enabled test results`)}
+    ${feedback}
     ${durations.join('')}
   </section>`
 }
@@ -145,6 +150,7 @@ function chartCards(runs, keys) {
       ${card('c-pass', 'Pass rate', 'Tests that passed (incl. after a retry) ÷ tests run, per CI run')}
       ${card('c-flaky', 'Flaky rate', 'Tests that needed a retry to pass ÷ tests run (suites with retries)')}
     </section>
+    ${runs.some((r) => r.feedbackMs != null) ? `<section class="grid two">${card('c-feedback', 'Feedback time', 'From the push to every test result being in')}</section>` : ''}
     <section class="grid multiples" aria-label="Suite duration">
       ${keys.map((k) => card(`c-dur-${k}`, `${label(k)} suite duration`, 'Wall-clock time per run')).join('')}
     </section>`
@@ -156,6 +162,10 @@ function drawCharts(runs, keys) {
   line('c-pass', runs, labels, keys.map((k) => series(k, passRate)), { max: 100, suggestedMin: 90, fmt: (v) => `${Math.round(v * 10) / 10}%` })
   const retried = keys.filter((k) => runs.some((r) => r.sources[k]?.retries > 0))
   line('c-flaky', runs, labels, retried.map((k) => series(k, flakyRate)), { beginAtZero: true, suggestedMax: 10, fmt: (v) => `${Math.round(v * 10) / 10}%` })
+  if (document.getElementById('c-feedback')) {
+    const waits = { label: 'Push → results', data: runs.map((r) => (r.feedbackMs == null ? null : r.feedbackMs / 1000)), color: css(SLOTS[3]) }
+    line('c-feedback', runs, labels, [waits], { beginAtZero: true, fmt: (v) => dur(v * 1000) })
+  }
   for (const k of keys) {
     line(`c-dur-${k}`, runs, labels, [series(k, (s) => s.durationMs / 1000)], { beginAtZero: true, fmt: (v) => dur(v * 1000) })
   }

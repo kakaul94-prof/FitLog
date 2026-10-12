@@ -1,3 +1,4 @@
+import { apiHeaders } from './apiAuth'
 import { prepareImage } from './image'
 import type { Nutrients } from './database.types'
 
@@ -41,7 +42,7 @@ export async function scanPlate(file: File): Promise<ScannedPlate> {
   const image = await prepareImage(file)
   const res = await fetch('/api/scan-plate', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await apiHeaders(),
     body: JSON.stringify({ image }),
   })
   const data = (await res.json().catch(() => null)) as Record<
@@ -49,9 +50,7 @@ export async function scanPlate(file: File): Promise<ScannedPlate> {
     unknown
   > | null
   if (!res.ok) {
-    const msg = (data?.error as string) || 'Meal scan failed. Try again.'
-    const detail = data?.detail as string | undefined
-    throw new Error(detail ? `${msg} [${detail}]` : msg)
+    throw new Error((data?.error as string) || 'Meal scan failed. Try again.')
   }
   if (!data) throw new Error('Meal scan returned no data.')
 

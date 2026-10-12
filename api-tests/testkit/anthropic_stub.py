@@ -28,7 +28,10 @@ from typing import Any, Literal
 
 import httpx
 
-ReplyKind = Literal["stream", "message", "error", "raw", "hang", "drop", "stream_error", "refusal"]
+ReplyKind = Literal[
+    "stream", "message", "error", "raw", "hang", "drop", "stream_error", "refusal",
+    "stall", "max_tokens", "cut",
+]  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,21 @@ class Reply:
     def refusal(cls) -> "Reply":
         """A successful stream with no text and stop_reason "refusal"."""
         return cls("refusal")
+
+    @classmethod
+    def stall(cls, text_before: str, seconds: float) -> "Reply":
+        """A stream that starts, sends `text_before`, then goes silent for `seconds`."""
+        return cls("stall", text=text_before, delay_s=seconds)
+
+    @classmethod
+    def max_tokens(cls, text: str) -> "Reply":
+        """A complete stream that stopped at the max_tokens ceiling, mid-sentence."""
+        return cls("max_tokens", text=text)
+
+    @classmethod
+    def cut(cls, text_before: str) -> "Reply":
+        """A stream whose connection closes mid-answer, with no error event."""
+        return cls("cut", text=text_before)
 
 
 DEFAULT_REPLY = Reply.stream("Stub reply.")
@@ -166,6 +184,13 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_events([*events, _error_event("overloaded_error", "Overloaded")])
             case "refusal":
                 self._send_events(_text_events("", model, stop_reason="refusal"))
+            case "max_tokens":
+                self._send_events(_text_events(reply.text, model, stop_reason="max_tokens"))
+            case "stall" | "cut":
+                # The start and the text, but no stop events: the answer never finishes.
+                # "stall" then holds the connection open; "cut" closes it at once.
+                self._send_events(_text_events(reply.text, model)[:-3])
+                time.sleep(reply.delay_s)
             case "message":
                 self._send(200, json.dumps(_message(reply.text, model)).encode())
             case "error":

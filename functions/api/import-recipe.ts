@@ -12,9 +12,15 @@
 
 interface Env {
   ANTHROPIC_API_KEY?: string
+  // Unset in production. The API tests point it at a local stand-in for the
+  // Claude API (api-tests/testkit/anthropic_stub.py) to see what we send.
+  ANTHROPIC_BASE_URL?: string
 }
 
 const MODEL = 'claude-haiku-4-5'
+
+const messagesUrl = (env: Env) =>
+  `${(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1/messages`
 
 const PROMPT = `You are a nutrition estimator. You are given a recipe (its title, yield, and ingredient lines). Return:
 - name: a short recipe title.
@@ -262,7 +268,7 @@ export const onRequestPost = async (context: {
 
   let res: Response
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch(messagesUrl(env), {
       method: 'POST',
       headers: {
         'x-api-key': key,

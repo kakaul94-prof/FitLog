@@ -14,6 +14,9 @@
 
 interface Env {
   ANTHROPIC_API_KEY?: string
+  // Unset in production. The API tests point it at a local stand-in for the
+  // Claude API (api-tests/testkit/anthropic_stub.py) to see what we send.
+  ANTHROPIC_BASE_URL?: string
   // Already set on both Pages projects for the browser build. The VITE_ prefix
   // is only a Vite convention for client-side inlining — Functions read the same
   // variables at runtime, so gating on a Supabase session costs no new secrets.
@@ -22,6 +25,9 @@ interface Env {
 }
 
 const MODEL = 'claude-haiku-4-5'
+
+const messagesUrl = (env: Env) =>
+  `${(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1/messages`
 
 // A ceiling, NOT a target — the model can't see it, so lowering it truncates
 // mid-sentence rather than producing a shorter answer. Length is steered by the
@@ -292,7 +298,7 @@ export const onRequestPost = async (context: {
 
   let res: Response
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch(messagesUrl(env), {
       method: 'POST',
       headers: {
         'x-api-key': key,

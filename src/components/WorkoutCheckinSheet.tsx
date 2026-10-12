@@ -440,6 +440,9 @@ function CheckinSheet({
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/50" onClick={onCancel}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={saveMode ? 'Recovery check-in' : 'Pre-workout check-in'}
         className="mx-auto w-full max-w-md p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
         onClick={(e) => e.stopPropagation()}
       >

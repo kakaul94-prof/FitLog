@@ -11,17 +11,15 @@
 // read as it lands, and waiting ~4s for a paragraph feels broken. We transform
 // Anthropic's SSE into plain UTF-8 text chunks so the client just appends what
 // it reads — no event parsing in the browser.
+//
+// Only signed-in users get here: functions/api/_middleware.ts checks the
+// session before any /api function runs.
 
 interface Env {
   ANTHROPIC_API_KEY?: string
   // Unset in production. The API tests point it at a local stand-in for the
   // Claude API (api-tests/testkit/anthropic_stub.py) to see what we send.
   ANTHROPIC_BASE_URL?: string
-  // Already set on both Pages projects for the browser build. The VITE_ prefix
-  // is only a Vite convention for client-side inlining — Functions read the same
-  // variables at runtime, so gating on a Supabase session costs no new secrets.
-  VITE_SUPABASE_URL?: string
-  VITE_SUPABASE_ANON_KEY?: string
 }
 
 const MODEL = 'claude-haiku-4-5'
@@ -211,43 +209,6 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
 }
 
 /**
- * Is the caller a signed-in FitLog user? Every real request comes from behind
- * the app's auth gate, so this costs nothing in normal use — it exists because
- * the endpoint is otherwise open to anyone who learns the URL, and each call
- * spends real money on the Anthropic account.
- *
- * Validates against Supabase rather than checking the signature locally: it is
- * a single extra round trip, but it needs no JWT secret and it honours expiry
- * and sign-out for free.
- *
- * Returns a reason string on failure so a misconfigured deploy is obvious
- * instead of looking like "you're logged out".
- */
-async function authFailure(env: Env, request: Request): Promise<string | null> {
-  const url = env.VITE_SUPABASE_URL
-  const anon = env.VITE_SUPABASE_ANON_KEY
-  // Fail CLOSED: an unconfigured gate that waves everyone through is worse than
-  // a broken feature, and this message says exactly what to fix.
-  if (!url || !anon)
-    return 'The trainer cannot verify sign-ins (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are not readable by this Pages project).'
-
-  const header = request.headers.get('authorization') ?? ''
-  const token = /^bearer /i.test(header) ? header.slice(7).trim() : ''
-  if (!token) return 'Sign in to use the trainer.'
-
-  try {
-    const res = await fetch(`${url.replace(/\/+$/, '')}/auth/v1/user`, {
-      headers: { authorization: `Bearer ${token}`, apikey: anon },
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) return 'Your session has expired. Sign in again.'
-  } catch {
-    return 'Could not verify your session. Check your connection and try again.'
-  }
-  return null
-}
-
-/**
  * Turn an upstream failure into a message that says what to DO about it. This
  * is a single-user app, so a diagnostic beats a polite one — a bare "the
  * trainer is unavailable" sent us hunting through app code once when the real
@@ -272,10 +233,6 @@ export const onRequestPost = async (context: {
   // Trim: a trailing newline or space survives a copy-paste into the Cloudflare
   // secrets field and makes an otherwise-valid key fail as authentication_error,
   // which is indistinguishable from a revoked key until you look at the bytes.
-  // Gate first: never spend a token on an unauthenticated caller.
-  const denied = await authFailure(env, request)
-  if (denied) return json({ error: denied }, 401)
-
   const raw = env.ANTHROPIC_API_KEY ?? ''
   const key = raw.trim()
   if (!key)

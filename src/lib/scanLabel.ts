@@ -1,3 +1,4 @@
+import { apiHeaders } from './apiAuth'
 import { NUTRIENT_KEYS } from './database.types'
 import type { Nutrients } from './database.types'
 import { prepareImage } from './image'
@@ -55,7 +56,7 @@ export async function scanLabel(file: File): Promise<ScannedFood> {
   const image = await prepareImage(file)
   const res = await fetch('/api/scan-label', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await apiHeaders(),
     body: JSON.stringify({ image }),
   })
   const data = (await res.json().catch(() => null)) as Record<
@@ -63,9 +64,7 @@ export async function scanLabel(file: File): Promise<ScannedFood> {
     unknown
   > | null
   if (!res.ok) {
-    const msg = (data?.error as string) || 'Label scan failed. Try again.'
-    const detail = data?.detail as string | undefined
-    throw new Error(detail ? `${msg} [${detail}]` : msg)
+    throw new Error((data?.error as string) || 'Label scan failed. Try again.')
   }
   if (!data) throw new Error('Label scan returned no data.')
 

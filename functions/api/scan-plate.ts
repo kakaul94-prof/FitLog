@@ -121,37 +121,23 @@ export const onRequestPost = async (context: {
       }),
     })
   } catch (e) {
-    return json(
-      {
-        error: 'The meal reader is unavailable right now.',
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      502,
-    )
+    console.error('scan-plate: Claude request failed', e)
+    return json({ error: 'The meal reader is unavailable right now.' }, 502)
   }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
-    return json(
-      {
-        error: 'The meal reader is unavailable right now.',
-        detail: detail.slice(0, 400),
-      },
-      502,
-    )
+    // Logged, not returned: upstream bodies are for the function log only.
+    console.error('scan-plate: Claude answered', res.status, detail.slice(0, 400))
+    return json({ error: 'The meal reader is unavailable right now.' }, 502)
   }
 
   let parsed: unknown
   try {
     parsed = parseContent(await res.json())
   } catch (e) {
-    return json(
-      {
-        error: "Couldn't read the meal. Try a clearer, well-lit photo.",
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      422,
-    )
+    console.error('scan-plate: unreadable answer', e)
+    return json({ error: "Couldn't read the meal. Try a clearer, well-lit photo." }, 422)
   }
 
   return json(parsed)

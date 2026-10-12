@@ -246,12 +246,9 @@ export const onRequestPost = async (context: {
   try {
     html = await fetchPage(url)
   } catch (e) {
+    console.error('import-recipe: page fetch failed', e)
     return json(
-      {
-        error:
-          "Couldn't open that link. Check the URL, or add the recipe manually.",
-        detail: e instanceof Error ? e.message : String(e),
-      },
+      { error: "Couldn't open that link. Check the URL, or add the recipe manually." },
       502,
     )
   }
@@ -283,35 +280,24 @@ export const onRequestPost = async (context: {
       }),
     })
   } catch (e) {
-    return json(
-      {
-        error: 'The recipe reader is unavailable right now.',
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      502,
-    )
+    console.error('import-recipe: Claude request failed', e)
+    return json({ error: 'The recipe reader is unavailable right now.' }, 502)
   }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
-    return json(
-      {
-        error: 'The recipe reader is unavailable right now.',
-        detail: detail.slice(0, 400),
-      },
-      502,
-    )
+    // Logged, not returned: upstream bodies are for the function log only.
+    console.error('import-recipe: Claude answered', res.status, detail.slice(0, 400))
+    return json({ error: 'The recipe reader is unavailable right now.' }, 502)
   }
 
   let parsed: unknown
   try {
     parsed = parseContent(await res.json())
   } catch (e) {
+    console.error('import-recipe: unreadable answer', e)
     return json(
-      {
-        error: "Couldn't read that recipe. Try another link, or add it manually.",
-        detail: e instanceof Error ? e.message : String(e),
-      },
+      { error: "Couldn't read that recipe. Try another link, or add it manually." },
       422,
     )
   }

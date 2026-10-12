@@ -20,9 +20,17 @@ interface Env {
   // Unset in production. The API tests point it at a local stand-in for the
   // Claude API (api-tests/testkit/anthropic_stub.py) to see what we send.
   ANTHROPIC_BASE_URL?: string
+  // Unset in production (DEFAULT_UPSTREAM_TIMEOUT_MS applies); tests shorten it.
+  ANTHROPIC_TIMEOUT_MS?: string
 }
 
 const MODEL = 'claude-haiku-4-5'
+
+// How long to wait for Claude to START answering. Once the stream begins a
+// slow answer is fine (the user watches it arrive), so this only catches a call
+// that never starts, which would otherwise hold the spinner until Cloudflare
+// kills the request.
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000
 
 const messagesUrl = (env: Env) =>
   `${(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1/messages`
@@ -212,7 +220,9 @@ function sseToText(): TransformStream<Uint8Array, Uint8Array> {
  * Turn an upstream failure into a message that says what to DO about it. This
  * is a single-user app, so a diagnostic beats a polite one — a bare "the
  * trainer is unavailable" sent us hunting through app code once when the real
- * problem was a stale API key in the Cloudflare dashboard.
+ * problem was a stale API key in the Cloudflare dashboard. The raw upstream
+ * body goes to the function log (Cloudflare → Pages → Functions → logs), never
+ * to the browser.
  */
 function upstreamMessage(status: number, body: string): string {
   if (status === 401 || /authentication_error/.test(body))
@@ -253,6 +263,12 @@ export const onRequestPost = async (context: {
       ? body.context.slice(0, MAX_CONTEXT_CHARS)
       : ''
 
+  // Aborts only while waiting for Claude to start answering (cleared below).
+  const startup = new AbortController()
+  const timer = setTimeout(
+    () => startup.abort(),
+    Number(env.ANTHROPIC_TIMEOUT_MS) || DEFAULT_UPSTREAM_TIMEOUT_MS,
+  )
   let res: Response
   try {
     res = await fetch(messagesUrl(env), {
@@ -269,37 +285,29 @@ export const onRequestPost = async (context: {
         system: buildSystem(snapshot, cleanMemory(body.memory)),
         messages,
       }),
+      signal: startup.signal,
     })
   } catch (e) {
-    return json(
-      {
-        error: 'The trainer is unavailable right now.',
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      502,
-    )
+    console.error('trainer: Claude request failed', e)
+    return startup.signal.aborted
+      ? json({ error: 'Claude took too long to answer. Try again in a moment.' }, 504)
+      : json({ error: 'The trainer is unavailable right now.' }, 502)
+  } finally {
+    clearTimeout(timer)
   }
 
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => '')
-    return json(
-      {
-        error: upstreamMessage(res.status, detail),
-        detail: detail.slice(0, 400),
-        // On an auth failure only, describe the stored secret WITHOUT revealing
-        // it: the prefix is identical across all Anthropic keys, and a length
-        // plus a whitespace flag is what actually tells you whether the value is
-        // malformed, truncated, or something else pasted by mistake.
-        ...(res.status === 401 || /authentication_error/.test(detail)
-          ? {
-              keyShape: `starts "${key.slice(0, 8)}", ${key.length} chars${
-                raw !== key ? ', HAD surrounding whitespace (now trimmed)' : ''
-              }`,
-            }
-          : {}),
-      },
-      502,
-    )
+    // Logged, not returned: the upstream body and anything about the key are
+    // for whoever reads the function log, not for the browser. On an auth
+    // failure, describe the stored secret WITHOUT revealing it: a length plus a
+    // whitespace flag tells you whether the value is malformed, truncated or
+    // something else pasted by mistake.
+    console.error('trainer: Claude answered', res.status, detail.slice(0, 400), {
+      keyLength: key.length,
+      keyHadWhitespace: raw !== key,
+    })
+    return json({ error: upstreamMessage(res.status, detail) }, 502)
   }
 
   return new Response(res.body.pipeThrough(sseToText()), {

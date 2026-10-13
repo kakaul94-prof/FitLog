@@ -19,6 +19,7 @@ export class ProfileSettingsPage extends BasePage {
   readonly manualTargetInput = this.page.getByLabel('Manual calorie target')
   /** "From your data": the goal estimated from logged intake and weight change. */
   readonly adaptiveButton = this.page.getByRole('button', { name: /^Set my goal to [\d,]+ calories$/ })
+  readonly adaptiveAppliedButton = this.page.getByRole('button', { name: 'Applied ✓' })
   readonly saveButton = this.page.getByRole('button', { name: /^(Save|Saving…|Saved ✓)$/ })
   readonly newPasswordInput = this.page.getByLabel('New password')
   readonly confirmPasswordInput = this.page.getByLabel('Confirm password')
@@ -28,6 +29,16 @@ export class ProfileSettingsPage extends BasePage {
   async open(expectManualTarget = '2000'): Promise<void> {
     await this.goto()
     await expect(this.manualTargetInput).toHaveValue(expectManualTarget)
+  }
+
+  /**
+   * Tap "Set my goal to N calories" and wait until it's saved ("Applied ✓").
+   * It saves on tap with no Save button, so a test that leaves the page with a
+   * full reload straight after would cancel the save in flight.
+   */
+  async applyAdaptiveGoal(): Promise<void> {
+    await this.adaptiveButton.click()
+    await expect(this.adaptiveAppliedButton).toBeVisible()
   }
 
   async save(): Promise<void> {

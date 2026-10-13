@@ -146,7 +146,7 @@ test('"From your data" sets the goal the app measured from intake and weight cha
   await profile.open()
   const label = (await profile.adaptiveButton.textContent())!
   const goal = Number(label.replace(/\D/g, ''))
-  await profile.adaptiveButton.click()
+  await profile.applyAdaptiveGoal()
 
   await expect(profile.manualTargetInput).toHaveValue(String(goal))
   await diary.gotoDate(todayISO())

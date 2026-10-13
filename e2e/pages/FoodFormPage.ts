@@ -21,13 +21,15 @@ export class FoodFormPage extends BasePage {
   readonly enterManually = this.page.getByRole('button', { name: 'Enter manually' })
 
   /**
-   * Choose "Enter manually" and wait for the form. The click starts a
-   * client-side route change, and typing before it lands would go into the
-   * page underneath (the recipe editor has a "Name" field too).
+   * Choose "Enter manually" and wait for the form itself. The click starts a
+   * client-side route change to a lazy-loaded page: the URL changes at once,
+   * but the page underneath stays on screen until the form's code arrives, and
+   * typing then would go into it (the recipe editor has a "Name" field too).
    */
   async startManually(): Promise<void> {
     await this.enterManually.click()
     await expect(this.page).toHaveURL(/\/foods\/new/)
+    await expect(this.page.getByRole('heading', { name: 'Add food', level: 1 })).toBeVisible()
   }
 
   /** A nutrient's input by its label: "Calories", "Protein", "Sodium"… */

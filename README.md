@@ -44,12 +44,13 @@ FitLog is a single-user, cloud-synced fitness tracker designed mobile-first and 
 
 ## Testing
 
-Three layers, each where it is cheapest to prove what it proves:
+Four layers, each where it is cheapest to prove what it proves:
 
 | Layer | Tool | Size | What it proves |
 |---|---|--:|---|
 | Unit | [Vitest](https://vitest.dev) | 533 tests, ~10 s | The pure logic: calorie goals, macros, 1RM, progression, dates, nutrients |
 | API, database and security | pytest + pytest-bdd ([`api-tests/`](api-tests/README.md)) | 646 tests, ~1 min | Every table is private to its owner (through the API and in Postgres itself), forged tokens are refused everywhere, responses match strict contracts, bad input is refused cleanly, nothing leaks, and the AI functions send and handle exactly what they should |
+| AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 182 tests, ~1 min; live tier on demand | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); and the real model's behaviour on 58 cases x 3 runs, judged where rules can't decide (by hand, capped at a few dollars) |
 | End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
 
 One command runs them all, bottom of the pyramid first, stopping at the first failing layer:
@@ -63,11 +64,13 @@ make test          # or, without make: bash scripts/test-all.sh test
 | `make stack-up` / `make stack-down` | The local Supabase stack in Docker (shared by the API and E2E suites) |
 | `make test-unit` | Vitest (`npm test`; `npm run test:watch` while iterating) |
 | `make test-api` | The API suite, with JUnit XML and Allure results in `reports/` |
+| `make test-ai` | The AI trainer evals, tier 1 (deterministic, no API key) |
+| `make eval-ai-live` | The AI trainer evals, tier 2: the real Claude API, capped (needs a key; see `ai-evals/README.md`) |
 | `make test-e2e` | Playwright, in its container |
 | `make test-security` | Security scans: gitleaks, npm audit, pip-audit and an OWASP ZAP baseline scan (report only) |
-| `make report` | Builds and opens the Allure report of the last API run |
+| `make report` | Builds and opens the Allure report of the last API and AI-eval runs |
 
-A `tsc + vite` build check is run before every commit to keep the tree type-safe. Security issues the suites and scans have found, and how each was fixed, are tracked in [`SECURITY-FINDINGS.md`](SECURITY-FINDINGS.md).
+A `tsc + vite` build check is run before every commit to keep the tree type-safe. Security issues the suites and scans have found, and how each was fixed, are tracked in [`SECURITY-FINDINGS.md`](SECURITY-FINDINGS.md); what the AI trainer evals found is in [`AI-SAFETY-FINDINGS.md`](AI-SAFETY-FINDINGS.md).
 
 ### End-to-end tests in Docker
 
@@ -198,7 +201,7 @@ npm run dev       # http://localhost:5173
 | `npm run test:e2e:docker` | Start the local test DB and run the E2E suite in Docker |
 | `npm run test:e2e` | Run the E2E suite on the host (needs `npm run db:start`) |
 | `npm run db:start` / `db:stop` / `db:reset` | Manage the local Supabase test stack |
-| `make test` / `test-api` / `test-security` / `report` | Every test layer, the API suite, the security scans, the Allure report (see Testing) |
+| `make test` / `test-api` / `test-ai` / `test-security` / `report` | Every test layer, the API suite, the AI evals, the security scans, the Allure report (see Testing) |
 
 ## Deployment
 
@@ -236,10 +239,15 @@ api-tests/
 ├── testkit/       # reusable clients, token forger, factories, contracts, Claude stub
 ├── tests/         # auth, authz, contracts, validation, security, functions, bdd
 └── scripts/       # local-env.sh, start-functions.sh
+ai-evals/
+├── dataset/       # personas + 58 eval cases (YAML), rubrics/, calibration/
+├── harness/       # the app's own trainer code, bundled for Node
+├── aievals/       # checks, judge, proxy, live runner, calibration
+└── tests/         # tier 1: injection, exposure, actions, output, failures
 metrics/           # CI quality metrics + security-scan summary
 scripts/           # test-all.sh (behind the Makefile), security-scan.sh
 compose.yaml       # `e2e` service (docker compose run e2e)
-Makefile           # make test, test-api, test-security, report ...
+Makefile           # make test, test-api, test-ai, eval-ai-live, test-security, report ...
 ```
 
 ## Notes

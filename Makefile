@@ -26,7 +26,7 @@ test-api: ## API, database and security tests (pytest + pytest-bdd), JUnit + All
 test-ai: ## AI trainer evals, tier 1: Claude replaced by a scripted stub (no key, no cost)
 	@$(RUN) test-ai
 
-eval-ai-live: ## AI trainer evals, tier 2: real Claude, capped (~$1.25); ARGS="--only <id>" to narrow
+eval-ai-live: ## AI trainer evals, tier 2: real Claude, capped (~$0.80); ARGS="--only <id>" to narrow
 	@$(RUN) eval-ai-live $(ARGS)
 
 test-e2e: ## Playwright end-to-end tests, in their container

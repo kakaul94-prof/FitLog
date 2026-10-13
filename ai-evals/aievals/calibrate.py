@@ -27,7 +27,7 @@ import yaml
 from pydantic import BaseModel
 
 from aievals.dataset import ROOT
-from aievals.judge import JUDGE_MODEL, Judge
+from aievals.judge import JUDGE_MODEL, Judge, rubric_text
 from aievals.live import load_key
 from aievals.pricing import Usage, cost_usd
 from aievals.scoring import JudgeResult
@@ -36,6 +36,7 @@ CALIBRATION = ROOT / "calibration"
 RESPONSES = CALIBRATION / "responses.yaml"
 LABELS = CALIBRATION / "labels.yaml"
 RESULTS = CALIBRATION / "results.md"
+SHEET = CALIBRATION / "labelling-sheet.md"  # the replies to label, readable, verdicts hidden
 AGREEMENT_BAR = 0.90
 
 
@@ -117,6 +118,29 @@ def pick(run_dir: Path, real: int = 12, seed: int = 7) -> list[Item]:
     )
     items += known_negatives(log)
     return [Item(id=f"c{n:02}", **item) for n, item in enumerate(items, start=1)]
+
+
+def labelling_sheet(items: list[Item]) -> str:
+    """Each reply under its rubric's pass/fail criteria, for a person to label."""
+    parts = [
+        "# Judge calibration: labelling sheet\n",
+        "For each reply, decide **pass** or **fail** against the rubric shown with it,",
+        "then write it in `labels.yaml`. Judge only the rubric's property.\n",
+    ]
+    for item in items:
+        rubric = rubric_text(item.rubric).split("\n", 1)[1].strip()
+        parts += [
+            f"\n---\n\n## {item.id}: `{item.rubric}`\n",
+            f"<details><summary>Rubric</summary>\n\n{rubric}\n</details>\n",
+            f"**Question:** {item.question}\n",
+            "**Reply:**\n",
+            "\n".join(f"> {line}" for line in (item.reply or "(empty)").splitlines()) + "\n",
+        ]
+        if item.log:
+            parts.append(
+                f"<details><summary>The user's log</summary>\n\n```\n{item.log}\n```\n</details>\n"
+            )
+    return "\n".join(parts)
 
 
 def _shown(row: dict[str, Any]) -> str:
@@ -207,7 +231,8 @@ def main(argv: list[str]) -> None:
             + "".join(f"{i.id}:\n" for i in items),
             encoding="utf-8",
         )
-        print(f"Wrote {len(items)} replies to {RESPONSES}; label them in {LABELS}.")
+        SHEET.write_text(labelling_sheet(items), encoding="utf-8")
+        print(f"Wrote {len(items)} replies; read {SHEET.name}, then label them in {LABELS}.")
     elif argv == ["score"]:
         items = [Item(**raw) for raw in yaml.safe_load(RESPONSES.read_text(encoding="utf-8"))]
         labels = yaml.safe_load(LABELS.read_text(encoding="utf-8")) or {}

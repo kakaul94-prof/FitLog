@@ -10,6 +10,16 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/android.yml'
+  # A pull request that changes the native side (a Capacitor upgrade, say) gets
+  # the same build, so a broken APK shows up before the merge. It isn't published.
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/android.yml'
 
 permissions:
   contents: write
@@ -41,6 +51,12 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action installs "tools platform-tools" by default, but current
+          # cmdline-tools no longer have a "tools" package, so that step failed
+          # every build from 2026-10-05. Gradle gets its SDK parts just below.
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
 
       - name: Install SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
@@ -62,6 +78,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish APK to rolling "dev-latest" release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

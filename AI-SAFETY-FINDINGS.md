@@ -86,8 +86,9 @@ quoted back by the model, would have been offered for saving (into every
 future prompt), and the rest of the answer would have vanished. In the live
 runs the model never repeated a marker, so this is defence in depth.
 
-**Fix** (`49fcc3b`): a chip comes only from a marker that is the reply's whole
-last line, where the prompt asks for it; markers elsewhere are stripped from the
+**Fix** (`49fcc3b`, refined after merging dev's new trainer E2E test): a chip
+comes only from a marker that ends the reply, on its last line with nothing
+after it, where the prompt asks for it; markers elsewhere are stripped from the
 bubble and the words around them stay. (AI-01 also stops markers reaching the
 model at all.)
 **Guarded by:** `ai-evals/tests/test_unintended_actions.py` (run through the

@@ -26,10 +26,11 @@ const OPEN = '[[REMEMBER'
 const MARKER = / ?\[\[REMEMBER:[\s\S]*?\]\]/g
 // A marker still being written at the end: no closing ]] after it yet.
 const UNCLOSED = /\[\[REMEMBER(?:(?!\]\])[\s\S])*$/
-// A marker that is the reply's whole last line: the only place the prompt asks
-// the model to put one. Anywhere else it is text the model repeated, e.g. a
-// product name from the user's log, and must never become a chip.
-const LAST_LINE = /(?:^|\n)[ \t]*\[\[REMEMBER:\s*([^\n]*?)\]\][ \t]*$/
+// A marker that ends the reply, on its last line with nothing after it: where
+// the prompt asks the model to put one. A marker with text after it is one the
+// model repeated mid-answer (e.g. a product name from the user's log) and must
+// never become a chip.
+const CLOSING = /\[\[REMEMBER:\s*((?:(?!\]\])[^\n])*?)\s*\]\][ \t]*$/
 const MAX_REMEMBER_CHARS = 200
 
 /** Hide a marker the stream is still in the middle of writing, so the raw
@@ -48,11 +49,11 @@ export function displayText(raw: string): string {
   return stripTrailingPartial(raw.replace(MARKER, '').replace(UNCLOSED, '')).trimEnd()
 }
 
-/** The fact the trainer wants to remember, or null: only from a marker on the
- *  reply's last line (see LAST_LINE). Exported for tests; guarded by
+/** The fact the trainer wants to remember, or null: only from a marker that
+ *  ends the reply (see CLOSING). Exported for tests; guarded by
  *  ai-evals/tests/test_unintended_actions.py. */
 export function parseRemember(raw: string): string | null {
-  const fact = raw.trimEnd().match(LAST_LINE)?.[1]?.trim()
+  const fact = raw.trimEnd().match(CLOSING)?.[1]?.trim()
   if (!fact) return null
   return fact.slice(0, MAX_REMEMBER_CHARS)
 }

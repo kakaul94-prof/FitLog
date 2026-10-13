@@ -6,8 +6,8 @@ one tap saves the fact into every future system prompt. So two things are
 checked:
 - the function itself writes nothing, whatever the reply says;
 - the chip the app would offer, using the app's own parser (src/lib/trainer.ts
-  run in Node), is only ever the deliberate last line of a reply, never a marker
-  repeated from somewhere in the user's data.
+  run in Node), only ever comes from the marker that ends a reply, never from one
+  repeated mid-answer out of the user's data.
 """
 
 import pytest
@@ -93,10 +93,11 @@ def test_a_marker_repeated_from_the_users_data_hides_none_of_the_answer(
     assert "Take it 30 minutes before training." in shown.text
 
 
-def test_a_marker_on_the_last_line_is_offered(harness: ClientHarness) -> None:
-    """The intended path still works: a deliberate closing line becomes the chip."""
+@pytest.mark.parametrize("gap", ["\n", " "], ids=["own-line", "end-of-line"])
+def test_a_marker_that_ends_the_reply_is_offered(harness: ClientHarness, gap: str) -> None:
+    """The intended path still works: a deliberate closing marker becomes the chip."""
     shown = harness.parse_one(
-        "Drop to 205 lb next session.\n[[REMEMBER: Left knee aches on deep squats]]"
+        f"Drop to 205 lb next session.{gap}[[REMEMBER: Left knee aches on deep squats]]"
     )
 
     assert shown.remember == "Left knee aches on deep squats"

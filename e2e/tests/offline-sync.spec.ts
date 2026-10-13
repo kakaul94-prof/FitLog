@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { expect, runId, test } from '../fixtures'
 import type { DiaryPage } from '../pages/DiaryPage'
 import type { FoodPickerPage } from '../pages/FoodPickerPage'
-import { clearDiaryDay } from '../support/data'
+import { clearDiaryDay, createFood } from '../support/data'
 import { authFile } from '../support/env'
 import {
   countReloads,
@@ -77,6 +77,43 @@ test('entries logged offline all reach the server once, in the order they were l
   expect((await savedEntries(judyDb, date)).map((e) => e.food_name)).toEqual(names)
   for (const [i, name] of names.entries()) await expect(diary.entryRow(name, 100 + i)).toHaveCount(1)
   expect(reloads(), 'synced in the same session, without a reload').toBe(0)
+})
+
+test.describe('logging several entries in a row while offline', () => {
+  test('from Quick add', async ({ page, judyDb, diaryPage: diary, foodPickerPage: picker }) => {
+    const date = '2024-02-03'
+    const names = ['one', 'two', 'three'].map((n) => `In a row ${n} ${runId()}`)
+    await clearDiaryDay(judyDb, date)
+    await openPickerOnline(diary, picker, date)
+
+    await goOffline(page)
+    for (const [i, name] of names.entries()) await quickAddOffline(picker, name, 300 + i)
+    await expect(pending(page, 3)).toBeVisible()
+
+    await goOnline(page)
+    await waitForSync(page)
+    expect((await savedEntries(judyDb, date)).map((e) => e.food_name)).toEqual(names)
+  })
+
+  test('from your food library', async ({ page, judyDb, diaryPage: diary, foodPickerPage: picker }) => {
+    const date = '2024-02-04'
+    const foods = [await createFood(judyDb, `Library A ${runId()}`, 110), await createFood(judyDb, `Library B ${runId()}`, 120)]
+    await clearDiaryDay(judyDb, date)
+    await openPickerOnline(diary, picker, date)
+    for (const food of foods) await expect(picker.foodRow(food.name)).toBeVisible()
+
+    await goOffline(page)
+    for (const food of foods) {
+      await picker.foodRow(food.name).click()
+      await page.getByRole('button', { name: 'Add to snacks' }).click()
+      await expect(picker.message(`Added ${food.name}`)).toBeVisible()
+    }
+    await expect(pending(page, 2)).toBeVisible()
+
+    await goOnline(page)
+    await waitForSync(page)
+    expect((await savedEntries(judyDb, date)).map((e) => e.food_name)).toEqual(foods.map((f) => f.name))
+  })
 })
 
 test('an entry logged offline survives closing the app and syncs when it reopens online', async ({

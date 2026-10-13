@@ -206,8 +206,8 @@ test.describe('a restore that fails partway', () => {
     const file = await backup.exportBackup()
     await graceDb.from('diary_entries').delete().eq('food_name', 'E2E Oats') // changed since the export
     const before = await account(graceDb)
-    // One bad row near the end: a set whose workout isn't in the backup.
-    const orphan = { id: randomUUID(), workout_id: randomUUID(), exercise_key: 'bench_press', exercise_name: 'Bench Press', reps: 5, weight_lb: 135 }
+    // One bad row near the end: a copy of a set, pointing at a workout that isn't in the backup.
+    const orphan = { ...rows(file, 'workout_sets')[0], id: randomUUID(), workout_id: randomUUID() }
     const corrupt: Backup = { ...file, workout_sets: [...rows(file, 'workout_sets'), orphan] }
 
     await backup.chooseFile(JSON.stringify(corrupt))

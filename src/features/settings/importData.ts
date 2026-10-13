@@ -48,50 +48,22 @@ export function validateBackup(text: string): ParsedBackup {
   return { data, counts }
 }
 
-const BATCH = 500
-
 /**
  * Replace all of the user's data with the backup (a true "restore", not a
- * merge): wipe each table present in the file, then re-insert its rows keeping
- * their original ids so foreign keys stay intact. user_id is forced to the
- * current account so a backup also restores into a fresh account after data
- * loss. NOT transactional — a mid-way failure leaves partial state; re-running
- * the same file wipes and retries cleanly.
+ * merge) in ONE call: restore_backup (supabase/migration_restore_backup.sql)
+ * wipes each table present in the file and re-inserts its rows with their
+ * original ids, so links between them hold, stamped as the current user's, so
+ * a backup also restores into a fresh account. It runs as one transaction: if
+ * anything fails, nothing has changed. (It used to be many requests, and a
+ * failure part-way left the account half-restored.)
  */
-export async function restoreBackup(
-  parsed: ParsedBackup,
-  userId: string,
-): Promise<void> {
-  const { data } = parsed
-  const present = TABLES.filter((t) => Array.isArray(data[t]))
-
-  // Wipe children-first (reverse of parents-first). Skip profiles: it's
-  // auto-created per account and is upserted in place below, not deleted.
-  for (const t of [...present].reverse()) {
-    if (t === 'profiles') continue
-    const { error } = await supabase.from(t).delete().not('id', 'is', null)
-    if (error) throw new Error(`Couldn’t clear ${t}: ${error.message}`)
-  }
-
-  // Re-insert parents-first.
-  for (const t of present) {
-    const rows = data[t]
-    if (t === 'profiles') {
-      const row = rows[0]
-      if (row) {
-        const { error } = await supabase
-          .from('profiles')
-          .upsert({ ...row, id: userId }, { onConflict: 'id' })
-        if (error) throw new Error(`Couldn’t restore profile: ${error.message}`)
-      }
-      continue
-    }
-    for (let i = 0; i < rows.length; i += BATCH) {
-      const chunk = rows
-        .slice(i, i + BATCH)
-        .map((r) => ({ ...r, user_id: userId }))
-      const { error } = await supabase.from(t).insert(chunk)
-      if (error) throw new Error(`Couldn’t restore ${t}: ${error.message}`)
-    }
-  }
+export async function restoreBackup(parsed: ParsedBackup): Promise<void> {
+  const { error } = await supabase.rpc('restore_backup', { backup: parsed.data })
+  if (!error) return
+  // The function is missing until the migration has run on this database.
+  if (error.code === 'PGRST202')
+    throw new Error(
+      'Couldn’t restore: the database needs an update first (migration_restore_backup.sql). Nothing was changed.',
+    )
+  throw new Error(`Couldn’t restore: ${error.message}. Nothing was changed.`)
 }

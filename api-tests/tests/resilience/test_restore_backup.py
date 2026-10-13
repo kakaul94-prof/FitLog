@@ -122,10 +122,9 @@ def test_restoring_the_same_backup_twice_gives_the_same_result(fresh_api: RestCl
 
 
 def orphan_set(backup: Backup) -> None:
-    """A set pointing at a workout that isn't in the backup (or anywhere)."""
+    """A copy of a real set, pointing at a workout that isn't in the backup (or anywhere)."""
     backup["workout_sets"].append(
-        {"id": str(uuid4()), "workout_id": str(uuid4()), "exercise_key": "back_squat"}
-        | {"exercise_name": "Back Squat", "reps": 5, "weight_lb": 225}
+        backup["workout_sets"][0] | {"id": str(uuid4()), "workout_id": str(uuid4())}
     )
 
 
@@ -134,7 +133,10 @@ def not_an_object(backup: Backup) -> None:
 
 
 def wrong_type(backup: Backup) -> None:
-    backup["measurements"].append({"id": str(uuid4()), "measured_on": DAY, "value": "heavy"})
+    """A copy of a real weigh-in whose value isn't a number."""
+    backup["measurements"].append(
+        backup["measurements"][0] | {"id": str(uuid4()), "value": "heavy"}
+    )
 
 
 @pytest.mark.parametrize(

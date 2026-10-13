@@ -27,6 +27,7 @@ import {
   useRecentExerciseEntries,
 } from '@/features/exercise/useExercise'
 import type { ExerciseEntry, HrSamples } from '@/lib/database.types'
+import { useSubmissionId } from '@/lib/idempotent'
 import {
   useCustomActivities,
   useCreateCustomActivity,
@@ -105,6 +106,7 @@ export function ExerciseAddPage() {
   const { data: recent, isPending: recentPending } = useRecentExerciseEntries()
   const { data: profile } = useProfile()
   const log = useLogExercise()
+  const saveId = useSubmissionId()
   const update = useUpdateExercise()
   const createCustom = useCreateCustomActivity()
   const updateCustom = useUpdateCustomActivity()
@@ -424,7 +426,7 @@ export function ExerciseAddPage() {
   // "Log again": save a copy of the last session to the current diary date.
   // Calories are copied verbatim — a watch override was that session's truth.
   const logAgain = async (e: ExerciseEntry) => {
-    await log.mutateAsync({
+    const copy = {
       entry_date: date,
       name: e.name,
       met: e.met,
@@ -440,7 +442,9 @@ export function ExerciseAddPage() {
       max_hr: null,
       hr_samples: null,
       zone_seconds: null,
-    })
+    }
+    await log.mutateAsync({ ...copy, id: saveId.idFor(copy) })
+    saveId.clear()
     nav(-1)
   }
 
@@ -519,7 +523,10 @@ export function ExerciseAddPage() {
     try {
       setSaveErr(null)
       if (editing && id) await update.mutateAsync({ id, ...payload })
-      else await log.mutateAsync(payload)
+      // Same id for a re-send of the same session (a retry after a lost reply
+      // or a double tap), so the server keeps one entry.
+      else await log.mutateAsync({ ...payload, id: saveId.idFor(payload) })
+      saveId.clear()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       // A missing column means the app is ahead of the database — say so

@@ -18,6 +18,8 @@ import { setupOnlineManager } from '@/lib/network'
 import { setupAuthRefresh } from '@/lib/authRefresh'
 import { initReminders } from '@/lib/reminders'
 import { registerDiaryMutationDefaults } from '@/features/diary/useDiary'
+import { registerExerciseMutationDefaults } from '@/features/exercise/useExercise'
+import { registerMeasurementMutationDefaults } from '@/features/measurements/useMeasurements'
 import { useWeightSyncOnAppOpen } from '@/features/measurements/useWeightSync'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { AuthProvider, useAuth } from '@/lib/auth'
@@ -121,7 +123,10 @@ setupAuthRefresh()
 // Register diary mutations as keyed defaults so writes that were paused offline
 // and persisted can be resumed after an app restart (kill-resilience for the
 // offline queue). Must run before render so a restored mutation finds its fn.
+// Weigh-ins and cardio logged offline resume the same way.
 registerDiaryMutationDefaults(queryClient)
+registerMeasurementMutationDefaults(queryClient)
+registerExerciseMutationDefaults(queryClient)
 
 function Spinner() {
   return (

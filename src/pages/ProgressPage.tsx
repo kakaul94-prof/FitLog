@@ -25,6 +25,7 @@ import {
   useSyncWeightsNow,
 } from '@/features/measurements/useWeightSync'
 import type { Measurement } from '@/lib/database.types'
+import { useSubmissionId } from '@/lib/idempotent'
 import { useProfile } from '@/features/profile/useProfile'
 import { useWeeklyCardioGoal } from '@/features/exercise/useWeeklyCardioGoal'
 import { useCardioPaceTrends } from '@/features/insights/useCardioPaceTrends'
@@ -435,6 +436,7 @@ function BodyView() {
   const { data: rows, isLoading: mLoading } = useMeasurements(type)
   const { data: profile } = useProfile()
   const logM = useLogMeasurement()
+  const saveId = useSubmissionId()
   const updM = useUpdateMeasurement()
   const delM = useDeleteMeasurement()
   const [val, setVal] = useState('')
@@ -464,12 +466,11 @@ function BodyView() {
   const add = async () => {
     const v = parseFloat(val)
     if (Number.isNaN(v)) return
-    await logM.mutateAsync({
-      type,
-      value: v,
-      unit: meta.unit,
-      measured_on: on,
-    })
+    const m = { type, value: v, unit: meta.unit, measured_on: on }
+    // Same id for a re-send of the same values (a double tap, or a retry after
+    // a lost reply), so the server keeps one weigh-in.
+    await logM.mutateAsync({ ...m, id: saveId.idFor(m) })
+    saveId.clear()
     setVal('')
     setOn(todayISO())
   }

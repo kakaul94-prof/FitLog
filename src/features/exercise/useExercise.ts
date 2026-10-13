@@ -1,4 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+  type UseMutationOptions,
+} from '@tanstack/react-query'
+import { insertOnce } from '@/lib/idempotent'
 import { supabase } from '@/lib/supabase'
 import type { ExerciseEntry, HrSamples } from '@/lib/database.types'
 
@@ -63,6 +70,8 @@ export function useRecentExerciseEntries(limit = 5) {
 }
 
 export interface NewExercise {
+  /** Chosen by the app (see useSubmissionId) so a repeated save is the same row. */
+  id?: string
   entry_date: string
   name: string
   met: number | null
@@ -106,12 +115,17 @@ export function useLastCardioField(
   })
 }
 
-export function useLogExercise() {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (e: NewExercise) => {
-      const { error } = await supabase.from('exercise_entries').insert(e)
-      if (error) throw error
+// Keyed and registered as a default (registerExerciseMutationDefaults), so a
+// session logged offline is still sent after the app restarts: a restored
+// write has only its key and variables to find its function by.
+function logExerciseMutation(qc: QueryClient): UseMutationOptions<ExerciseEntry, Error, NewExercise> {
+  return {
+    mutationKey: ['exercise', 'log'],
+    mutationFn: (e) =>
+      insertOnce<ExerciseEntry>('exercise_entries', { ...e, id: e.id ?? crypto.randomUUID() }),
+    // Fix the id before the write can be queued, so a replay is the same row.
+    onMutate: (e) => {
+      e.id ??= crypto.randomUUID()
     },
     // Whole prefix, not just the day: the weekly cardio-goal rollup reads the
     // ['exercise','range',…] key, which a date-specific key doesn't match.
@@ -120,7 +134,16 @@ export function useLogExercise() {
       qc.invalidateQueries({ queryKey: ['exercise'] })
       qc.invalidateQueries({ queryKey: ['nutritionTrends'] })
     },
-  })
+  }
+}
+
+export function useLogExercise() {
+  return useMutation(logExerciseMutation(useQueryClient()))
+}
+
+/** Lets a cardio session queued offline resume after an app restart. Run before render. */
+export function registerExerciseMutationDefaults(qc: QueryClient) {
+  qc.setMutationDefaults(['exercise', 'log'], logExerciseMutation(qc))
 }
 
 export function useDeleteExercise() {

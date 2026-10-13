@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { insertOnce } from '@/lib/idempotent'
 import { supabase } from '@/lib/supabase'
 import type {
   Workout,
@@ -84,19 +85,15 @@ export function useWorkout(id: string | undefined) {
 export function useCreateWorkout() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (w: {
+    // `id` comes from the caller (useSubmissionId) so starting again after a
+    // lost reply opens the workout the first tap made instead of a second one.
+    mutationFn: (w: {
+      id?: string
       workout_date: string
       name: string | null
       source_routine_id?: string | null
-    }): Promise<Workout> => {
-      const { data, error } = await supabase
-        .from('workouts')
-        .insert(w)
-        .select('*')
-        .single()
-      if (error) throw error
-      return data as Workout
-    },
+    }): Promise<Workout> =>
+      insertOnce<Workout>('workouts', { ...w, id: w.id ?? crypto.randomUUID() }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['workouts'] }),
   })
 }

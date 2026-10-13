@@ -695,6 +695,7 @@ export function DiaryPage() {
                 <div className="space-y-3 p-4">
                   <input
                     type="date"
+                    aria-label="Copy to date"
                     value={copyDate}
                     onChange={(e) => setCopyDate(e.target.value)}
                     className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"

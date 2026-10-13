@@ -197,6 +197,7 @@ export function CopyMealSheet({
                     <div className="text-center text-xs text-muted-foreground">or pick a date</div>
                     <input
                       type="date"
+                      aria-label="Copy from date"
                       value={pickDate}
                       max={addDaysISO(date, -1)}
                       onChange={(e) => {

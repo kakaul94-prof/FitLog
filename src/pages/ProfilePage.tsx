@@ -335,8 +335,9 @@ export function ProfilePage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Sex</Label>
+              <Label htmlFor="sex">Sex</Label>
               <Select
+                id="sex"
                 value={sex}
                 onChange={(e) => setSex(e.target.value as Sex | '')}
               >
@@ -362,6 +363,7 @@ export function ProfilePage() {
                     type="number"
                     inputMode="numeric"
                     placeholder="ft"
+                    aria-label="Height (feet)"
                     value={ft}
                     onChange={(e) => setFt(e.target.value)}
                   />
@@ -371,6 +373,7 @@ export function ProfilePage() {
                     type="number"
                     inputMode="numeric"
                     placeholder="in"
+                    aria-label="Height (inches)"
                     value={inch}
                     onChange={(e) => setInch(e.target.value)}
                   />
@@ -378,8 +381,9 @@ export function ProfilePage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Activity level</Label>
+              <Label htmlFor="activity">Activity level</Label>
               <Select
+                id="activity"
                 value={activity}
                 onChange={(e) => setActivity(e.target.value as ActivityLevel)}
               >
@@ -553,8 +557,8 @@ export function ProfilePage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Weekly goal</Label>
-              <Select value={rate} onChange={(e) => setRate(e.target.value)}>
+              <Label htmlFor="rate">Weekly goal</Label>
+              <Select id="rate" value={rate} onChange={(e) => setRate(e.target.value)}>
                 {RATE_OPTIONS.map((o) => (
                   <option key={o.v} value={o.v}>
                     {o.label}
@@ -819,6 +823,7 @@ function MacroRow({
       <div className="flex gap-2">
         <Select
           className="flex-1"
+          aria-label={`${label} target type`}
           value={mode}
           onChange={(e) => onMode(e.target.value as MacroMode)}
         >
@@ -833,6 +838,7 @@ function MacroRow({
             className="w-24"
             type="number"
             inputMode="decimal"
+            aria-label={`${label} amount`}
             value={value}
             onChange={(e) => onValue(e.target.value)}
           />

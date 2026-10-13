@@ -1,16 +1,21 @@
-import type { Page } from '@playwright/test'
+import type { Page, Response } from '@playwright/test'
 import { expect, runId, test } from '../fixtures'
 import type { DiaryPage } from '../pages/DiaryPage'
+import { EntryPage } from '../pages/EntryPage'
 import type { FoodPickerPage } from '../pages/FoodPickerPage'
-import { clearDiaryDay, createFood } from '../support/data'
+import { addDiaryEntry, clearDiaryDay, createFood } from '../support/data'
 import { authFile } from '../support/env'
 import {
   countReloads,
   goOffline,
   goOnline,
+  type HeldRequest,
+  holdNext,
   statusPill,
   waitForQueuedWritesSaved,
   waitForSync,
+  withBody,
+  writeQueue,
 } from '../support/network'
 
 // Logging while offline, then coming back. The diary keeps writes in a queue
@@ -113,6 +118,95 @@ test.describe('logging several entries in a row while offline', () => {
     await goOnline(page)
     await waitForSync(page)
     expect((await savedEntries(judyDb, date)).map((e) => e.food_name)).toEqual(foods.map((f) => f.name))
+  })
+})
+
+/** Wait for a response without leaving an unhandled rejection if it never comes. */
+function responseTo(page: Page, table: string, method: string, body?: Record<string, unknown>): Promise<Response> {
+  const response = page.waitForResponse((r) => {
+    const req = r.request()
+    if (new URL(r.url()).pathname !== `/rest/v1/${table}` || req.method() !== method) return false
+    return !body || withBody(body)(req)
+  })
+  response.catch(() => {})
+  return response
+}
+
+/**
+ * Replay the queue in the worst order the app allows. The first write is held
+ * at the network; if the app has sent later writes alongside it, they land
+ * first and only then is it let through. A queue that keeps order never sends
+ * a later write until the earlier one is done (it shows as waiting), so it
+ * finishes in order whatever the network does.
+ */
+async function letLaterWritesLandFirst(page: Page, first: HeldRequest, later: Promise<Response>): Promise<void> {
+  await first.arrived
+  const waiting = (await writeQueue(page)).filter((w) => w.status === 'pending' && w.paused)
+  if (waiting.length === 0) await later // sent alongside the first: let it overtake
+  first.release()
+}
+
+test.describe('the queue replays in the order things were done', () => {
+  test('an entry added and then deleted offline stays deleted', async ({
+    page,
+    judyDb,
+    diaryPage: diary,
+    foodPickerPage: picker,
+  }) => {
+    const date = '2024-02-05'
+    const name = `Added then deleted ${runId()}`
+    await clearDiaryDay(judyDb, date)
+    await openPickerOnline(diary, picker, date)
+
+    await goOffline(page)
+    await quickAddOffline(picker, name, 150)
+    await picker.doneButton.click()
+    await diary.openMenu(diary.entryRow(name, 150))
+    await diary.menuAction('Delete entry').click()
+    await expect(diary.entryRow(name, 150)).toHaveCount(0)
+    await expect(pending(page, 2)).toBeVisible()
+
+    const insert = await holdNext(page, 'diary_entries', 'POST')
+    const deleted = responseTo(page, 'diary_entries', 'DELETE')
+    await goOnline(page)
+    await letLaterWritesLandFirst(page, insert, deleted)
+    await waitForSync(page)
+
+    expect(await savedEntries(judyDb, date), 'the deleted entry must not come back').toEqual([])
+    await expect(diary.entryRow(name, 150)).toHaveCount(0)
+  })
+
+  test('the last of two offline edits to an entry is the one kept', async ({
+    page,
+    judyDb,
+    diaryPage: diary,
+  }) => {
+    const date = '2024-02-06'
+    const name = `Edited twice ${runId()}`
+    await clearDiaryDay(judyDb, date)
+    await addDiaryEntry(judyDb, date, name, 100)
+    const entry = new EntryPage(page)
+    await diary.gotoDate(date)
+    await diary.entryRow(name, 100).click()
+    await expect(entry.servingsInput).toHaveValue('1') // the edit screen is loaded while online
+
+    await goOffline(page)
+    for (const servings of [2, 3]) {
+      if (servings > 2) await diary.entryRow(name, 200).click()
+      await entry.servingsInput.fill(String(servings))
+      await entry.saveChangesButton.click()
+      await expect(diary.entryRow(name, 100 * servings)).toBeVisible()
+    }
+    await expect(pending(page, 2)).toBeVisible()
+
+    const firstEdit = await holdNext(page, 'diary_entries', 'PATCH', withBody({ servings: 2 }))
+    const secondEdit = responseTo(page, 'diary_entries', 'PATCH', { servings: 3 })
+    await goOnline(page)
+    await letLaterWritesLandFirst(page, firstEdit, secondEdit)
+    await waitForSync(page)
+
+    expect((await savedEntries(judyDb, date)).map((e) => e.servings), 'the later edit wins').toEqual([3])
+    await expect(diary.entryRow(name, 300)).toBeVisible()
   })
 })
 

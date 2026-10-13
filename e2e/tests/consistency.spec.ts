@@ -2,9 +2,9 @@ import type { Page } from '@playwright/test'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { expect, runId, test } from '../fixtures'
 import { EntryPage } from '../pages/EntryPage'
-import { clearDiaryDay } from '../support/data'
+import { addDiaryEntry, clearDiaryDay } from '../support/data'
 import { authFile } from '../support/env'
-import { holdNext, readPersistedCache, waitForIdle } from '../support/network'
+import { holdNext, readPersistedCache, waitForIdle, withQuery } from '../support/network'
 
 // Stale data and other devices. The app shows cached data at once (from memory,
 // or from IndexedDB after a restart) and replaces it with the server's version
@@ -15,17 +15,6 @@ import { holdNext, readPersistedCache, waitForIdle } from '../support/network'
 // Time is moved with Playwright's fake clock; network order with interception.
 test.use({ storageState: authFile('judy') })
 test.describe.configure({ retries: 0 })
-
-/** A diary entry saved straight to the server, as another device would. */
-async function seedEntry(db: SupabaseClient, date: string, name: string, kcal: number): Promise<string> {
-  const { data, error } = await db
-    .from('diary_entries')
-    .insert({ entry_date: date, meal: 'snacks', food_name: name, nutrients: { kcal }, servings: 1 })
-    .select('id')
-    .single()
-  if (error) throw new Error(`seedEntry(${name}): ${error.message}`)
-  return data.id as string
-}
 
 async function editElsewhere(db: SupabaseClient, id: string, patch: Record<string, unknown>): Promise<void> {
   const { error } = await db.from('diary_entries').update(patch).eq('id', id)
@@ -57,13 +46,13 @@ test('a day restored from the offline cache is replaced by the server version af
   const date = '2024-04-01'
   const name = `Cached ${runId()}`
   await clearDiaryDay(judyDb, date)
-  const id = await seedEntry(judyDb, date, name, 150)
+  const id = await addDiaryEntry(judyDb, date, name, 150)
   await diary.gotoDate(date)
   await expect(diary.entryRow(name, 150)).toBeVisible()
   await waitForDaySavedToDisk(page, date, name)
 
   await editElsewhere(judyDb, id, { servings: 2 })
-  const refetch = await holdNext(page, 'diary_entries', 'GET', `entry_date=eq.${date}`)
+  const refetch = await holdNext(page, 'diary_entries', 'GET', withQuery(`entry_date=eq.${date}`))
   await page.reload()
 
   await refetch.arrived
@@ -81,7 +70,7 @@ test("another device's edit shows once this device's copy of the day is over a m
   const date = '2024-04-02'
   const name = `Two devices ${runId()}`
   await clearDiaryDay(judyDb, date)
-  const id = await seedEntry(judyDb, date, name, 150)
+  const id = await addDiaryEntry(judyDb, date, name, 150)
   await page.clock.install()
   await diary.gotoDate(date)
   await expect(diary.entryRow(name, 150)).toBeVisible()
@@ -108,7 +97,7 @@ test('edits from two devices to different fields of an entry are both kept', asy
   const date = '2024-04-03'
   const name = `Merged ${runId()}`
   await clearDiaryDay(judyDb, date)
-  const id = await seedEntry(judyDb, date, name, 150)
+  const id = await addDiaryEntry(judyDb, date, name, 150)
   await diary.gotoDate(date)
   await expect(diary.entryRow(name, 150)).toBeVisible()
 

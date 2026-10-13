@@ -52,6 +52,17 @@ export async function clearDiaryDay(db: SupabaseClient, date: string): Promise<v
   if (error) throw new Error(`clearDiaryDay(${date}): ${error.message}`)
 }
 
+/** A calories-only diary entry saved straight to the server (1 serving, snacks); returns its id. */
+export async function addDiaryEntry(db: SupabaseClient, date: string, name: string, kcal: number): Promise<string> {
+  const { data, error } = await db
+    .from('diary_entries')
+    .insert({ entry_date: date, meal: 'snacks', food_name: name, nutrients: { kcal }, servings: 1 })
+    .select('id')
+    .single()
+  if (error) throw new Error(`addDiaryEntry(${name}): ${error.message}`)
+  return data.id as string
+}
+
 /** A day's food diary, as saved. */
 export async function diaryDay(db: SupabaseClient, date: string) {
   const { data } = await db.from('diary_entries').select('food_name, meal, servings').eq('entry_date', date).order('food_name')

@@ -1,4 +1,4 @@
-import { expect, type Page, type Route } from '@playwright/test'
+import { expect, type Page, type Request, type Route } from '@playwright/test'
 
 // Network faults for the resilience specs, all driven by Playwright's request
 // interception rather than timing: a test decides exactly when a request is
@@ -6,19 +6,37 @@ import { expect, type Page, type Route } from '@playwright/test'
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE'
 
-/** Intercept the app's Supabase REST calls on one table with one method (and, optionally, query). */
+/** Which requests to act on, beyond table and method: a query or body check. */
+export type RequestMatch = (request: Request) => boolean
+
+/** Intercept the app's Supabase REST calls on one table with one method. */
 async function onRest(
   page: Page,
   table: string,
   method: Method,
   handler: (route: Route) => Promise<void>,
-  query?: string,
+  match: RequestMatch = () => true,
 ): Promise<void> {
   await page.route(
-    (url) => url.pathname === `/rest/v1/${table}` && (!query || decodeURIComponent(url.search).includes(query)),
-    (route) => (route.request().method() === method ? handler(route) : route.fallback()),
+    (url) => url.pathname === `/rest/v1/${table}`,
+    (route) =>
+      route.request().method() === method && match(route.request()) ? handler(route) : route.fallback(),
   )
 }
+
+/** Match a request whose query string contains `text`, e.g. `entry_date=eq.2024-02-01`. */
+export const withQuery =
+  (text: string): RequestMatch =>
+  (request) =>
+    decodeURIComponent(new URL(request.url()).search).includes(text)
+
+/** Match a request whose JSON body has these values, e.g. `{ servings: 2 }`. */
+export const withBody =
+  (values: Record<string, unknown>): RequestMatch =>
+  (request) => {
+    const body = request.postDataJSON() as Record<string, unknown> | null
+    return !!body && Object.entries(values).every(([k, v]) => body[k] === v)
+  }
 
 export interface LostReply {
   /** Resolves with the status the server sent (the app never sees it). */
@@ -77,11 +95,13 @@ export interface HeldRequest {
   release: () => void
 }
 
-/**
- * Hold the next such request at the network until the test releases it.
- * `query` narrows it to one request, e.g. `entry_date=eq.2024-02-01`.
- */
-export async function holdNext(page: Page, table: string, method: Method, query?: string): Promise<HeldRequest> {
+/** Hold the next such request at the network until the test releases it. */
+export async function holdNext(
+  page: Page,
+  table: string,
+  method: Method,
+  match?: RequestMatch,
+): Promise<HeldRequest> {
   let arrive!: () => void
   const arrived = new Promise<void>((resolve) => (arrive = resolve))
   let release!: () => void
@@ -93,7 +113,7 @@ export async function holdNext(page: Page, table: string, method: Method, query?
     arrive()
     await released
     await route.continue()
-  }, query)
+  }, match)
   return { arrived, release }
 }
 

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { supabase } from '@/lib/supabase'
+import { useSubmissionId } from '@/lib/idempotent'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
 import { useDailySupplements } from '@/features/profile/useDailySupplements'
 import { useFoods } from '@/features/foods/useFoods'
@@ -63,6 +64,7 @@ export function ProfilePage() {
   const { data: adaptive } = useAdaptiveTDEE()
   const updateProfile = useUpdateProfile()
   const logWeight = useLogMeasurement()
+  const weightSaveId = useSubmissionId()
   const [adaptiveApplied, setAdaptiveApplied] = useState(false)
 
   const [sex, setSex] = useState<Sex | ''>('')
@@ -213,12 +215,9 @@ export function ProfilePage() {
       step_goal: stepGoal.trim() ? parseInt(stepGoal) || null : null,
     })
     if (weightNum != null && weightNum !== latestWeight) {
-      await logWeight.mutateAsync({
-        type: 'weight',
-        value: weightNum,
-        unit: 'lb',
-        measured_on: todayISO(),
-      })
+      const m = { type: 'weight', value: weightNum, unit: 'lb', measured_on: todayISO() }
+      await logWeight.mutateAsync({ ...m, id: weightSaveId.idFor(m) })
+      weightSaveId.clear()
     }
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)

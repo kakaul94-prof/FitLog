@@ -20,6 +20,7 @@ Allure report come with every CI run.
 | Sensitive data | `tests/security` | 31 | 14 different refusals scanned for secrets, tokens, stack traces, file paths, connection strings and other users' data; exports hold only your own rows; the trainer never returns its prompt or key |
 | Pages Functions | `tests/functions` | 63 | What `/api/trainer` and `/api/scan-plate` send to Claude (key, model, budget, system prompt with the user's log and memory, input caps) and how they handle every kind of upstream failure; who may call each function; the recipe importer's URL guard |
 | Scenarios (BDD) | `tests/bdd` | 18 | The isolation guarantees and four everyday journeys as Gherkin feature files |
+| Resilience | `tests/resilience` | 34 | Repeated creates: every table refuses a second insert with the same id and keeps one unchanged row, a replay can't overwrite it or touch another user's, a batch insert is all-or-nothing. Two devices editing one entry (different fields both kept, same field last-save-wins). Backup restore (`restore_backup`) is one transaction: a bad row anywhere changes nothing, it can run twice, every row is the caller's, 5000 rows fit the 8 s statement timeout |
 
 What it found and how each problem was fixed: [`SECURITY-FINDINGS.md`](../SECURITY-FINDINGS.md).
 

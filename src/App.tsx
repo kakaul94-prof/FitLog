@@ -18,6 +18,8 @@ import { setupOnlineManager } from '@/lib/network'
 import { setupAuthRefresh } from '@/lib/authRefresh'
 import { initReminders } from '@/lib/reminders'
 import { registerDiaryMutationDefaults } from '@/features/diary/useDiary'
+import { registerExerciseMutationDefaults } from '@/features/exercise/useExercise'
+import { registerMeasurementMutationDefaults } from '@/features/measurements/useMeasurements'
 import { useWeightSyncOnAppOpen } from '@/features/measurements/useWeightSync'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
 import { AuthProvider, useAuth } from '@/lib/auth'
@@ -102,6 +104,13 @@ function createIDBPersister(key: IDBValidKey = 'fitlog-query-cache'): Persister 
 }
 const persister = createIDBPersister()
 
+// Dev-only: expose the query client so end-to-end tests can see the offline
+// write queue (which writes are waiting their turn). Like window.__supabase,
+// it's stripped from production builds.
+if (import.meta.env.DEV) {
+  ;(globalThis as unknown as { __queryClient?: QueryClient }).__queryClient = queryClient
+}
+
 // Wire TanStack Query's online state to Capacitor Network so writes pause while
 // offline and resume on reconnect (Phase 2). Safe everywhere — the plugin's web
 // impl covers the browser PWA; the native plugin lands with the next APK build.
@@ -114,7 +123,10 @@ setupAuthRefresh()
 // Register diary mutations as keyed defaults so writes that were paused offline
 // and persisted can be resumed after an app restart (kill-resilience for the
 // offline queue). Must run before render so a restored mutation finds its fn.
+// Weigh-ins and cardio logged offline resume the same way.
 registerDiaryMutationDefaults(queryClient)
+registerMeasurementMutationDefaults(queryClient)
+registerExerciseMutationDefaults(queryClient)
 
 function Spinner() {
   return (

@@ -106,6 +106,10 @@ export function FoodPickerPage() {
   const [quickOpen, setQuickOpen] = useState(false)
   const [sourceOpen, setSourceOpen] = useState(false)
   const quickAdd = useQuickAddFood()
+  // Lock an Add button only while its last save is actually being sent. A
+  // save waiting in the offline queue counts as pending too, but it shouldn't
+  // stop you logging the next food: the queue sends them all on reconnect.
+  const sending = (m: { isPending: boolean; isPaused: boolean }) => m.isPending && !m.isPaused
   // Items (2)+(9): stay in the picker after adding, with a toast. The tally
   // footer expands into a tray of this session's entries (they're already in
   // the diary — edits/removals write straight through to those rows).
@@ -472,9 +476,9 @@ export function FoodPickerPage() {
           <Button
             className="w-full"
             onClick={addMany}
-            disabled={logMany.isPending}
+            disabled={sending(logMany)}
           >
-            {logMany.isPending ? 'Adding…' : `Add ${picks.length} to ${meal}`}
+            {sending(logMany) ? 'Adding…' : `Add ${picks.length} to ${meal}`}
           </Button>
         </div>
       )}
@@ -650,7 +654,7 @@ export function FoodPickerPage() {
         <ServingSheet
           food={servingFood}
           meal={meal}
-          pending={logOne.isPending}
+          pending={sending(logOne)}
           last={history?.lastServings.get(servingFood.id)}
           onClose={() => setServingFood(null)}
           onAdd={async (s, unit) => {
@@ -685,7 +689,7 @@ export function FoodPickerPage() {
       {quickOpen && (
         <QuickAddSheet
           meal={meal}
-          pending={quickAdd.isPending}
+          pending={sending(quickAdd)}
           onClose={() => setQuickOpen(false)}
           onAdd={async ({ name, nutrients }) => {
             const id = crypto.randomUUID()

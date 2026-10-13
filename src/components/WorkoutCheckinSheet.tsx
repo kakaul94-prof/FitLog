@@ -12,6 +12,7 @@ import { useRecoveryTarget, useSaveRecovery } from '@/features/strength/useRecov
 import { useRehab } from '@/features/rehab/useRehab'
 import { REGION_LABEL, type RegionId } from '@/data/bodyMap'
 import { supabase } from '@/lib/supabase'
+import { useSubmissionId } from '@/lib/idempotent'
 import { todayISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
 import { cancelRecoveryCheck } from '@/lib/reminders'
@@ -61,6 +62,7 @@ type StartExtra = {
 export function useWorkoutCheckin() {
   const startFrom = useStartFromRoutine()
   const create = useCreateWorkout()
+  const createId = useSubmissionId()
   const [vars, setVars] = useState<StartVars | null>(null)
   const resolver = useRef<((id: string | null) => void) | null>(null)
 
@@ -79,7 +81,9 @@ export function useWorkoutCheckin() {
   const begin = async (v: StartVars, extra: StartExtra): Promise<string> => {
     if (v.routineId)
       return startFrom.mutateAsync({ ...v, routineId: v.routineId, ...extra })
-    const w = await create.mutateAsync({ workout_date: v.date, name: v.name })
+    const values = { workout_date: v.date, name: v.name }
+    const w = await create.mutateAsync({ ...values, id: createId.idFor(values) })
+    createId.clear()
     // Best-effort, like the routine path: no column yet = no record, still starts.
     if (extra.checkin)
       await supabase.from('workouts').update({ checkin: extra.checkin }).eq('id', w.id)

@@ -107,6 +107,23 @@ export function useRecipe(id: string | undefined) {
   })
 }
 
+/**
+ * Undo the first steps of a multi-step recipe save that failed later on, so
+ * no empty recipe or orphaned (archived) ingredient food is left behind. The
+ * recipe goes first: its ingredient links go with it (on delete cascade),
+ * which frees the ingredient foods to be deleted. Best effort: if this fails
+ * too (the connection is gone), the caller still reports the original error.
+ */
+async function discardPartialRecipe(recipeId: string, ingredientFoodIds: string[] = []) {
+  try {
+    await supabase.from('foods').delete().eq('id', recipeId)
+    if (ingredientFoodIds.length)
+      await supabase.from('foods').delete().in('id', ingredientFoodIds)
+  } catch {
+    // keep the original error
+  }
+}
+
 export function useCreateRecipe() {
   const qc = useQueryClient()
   return useMutation({
@@ -159,37 +176,44 @@ export function useImportRecipe() {
       if (recipeErr) throw recipeErr
       const recipe = recipeData as Food
 
-      const { data: foodRows, error: foodErr } = await supabase
-        .from('foods')
-        .insert(
-          parsed.ingredients.map((ing) => ({
-            name: ing.name,
-            source: 'manual' as const,
-            serving_qty: 1,
-            serving_unit: 'serving',
-            serving_grams: ing.grams,
-            nutrients: ing.nutrients,
-            archived: true,
+      // The next steps can fail; undo this one (and any foods saved) if they do.
+      let ids: { id: string }[] = []
+      try {
+        const { data: foodRows, error: foodErr } = await supabase
+          .from('foods')
+          .insert(
+            parsed.ingredients.map((ing) => ({
+              name: ing.name,
+              source: 'manual' as const,
+              serving_qty: 1,
+              serving_unit: 'serving',
+              serving_grams: ing.grams,
+              nutrients: ing.nutrients,
+              archived: true,
+            })),
+          )
+          .select('id')
+        if (foodErr) throw foodErr
+        // Bulk insert returns rows in input order; zip them back by index.
+        ids = (foodRows ?? []) as { id: string }[]
+        if (ids.length !== parsed.ingredients.length)
+          throw new Error('Import failed while saving ingredients.')
+
+        const { error: riErr } = await supabase.from('recipe_ingredients').insert(
+          parsed.ingredients.map((ing, idx) => ({
+            recipe_food_id: recipe.id,
+            ingredient_food_id: ids[idx].id,
+            amount: ing.grams,
+            unit: 'g',
+            servings: 1, // one base serving = the ingredient's gram weight
+            position: idx,
           })),
         )
-        .select('id')
-      if (foodErr) throw foodErr
-      // Bulk insert returns rows in input order; zip them back by index.
-      const ids = (foodRows ?? []) as { id: string }[]
-      if (ids.length !== parsed.ingredients.length)
-        throw new Error('Import failed while saving ingredients.')
-
-      const { error: riErr } = await supabase.from('recipe_ingredients').insert(
-        parsed.ingredients.map((ing, idx) => ({
-          recipe_food_id: recipe.id,
-          ingredient_food_id: ids[idx].id,
-          amount: ing.grams,
-          unit: 'g',
-          servings: 1, // one base serving = the ingredient's gram weight
-          position: idx,
-        })),
-      )
-      if (riErr) throw riErr
+        if (riErr) throw riErr
+      } catch (e) {
+        await discardPartialRecipe(recipe.id, ids.map((r) => r.id))
+        throw e
+      }
 
       await recompute(recipe.id)
       return recipe
@@ -259,7 +283,10 @@ export function useDuplicateRecipe() {
               position: i.position ?? idx,
             })),
           )
-        if (insErr) throw insErr
+        if (insErr) {
+          await discardPartialRecipe(copy.id) // no copy without its ingredients
+          throw insErr
+        }
         await recompute(copy.id)
       }
       return copy

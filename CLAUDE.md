@@ -76,7 +76,8 @@ Pointers only; the mechanics live in **Domain logic** / **Data model** below.
 - **NordVPN Threat Protection blocks `supabase.co`** → "Failed to fetch". Allowlist `*.supabase.co` or disable it.
 - USDA imports arrive **per 100 g** — changing the serving size on the food form now auto-rescales the nutrients (`FoodFormPage`). Energy may arrive only under the Atwater ids (`2047`/`2048`) rather than `1008`; the importer falls back so calories don't import as `0` (`usda.ts`).
 - Micros are only as complete as source data (USDA whole foods = full; branded/manual = sparse).
-- Offline = read recent data; writes need a connection (v1).
+- Offline: recent data reads from the IndexedDB-saved cache. Diary writes, weigh-ins and cardio queue offline (TanStack paused mutations, saved to IndexedDB, keyed + `setMutationDefaults` so they resume after a restart); diary writes share one `scope` so they replay in order. Inserts use app-chosen ids, so a replay or retry is the same row (`lib/idempotent.ts`, `insertDiaryRows`). Other writes still need a connection: one made offline waits in memory and is dropped if the app is closed first.
+- Backup restore is one call to `restore_backup` (all-or-nothing transaction); RUN `migration_restore_backup.sql` (dev+prod) or Restore reports that the database needs an update.
 - `public/_redirects` (`/* /index.html 200`) makes SPA deep links work on Cloudflare Pages.
 - Never commit `.env`. PWA icons are generated from `public/icon.svg` via `node scripts/gen-icons.mjs`.
 

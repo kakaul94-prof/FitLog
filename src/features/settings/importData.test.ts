@@ -1,40 +1,31 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { restoreBackup, validateBackup } from './importData'
 
-// Record the supabase calls restoreBackup makes so we can assert FK-safe order
-// and the user_id forcing without a real backend. (vi.hoisted so the mock
-// factory below — which Vitest hoists above the import — can see `ops`.)
-const { ops } = vi.hoisted(() => ({
-  ops: [] as {
-    op: 'delete' | 'insert' | 'upsert'
-    table: string
-    rows?: unknown[]
-  }[],
+// Record the calls restoreBackup makes, without a real backend. The restore
+// itself (wipe order, re-insert order, stamping rows as the caller's, all or
+// nothing) runs in the database's restore_backup and is tested against a real
+// one in api-tests/tests/resilience/test_restore_backup.py. (vi.hoisted so the
+// mock factory below, which Vitest hoists above the import, can see `calls`.)
+const { calls, reply } = vi.hoisted(() => ({
+  calls: [] as { fn: string; args: unknown }[],
+  reply: { error: null as { code: string; message: string } | null },
 }))
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
-    from: (table: string) => ({
-      delete: () => ({
-        not: () => {
-          ops.push({ op: 'delete', table })
-          return Promise.resolve({ error: null })
-        },
-      }),
-      upsert: (row: unknown) => {
-        ops.push({ op: 'upsert', table, rows: [row] })
-        return Promise.resolve({ error: null })
-      },
-      insert: (chunk: unknown[]) => {
-        ops.push({ op: 'insert', table, rows: chunk })
-        return Promise.resolve({ error: null })
-      },
-    }),
+    rpc: (fn: string, args: unknown) => {
+      calls.push({ fn, args })
+      return Promise.resolve({ data: null, error: reply.error })
+    },
+    from: (table: string) => {
+      throw new Error(`restore must not touch ${table} directly`)
+    },
   },
 }))
 
 afterEach(() => {
-  ops.length = 0
+  calls.length = 0
+  reply.error = null
 })
 
 describe('validateBackup', () => {
@@ -100,42 +91,34 @@ describe('export -> import round-trip', () => {
 })
 
 describe('restoreBackup', () => {
-  it('wipes children-first and re-inserts parents-first, sparing profiles', async () => {
-    const parsed = validateBackup(
+  const parsed = () =>
+    validateBackup(
       JSON.stringify({
         app: 'FitLog',
-        profiles: [{ id: 'old', user_id: 'old', sex: 'male' }],
+        profiles: [{ id: 'old', sex: 'male' }],
         foods: [{ id: 'f1', user_id: 'old' }],
-        workouts: [{ id: 'w1', user_id: 'old' }],
         workout_sets: [{ id: 's1', user_id: 'old' }],
       }),
     )
-    await restoreBackup(parsed, 'me')
 
-    const deletes = ops.filter((o) => o.op === 'delete').map((o) => o.table)
-    const inserts = ops.filter((o) => o.op === 'insert').map((o) => o.table)
+  it('sends the whole backup to the database in one call', async () => {
+    const backup = parsed()
+    await restoreBackup(backup)
 
-    expect(deletes).toEqual(['workout_sets', 'workouts', 'foods']) // children-first
-    expect(deletes).not.toContain('profiles') // upserted in place, never wiped
-    expect(inserts).toEqual(['foods', 'workouts', 'workout_sets']) // parents-first
+    expect(calls).toEqual([{ fn: 'restore_backup', args: { backup: backup.data } }])
   })
 
-  it('forces the current user_id on inserted rows and the profile id', async () => {
-    const parsed = validateBackup(
-      JSON.stringify({
-        app: 'FitLog',
-        profiles: [{ id: 'old', user_id: 'old' }],
-        foods: [{ id: 'f1', user_id: 'old' }],
-      }),
-    )
-    await restoreBackup(parsed, 'me')
+  it('reports a refused restore as nothing changed', async () => {
+    reply.error = { code: '23503', message: 'violates foreign key constraint' }
 
-    const foodsInsert = ops.find((o) => o.op === 'insert' && o.table === 'foods')
-    expect((foodsInsert?.rows as { user_id: string }[])[0].user_id).toBe('me')
-
-    const profileUpsert = ops.find(
-      (o) => o.op === 'upsert' && o.table === 'profiles',
+    await expect(restoreBackup(parsed())).rejects.toThrow(
+      'Couldn’t restore: violates foreign key constraint. Nothing was changed.',
     )
-    expect((profileUpsert?.rows as { id: string }[])[0].id).toBe('me')
+  })
+
+  it('says the database needs updating when the restore function is missing', async () => {
+    reply.error = { code: 'PGRST202', message: 'Could not find the function public.restore_backup' }
+
+    await expect(restoreBackup(parsed())).rejects.toThrow(/needs an update first.*Nothing was changed/)
   })
 })

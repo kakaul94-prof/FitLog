@@ -54,7 +54,8 @@ test.describe('double taps', () => {
     await waitForIdle(page)
 
     expect(await entriesNamed(judyDb, date, name)).toHaveLength(1)
-    await picker.doneButton.click()
+    // By URL, not Done: the second tap lands on whatever was under the sheet.
+    await diary.gotoDate(date)
     await waitForIdle(page)
     await expect(diary.entryRow(name, 120)).toHaveCount(1)
   })

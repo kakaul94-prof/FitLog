@@ -170,13 +170,8 @@ export const onRequestPost = async (context: {
       temperature: 0.1,
     })
   } catch (e) {
-    return json(
-      {
-        error: 'The label reader is unavailable right now.',
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      502,
-    )
+    console.error('scan-label: vision model failed', e)
+    return json({ error: 'The label reader is unavailable right now.' }, 502)
   }
   if (!labelText.trim())
     return json(
@@ -214,31 +209,15 @@ export const onRequestPost = async (context: {
     })
     parsed = extractJson(raw)
   } catch (e) {
-    return json(
-      {
-        error: "Couldn't read the label. Try a clearer, straight-on photo.",
-        detail:
-          (e instanceof Error ? e.message : String(e)) +
-          ' | read: ' +
-          labelText.slice(0, 600),
-      },
-      422,
-    )
+    console.error('scan-label: unreadable answer', e, '| read:', labelText.slice(0, 600))
+    return json({ error: "Couldn't read the label. Try a clearer, straight-on photo." }, 422)
   }
 
   // Structured but empty/all-zero — treat as an unreadable label rather than
-  // silently zeroing the form. labelText is surfaced to aid diagnosis.
-  if (!hasValues(parsed))
-    return json(
-      {
-        error: "Couldn't read the label. Try a clearer, straight-on photo.",
-        detail:
-          'no values parsed | structured: ' +
-          raw.slice(0, 400) +
-          ' | read: ' +
-          labelText.slice(0, 400),
-      },
-      422,
-    )
+  // silently zeroing the form. labelText is logged to aid diagnosis.
+  if (!hasValues(parsed)) {
+    console.error('scan-label: no values parsed', raw.slice(0, 400), '| read:', labelText.slice(0, 400))
+    return json({ error: "Couldn't read the label. Try a clearer, straight-on photo." }, 422)
+  }
   return json(parsed)
 }

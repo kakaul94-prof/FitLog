@@ -22,7 +22,12 @@ import {
   Target,
   Sparkles,
   Brain,
+  ArrowLeftRight,
 } from 'lucide-react'
+import { useUndoSwap } from '@/features/strength/useCheckin'
+import { flagsLabel } from '@/lib/checkin'
+import { nextMorning9 } from '@/lib/recovery'
+import { scheduleRecoveryCheck } from '@/lib/reminders'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { TrainerChat } from '@/components/TrainerChat'
 import { Card } from '@/components/ui/card'
@@ -51,7 +56,10 @@ import {
   type SessionPlan,
 } from '@/features/strength/useStrengthGoals'
 import { useRoutine } from '@/features/strength/useRoutines'
+import { WarmupChecklist } from '@/components/strength/WarmupChecklist'
+import { isWarmupKey, warmupDrillKey } from '@/lib/warmup'
 import { useCoachEnabled, useUpdateProfile } from '@/features/profile/useProfile'
+import { FuelFeedbackPrompt } from '@/components/PreWorkoutFuel'
 import { useExerciseEntries } from '@/features/exercise/useExercise'
 import { useCustomActivities } from '@/features/exercise/useCustomActivities'
 import {
@@ -156,6 +164,21 @@ export function WorkoutPage() {
   const exercises = data?.exercises ?? []
   const sets = data?.sets ?? []
 
+  // Arm tomorrow's 9:00 "how's your body?" once a set is logged. Re-arming is
+  // harmless (one slot, same time); once the workout's recovery is answered it
+  // stays quiet. Past workouts are skipped inside (fire time already gone).
+  const recoveryArmed = useRef(false)
+  const hasLoggedSet = sets.some((s) => s.reps != null || s.weight_lb != null)
+  useEffect(() => {
+    if (recoveryArmed.current || !workout || !hasLoggedSet || workout.checkin?.after) return
+    recoveryArmed.current = true
+    void scheduleRecoveryCheck(
+      workout.id,
+      workout.name || 'your workout',
+      nextMorning9(workout.workout_date),
+    )
+  }, [workout, hasLoggedSet])
+
   // Cardio items programmed on the source template. They never become workout
   // exercises — they render as a checklist here, and logging one writes a
   // normal cardio entry (calories/eat-back/trends all unchanged).
@@ -165,6 +188,10 @@ export function WorkoutPage() {
   const cardioItems = (routineData?.exercises ?? []).filter((e) =>
     isCardioKey(e.exercise_key),
   )
+  // The template's warm-up drills: a tick-off list, never workout exercises.
+  const warmupDrills = (routineData?.exercises ?? [])
+    .filter((e) => isWarmupKey(e.exercise_key))
+    .map((e) => warmupDrillKey(e.exercise_key))
   // Today's plan + last session's warnings for the lifts in this workout,
   // computed from PRIOR sessions only (one batched query, not one per card).
   // Skipped entirely with the coach off — passing no workout id disables it.
@@ -418,6 +445,23 @@ export function WorkoutPage() {
         }
       />
       <div className="space-y-4 p-4 pb-32">
+        {workout && <FuelFeedbackPrompt startedAt={workout.created_at} />}
+        {workout?.checkin && workout.checkin.flags.length > 0 && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 first-letter:uppercase dark:text-amber-200">
+            {flagsLabel(workout.checkin.flags)} today
+            {workout.checkin.swaps.length > 0 &&
+              ` · ${workout.checkin.swaps.length} swap${workout.checkin.swaps.length === 1 ? '' : 's'}`}
+            {workout.checkin.skipped.length > 0 &&
+              ` · skipped ${workout.checkin.skipped.join(', ')}`}
+          </div>
+        )}
+        {workout && warmupDrills.length > 0 && (
+          <WarmupChecklist
+            workoutId={workout.id}
+            date={workout.workout_date}
+            drills={warmupDrills}
+          />
+        )}
         {activeBlocks.map(renderBlock)}
 
         {completedBlocks.length > 0 && (
@@ -961,6 +1005,14 @@ function ExerciseCard({
     [rehabState, ex.exercise_key],
   )
 
+  // Swapped in by the pre-workout check-in. Undo is only offered while the
+  // exercise is untouched — once sets are logged they belong to this lift.
+  const { data: wd } = useWorkout(workoutId)
+  const checkin = wd?.workout?.checkin
+  const swap = checkin?.swaps.find((s) => s.toKey === ex.exercise_key)
+  const undoSwap = useUndoSwap()
+  const anyLogged = sets.some((s) => s.weight_lb != null || s.reps != null)
+
   // Whole-exercise timing: Start stamps the beginning of the first set, Done
   // stamps the end (and rolls the exercise into "Completed"). Tapping the
   // filled Done again clears ended_at and reopens the exercise.
@@ -1089,6 +1141,23 @@ function ExerciseCard({
             </span>
           </div>
         )}
+        {swap && checkin && (
+          <div className="mb-1.5 flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+            <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
+            <span>Swapped from {swap.fromName}</span>
+            {!anyLogged && (
+              <button
+                className="ml-auto font-medium text-primary"
+                disabled={undoSwap.isPending}
+                onClick={() =>
+                  undoSwap.mutate({ workoutId, exerciseId: ex.id, swap, checkin })
+                }
+              >
+                Undo
+              </button>
+            )}
+          </div>
+        )}
         {!done && plan?.warning && (
           <div
             className={cn(
@@ -1118,7 +1187,7 @@ function ExerciseCard({
               className="flex w-full items-center gap-1.5 text-xs font-medium text-primary"
             >
               <Flame className="h-3.5 w-3.5" />
-              <span className="flex-1 text-left">Warm-up</span>
+              <span className="flex-1 text-left">Ramp-up sets</span>
               {warmupOpen ? (
                 <ChevronUp className="h-3.5 w-3.5" />
               ) : (
@@ -1132,7 +1201,7 @@ function ExerciseCard({
                 </p>
               ) : ramp.length === 0 ? (
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Light working weight — no warm-up needed.
+                  Light working weight — no ramp-up needed.
                 </p>
               ) : (
                 <>

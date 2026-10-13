@@ -5,6 +5,7 @@ import {
   RouterProvider,
   Route,
   Outlet,
+  Navigate,
 } from 'react-router-dom'
 import { QueryClient } from '@tanstack/react-query'
 import {
@@ -53,7 +54,7 @@ const HeartRateMonitorPage = lazyPage(() => import('@/pages/HeartRateMonitorPage
 const WorkoutPage = lazyPage(() => import('@/pages/WorkoutPage'), 'WorkoutPage')
 const ExercisePickerPage = lazyPage(() => import('@/pages/ExercisePickerPage'), 'ExercisePickerPage')
 const ExerciseDetailPage = lazyPage(() => import('@/pages/ExerciseDetailPage'), 'ExerciseDetailPage')
-const WorkoutCalendarPage = lazyPage(() => import('@/pages/WorkoutCalendarPage'), 'WorkoutCalendarPage')
+const FormRecordPage = lazyPage(() => import('@/pages/FormRecordPage'), 'FormRecordPage')
 const MuscleVolumePage = lazyPage(() => import('@/pages/MuscleVolumePage'), 'MuscleVolumePage')
 const MuscleGoalsPage = lazyPage(() => import('@/pages/MuscleGoalsPage'), 'MuscleGoalsPage')
 const GoalsOverviewPage = lazyPage(() => import('@/pages/GoalsOverviewPage'), 'GoalsOverviewPage')
@@ -163,7 +164,9 @@ const router = createBrowserRouter(
       <Route path="/workout/:id" element={<WorkoutPage />} />
       <Route path="/workout/:id/add-exercise" element={<ExercisePickerPage />} />
       <Route path="/lift/exercise/:key" element={<ExerciseDetailPage />} />
-      <Route path="/lift/calendar" element={<WorkoutCalendarPage />} />
+      <Route path="/lift/exercise/:key/record" element={<FormRecordPage />} />
+      {/* Calendar now lives inside History; keep old links working. */}
+      <Route path="/lift/calendar" element={<Navigate to="/lift/history?view=calendar" replace />} />
       <Route path="/lift/volume" element={<MuscleVolumePage />} />
       <Route path="/lift/volume/goals" element={<MuscleGoalsPage />} />
       <Route path="/lift/goals" element={<GoalsOverviewPage />} />
@@ -238,8 +241,11 @@ function App() {
       persistOptions={{ persister, maxAge: PERSIST_MAX_AGE, buster: PERSIST_BUSTER }}
       onSuccess={() => {
         // After the cache restores, fire any writes that were paused offline in
-        // a previous session (they also auto-resume on reconnect).
-        void queryClient.resumePausedMutations()
+        // a previous session (they also auto-resume on reconnect), then mark the
+        // restored data stale. It still shows instantly, but is refetched: the
+        // copy on disk can predate a save made just before a reload (log cardio,
+        // pull to refresh), and would otherwise count as fresh for staleTime.
+        void queryClient.resumePausedMutations().then(() => queryClient.invalidateQueries())
       }}
     >
       <AuthProvider>

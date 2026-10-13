@@ -7,9 +7,15 @@
 
 interface Env {
   ANTHROPIC_API_KEY?: string
+  // Unset in production. The API tests point it at a local stand-in for the
+  // Claude API (api-tests/testkit/anthropic_stub.py) to see what we send.
+  ANTHROPIC_BASE_URL?: string
 }
 
 const MODEL = 'claude-haiku-4-5'
+
+const messagesUrl = (env: Env) =>
+  `${(env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1/messages`
 
 const PROMPT = `You are a nutrition estimator. Look at this photo of a plate or meal and identify each distinct food or drink. For EACH item, estimate:
 - name: a short food name (e.g. "Grilled chicken breast", "White rice").
@@ -85,7 +91,7 @@ export const onRequestPost = async (context: {
 
   let res: Response
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch(messagesUrl(env), {
       method: 'POST',
       headers: {
         'x-api-key': key,
@@ -115,37 +121,23 @@ export const onRequestPost = async (context: {
       }),
     })
   } catch (e) {
-    return json(
-      {
-        error: 'The meal reader is unavailable right now.',
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      502,
-    )
+    console.error('scan-plate: Claude request failed', e)
+    return json({ error: 'The meal reader is unavailable right now.' }, 502)
   }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
-    return json(
-      {
-        error: 'The meal reader is unavailable right now.',
-        detail: detail.slice(0, 400),
-      },
-      502,
-    )
+    // Logged, not returned: upstream bodies are for the function log only.
+    console.error('scan-plate: Claude answered', res.status, detail.slice(0, 400))
+    return json({ error: 'The meal reader is unavailable right now.' }, 502)
   }
 
   let parsed: unknown
   try {
     parsed = parseContent(await res.json())
   } catch (e) {
-    return json(
-      {
-        error: "Couldn't read the meal. Try a clearer, well-lit photo.",
-        detail: e instanceof Error ? e.message : String(e),
-      },
-      422,
-    )
+    console.error('scan-plate: unreadable answer', e)
+    return json({ error: "Couldn't read the meal. Try a clearer, well-lit photo." }, 422)
   }
 
   return json(parsed)

@@ -47,6 +47,7 @@ const MEAL_IDS: Record<MealSlot, number> = {
   snacks: 104,
 }
 const STREAK_ID = 110
+const RECOVERY_ID = 120
 const TEST_ID = 199
 
 export function getReminderSettings(): ReminderSettings {
@@ -173,6 +174,45 @@ export async function syncStreakNudge(loggedToday: boolean): Promise<void> {
         },
       ],
     })
+  } catch {
+    /* plugin missing */
+  }
+}
+
+/**
+ * One-shot "how's your body?" for 9:00 the day after a workout with sets.
+ * One slot: a later workout replaces it. Not tied to the Reminders settings —
+ * it's part of the workout check-in, and it never fires once that's answered.
+ */
+export async function scheduleRecoveryCheck(
+  workoutId: string,
+  name: string,
+  at: Date,
+): Promise<void> {
+  if (!native() || at.getTime() <= Date.now()) return
+  try {
+    await ensureChannel()
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: RECOVERY_ID,
+          title: `How's your body after ${name}?`,
+          body: 'Ten seconds: sore, achy, or fine.',
+          channelId: CHANNEL_ID,
+          extra: { path: `/strength?recovery=${workoutId}` },
+          schedule: { at, allowWhileIdle: true },
+        },
+      ],
+    })
+  } catch {
+    /* plugin missing */
+  }
+}
+
+export async function cancelRecoveryCheck(): Promise<void> {
+  if (!native()) return
+  try {
+    await LocalNotifications.cancel({ notifications: [{ id: RECOVERY_ID }] })
   } catch {
     /* plugin missing */
   }

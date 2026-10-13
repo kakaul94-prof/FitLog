@@ -31,12 +31,12 @@ FitLog is a single-user, cloud-synced fitness tracker designed mobile-first and 
 | Backend | Supabase — Postgres + Auth (email/password, magic-link fallback) |
 | Charts | Hand-rolled SVG (line charts + macro donut) — no charting library |
 | Icons / PWA | lucide-react, vite-plugin-pwa |
-| Testing | Vitest (unit), Playwright (E2E, Page Object Model), Docker + Docker Compose |
+| Testing | Vitest (unit), pytest + pytest-bdd + httpx + psycopg (API / database / security), Playwright (E2E, Page Object Model), Allure, Docker + Docker Compose |
 | Hosting / CI | Cloudflare Pages, GitHub Actions (tests gate every production deploy) |
 
 ## Architecture Highlights
 
-- **Row-Level Security everywhere.** Every table is RLS owner-only, with `user_id` defaulting to `auth.uid()` — access control is enforced in the database, not just the client.
+- **Row-Level Security everywhere.** Every table is RLS owner-only, with `user_id` defaulting to `auth.uid()` — access control is enforced in the database, not just the client. Links between tables include the owner too (`(food_id, user_id) → foods(id, user_id)`), so one user's rows can never point at another's.
 - **Snapshotting for historical accuracy.** Diary entries snapshot a food's nutrition at log time, so editing a food later never rewrites past days.
 - **Feature-based data layer.** TanStack Query hooks are organized per feature with a consistent query-key scheme, and mutations invalidate exactly the keys they affect.
 - **Pure, testable core logic.** Calorie/macro math, 1RM, MET calories, BMI, and progression live in dependency-free `src/lib` modules, unit-tested in isolation.
@@ -44,14 +44,30 @@ FitLog is a single-user, cloud-synced fitness tracker designed mobile-first and 
 
 ## Testing
 
-Core business logic is covered by [Vitest](https://vitest.dev) unit tests, co-located with the pure-logic libraries (`calc`, `nutrients`, `progression`, `date`). These run without a backend or DOM, so the math that drives goals, macros, and progression is verified independently of the UI.
+Three layers, each where it is cheapest to prove what it proves:
+
+| Layer | Tool | Size | What it proves |
+|---|---|--:|---|
+| Unit | [Vitest](https://vitest.dev) | 533 tests, ~10 s | The pure logic: calorie goals, macros, 1RM, progression, dates, nutrients |
+| API, database and security | pytest + pytest-bdd ([`api-tests/`](api-tests/README.md)) | 646 tests, ~1 min | Every table is private to its owner (through the API and in Postgres itself), forged tokens are refused everywhere, responses match strict contracts, bad input is refused cleanly, nothing leaks, and the AI functions send and handle exactly what they should |
+| End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
+
+One command runs them all, bottom of the pyramid first, stopping at the first failing layer:
 
 ```bash
-npm test          # run the unit suite once
-npm run test:watch  # watch mode while iterating
+make test          # or, without make: bash scripts/test-all.sh test
 ```
 
-A `tsc + vite` build check is run before every commit to keep the tree type-safe.
+| Command | Runs |
+|---|---|
+| `make stack-up` / `make stack-down` | The local Supabase stack in Docker (shared by the API and E2E suites) |
+| `make test-unit` | Vitest (`npm test`; `npm run test:watch` while iterating) |
+| `make test-api` | The API suite, with JUnit XML and Allure results in `reports/` |
+| `make test-e2e` | Playwright, in its container |
+| `make test-security` | Security scans: gitleaks, npm audit, pip-audit and an OWASP ZAP baseline scan (report only) |
+| `make report` | Builds and opens the Allure report of the last API run |
+
+A `tsc + vite` build check is run before every commit to keep the tree type-safe. Security issues the suites and scans have found, and how each was fixed, are tracked in [`SECURITY-FINDINGS.md`](SECURITY-FINDINGS.md).
 
 ### End-to-end tests in Docker
 
@@ -94,16 +110,22 @@ flowchart LR
 ```mermaid
 flowchart LR
   PUSH[Push / PR] --> UNIT[Unit: build + Vitest]
+  PUSH --> API[API: supabase start, functions + Claude stub, pytest]
   PUSH --> E2E[E2E: supabase start, then Playwright container]
+  PUSH --> SEC[Security scans: gitleaks, npm audit, pip-audit, ZAP]
+  API --> ALLURE[Allure report artifact]
   E2E -- on failure --> ART[Report uploaded as artifact]
-  UNIT --> GATE{Both passed and branch is main?}
+  UNIT --> GATE{All three passed and branch is main?}
+  API --> GATE
   E2E --> GATE
   GATE -- yes --> DEPLOY[wrangler pages deploy to fitlog-prod]
-  UNIT -. JSON results .-> METRICS[Quality metrics: job summary + dashboard]
-  E2E -. JSON results .-> METRICS
+  UNIT -. results .-> METRICS[Quality metrics: job summary + dashboard]
+  API -. JUnit XML .-> METRICS
+  E2E -. results .-> METRICS
+  SEC -. report only .-> SUMMARY[Job summary + artifact]
 ```
 
-Production is only deployed from `main`, and only after both test jobs pass. The `dev` site still auto-deploys through Cloudflare's Git integration.
+Production is only deployed from `main`, and only after the unit, API and E2E jobs all pass. The API job runs in parallel with E2E on its own runner, so it adds no time to a release. The security scans and the metrics job report on every run but are deliberately outside the release gate: findings are reviewed and fixed as their own changes, not by blocking a deploy. The `dev` site still auto-deploys through Cloudflare's Git integration.
 
 ### Quality metrics dashboard
 
@@ -113,7 +135,8 @@ Every CI run records its results so quality can be tracked over time, not just p
 
 | Tracked | How |
 |---|---|
-| Pass rate per suite | Tests that passed (including after a retry) ÷ tests run, per CI run |
+| Pass rate per suite | Unit, API and E2E: tests that passed (including after a retry) ÷ tests run, per CI run |
+| Feedback time | From the push (or PR update) until every suite's results are in |
 | Flaky rate + top flaky tests | Tests that failed, then passed on a retry; ranked by how often across runs |
 | Suite duration + slowest 10 tests | Wall-clock time per suite; each slow test against its own 10-run average |
 | Last run status | Result, branch, commit link and per-job outcome, including infrastructure failures with no test results |
@@ -122,18 +145,19 @@ Every CI run records its results so quality can be tracked over time, not just p
 
 **How it's built** ([`metrics/`](metrics)):
 
-1. Playwright and Vitest each write a JSON report next to their usual output, and both jobs upload it as an artifact, even when tests fail.
+1. Playwright and Vitest each write a JSON report and the API suite writes JUnit XML, next to their usual output, and each job uploads it as an artifact, even when tests fail.
 2. A `metrics` job turns the reports into one record per run (timestamp, commit, branch, totals, durations, per-test times) and writes a results table to the run's job summary, PRs included. One small adapter per tool maps its report into a shared shape, so adding a new tool means adding one adapter (`metrics/adapters/`).
 3. On pushes to `main` and `dev`, the record is appended to `data/history.json` on the `gh-pages` branch (capped at 200 runs, ~0.6 MB), which GitHub Pages serves with a static Chart.js page. Git acts as the database, so there is no server and no paid service, and history is versioned. The alternative was deploying the page as a build artifact and re-downloading the previous history each time. That avoids bot commits, but one failed download would wipe the history.
 
-The `metrics` job is outside the release gate: `deploy-prod` depends only on the test jobs, the metrics job has `continue-on-error`, and it runs alongside the deploy. A metrics failure can't block or slow a release. Records contain test names, statuses, durations and public run links only; no error text, logs or environment values are published.
+The `metrics` job is outside the release gate: `deploy-prod` depends only on the three test jobs, the metrics job has `continue-on-error`, and it runs alongside the deploy. A metrics failure can't block or slow a release. Records contain test names, statuses, durations and public run links only; no error text, logs or environment values are published.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 20.19+ (Vite 8)
-- Docker Desktop (for the E2E suite)
+- Docker Desktop (for the API and E2E suites)
+- Python 3.12+ (for the API suite)
 - A [Supabase](https://supabase.com) project (Postgres + Auth)
 - A [USDA FoodData Central](https://fdc.nal.usda.gov/api-key-signup.html) API key (for food import)
 
@@ -174,10 +198,11 @@ npm run dev       # http://localhost:5173
 | `npm run test:e2e:docker` | Start the local test DB and run the E2E suite in Docker |
 | `npm run test:e2e` | Run the E2E suite on the host (needs `npm run db:start`) |
 | `npm run db:start` / `db:stop` / `db:reset` | Manage the local Supabase test stack |
+| `make test` / `test-api` / `test-security` / `report` | Every test layer, the API suite, the security scans, the Allure report (see Testing) |
 
 ## Deployment
 
-FitLog deploys to **Cloudflare Pages**. The `dev` branch auto-deploys to the dev site through Cloudflare's Git integration. Production (`fitlog-prod`) is deployed by the CI workflow's `deploy-prod` job with `wrangler pages deploy`, only after the unit and E2E jobs pass on `main`. SPA deep links are handled via `public/_redirects`.
+FitLog deploys to **Cloudflare Pages**. The `dev` branch auto-deploys to the dev site through Cloudflare's Git integration. Production (`fitlog-prod`) is deployed by the CI workflow's `deploy-prod` job with `wrangler pages deploy`, only after the unit, API and E2E jobs pass on `main`. SPA deep links are handled via `public/_redirects`.
 
 The deploy job reads these GitHub repository secrets and skips itself until `CLOUDFLARE_API_TOKEN` exists:
 
@@ -207,7 +232,14 @@ e2e/
 ├── pages/         # Page Objects
 ├── tests/         # user-journey specs + RLS spec
 └── support/       # local-only env guard, Supabase API client
+api-tests/
+├── testkit/       # reusable clients, token forger, factories, contracts, Claude stub
+├── tests/         # auth, authz, contracts, validation, security, functions, bdd
+└── scripts/       # local-env.sh, start-functions.sh
+metrics/           # CI quality metrics + security-scan summary
+scripts/           # test-all.sh (behind the Makefile), security-scan.sh
 compose.yaml       # `e2e` service (docker compose run e2e)
+Makefile           # make test, test-api, test-security, report ...
 ```
 
 ## Notes

@@ -1,3 +1,4 @@
+import { apiHeaders } from './apiAuth'
 import type { Nutrients } from './database.types'
 
 // One ingredient parsed from a recipe link. `nutrients` are FOR `grams` (not per
@@ -39,7 +40,7 @@ function cleanIngredient(raw: unknown): ImportedIngredient | null {
 export async function importRecipe(url: string): Promise<ImportedRecipe> {
   const res = await fetch('/api/import-recipe', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: await apiHeaders(),
     body: JSON.stringify({ url }),
   })
   const data = (await res.json().catch(() => null)) as Record<
@@ -47,9 +48,7 @@ export async function importRecipe(url: string): Promise<ImportedRecipe> {
     unknown
   > | null
   if (!res.ok) {
-    const msg = (data?.error as string) || 'Recipe import failed. Try again.'
-    const detail = data?.detail as string | undefined
-    throw new Error(detail ? `${msg} [${detail}]` : msg)
+    throw new Error((data?.error as string) || 'Recipe import failed. Try again.')
   }
   if (!data) throw new Error('Recipe import returned no data.')
 

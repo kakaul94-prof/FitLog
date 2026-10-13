@@ -152,8 +152,9 @@ export function writeQueue(page: Page): Promise<QueuedWrite[]> {
       state: { status: QueuedWrite['status']; isPaused: boolean }
     }
     const qc = (globalThis as unknown as {
-      __queryClient: { getMutationCache: () => { getAll: () => Mutation[] } }
+      __queryClient?: { getMutationCache: () => { getAll: () => Mutation[] } }
     }).__queryClient
+    if (!qc) return [] // the app hasn't started yet (e.g. mid-reload)
     return qc
       .getMutationCache()
       .getAll()
@@ -174,12 +175,14 @@ export async function waitForIdle(page: Page): Promise<void> {
   await expect
     .poll(
       () =>
-        page.evaluate(() => {
-          const qc = (globalThis as unknown as {
-            __queryClient: { isMutating: () => number; isFetching: () => number }
-          }).__queryClient
-          return qc.isMutating() + qc.isFetching()
-        }),
+        page
+          .evaluate(() => {
+            const qc = (globalThis as unknown as {
+              __queryClient?: { isMutating: () => number; isFetching: () => number }
+            }).__queryClient
+            return qc ? qc.isMutating() + qc.isFetching() : -1 // -1: the app is still starting
+          })
+          .catch(() => -1), // the page was mid-navigation: look again
       { message: 'writes and reads in flight' },
     )
     .toBe(0)

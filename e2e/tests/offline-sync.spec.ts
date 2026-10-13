@@ -3,7 +3,7 @@ import { expect, runId, test } from '../fixtures'
 import type { DiaryPage } from '../pages/DiaryPage'
 import { EntryPage } from '../pages/EntryPage'
 import type { FoodPickerPage } from '../pages/FoodPickerPage'
-import { addDiaryEntry, clearDiaryDay, createFood } from '../support/data'
+import { addDiaryEntry, clearDiaryDay, clearExerciseDay, createFood, exerciseEntries } from '../support/data'
 import { authFile } from '../support/env'
 import {
   countReloads,
@@ -288,4 +288,54 @@ test('a save replayed after it already reached the server counts as done', async
   day.release()
   expect((await savedEntries(judyDb, date)).map((e) => e.food_name)).toEqual([name])
   await expect(reopened.getByRole('button', { name: `${name} 160`, exact: true })).toHaveCount(1)
+})
+
+test.describe('weigh-ins and cardio logged offline survive closing the app', () => {
+  /** Reopen the app online and wait until every write it restored has been tried. */
+  async function reopenAndSettle(context: import('@playwright/test').BrowserContext, path: string): Promise<Page> {
+    await context.setOffline(false)
+    const reopened = await context.newPage()
+    await reopened.goto(path)
+    await expect
+      .poll(async () => {
+        const queue = await writeQueue(reopened)
+        return queue.length > 0 && queue.every((w) => w.status !== 'pending')
+      }, { message: 'the restored writes have been sent' })
+      .toBe(true)
+    return reopened
+  }
+
+  test('a weigh-in', async ({ page, context, judyDb, progressPage }) => {
+    const lb = 163.3
+    await judyDb.from('measurements').delete().eq('type', 'weight').eq('value', lb)
+    await progressPage.goto()
+    await expect(progressPage.heading).toBeVisible()
+
+    await goOffline(page)
+    await progressPage.logWeight(lb)
+    await expect(pending(page, 1)).toBeVisible()
+    await waitForQueuedWritesSaved(page, 1)
+    await page.close()
+
+    await reopenAndSettle(context, '/progress')
+    const { data } = await judyDb.from('measurements').select('id').eq('type', 'weight').eq('value', lb)
+    expect(data, 'the weigh-in logged offline reached the server once').toHaveLength(1)
+  })
+
+  test('a cardio session', async ({ page, context, judyDb, cardioPage: cardio }) => {
+    const date = '2024-02-08'
+    await clearExerciseDay(judyDb, date)
+    await cardio.openFor(date)
+    await cardio.pickActivity('Cycling (moderate, 12–14 mph)')
+    await cardio.setDuration(30)
+
+    await goOffline(page)
+    await cardio.saveButton.click()
+    await expect(pending(page, 1)).toBeVisible()
+    await waitForQueuedWritesSaved(page, 1)
+    await page.close()
+
+    await reopenAndSettle(context, `/?date=${date}`)
+    expect(await exerciseEntries(judyDb, date), 'the session logged offline reached the server once').toHaveLength(1)
+  })
 })

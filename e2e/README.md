@@ -10,18 +10,21 @@ never a hosted project.
 | `tests/diary.spec.ts` | Log a meal with Quick add; row saved with the right meal + calories |
 | `tests/workout.spec.ts` | Start a workout, add an exercise, log a set, mark done; set saved |
 | `tests/progress.spec.ts` | Log body weight; appears in history and in the DB |
-| `tests/recipes.spec.ts` | Build a recipe (per-serving nutrients stored), recalculation on yield / ingredient changes, log recipe servings to the diary |
+| `tests/recipes.spec.ts` | Build a recipe (per-serving nutrients stored), recalculation on yield / ingredient changes, log recipe servings to the diary; an import from a link or a "Save as a copy" that fails partway leaves nothing behind |
 | `tests/routines.spec.ts` | Create a template with targets, start a workout from it, leaving with unsaved edits (Discard vs Save) — as Dave |
 | `tests/program.spec.ts` | Pick a preset program, Next up follows the rotation (skips rest, wraps), "Set as next" persists without dropping other program data, switching programs and back restores the rotation — as Carol, run in order |
 | `tests/cardio.spec.ts` | Log cardio with hand-checked calorie estimates (by time and by distance), override calories, edit then delete, custom activity, exercise raises the day's calorie budget (as Erin, one date per test) |
 | `tests/gps.spec.ts` | GPS walk end to end (fake GPS + fake clock), noise / teleport / jitter filtering, pause excludes time and movement, denied location permission (as Erin) |
 | `tests/entries.spec.ts` | Edit servings and meal, delete (with confirm), unsaved-changes prompt (Keep editing / Discard / Save), press-and-hold Delete and Move, multi-select delete, the picker's just-added tray, weigh-in date change and delete (as Heidi) |
 | `tests/trainer.spec.ts` | Ask-a-trainer with a stubbed `/api/trainer`: reply shown, request grounded in a snapshot of the user's log, follow-ups send the conversation, starter prompts, remember offer + memory page, error recovery, Stop, in-workout chat (as Frank, in order) |
-| `tests/backup.spec.ts` | Export (all 17 tables, only your rows) and restore: round trip, preview + Cancel, links kept (recipe → ingredients, workout → sets), foreign `user_id`s forced to your own, replace-not-merge, invalid files rejected (as Grace, in order) |
+| `tests/backup.spec.ts` | Export (all 17 tables, only your rows) and restore: round trip, preview + Cancel, links kept (recipe → ingredients, workout → sets), foreign `user_id`s forced to your own, replace-not-merge, invalid files rejected, and a restore that fails partway (a bad row, a dropped connection) is applied fully or not at all (as Grace, in order) |
 | `tests/food-form.spec.ts` | New food form: create + log from the picker, Save disabled until named, serving-size rescaling, blank ≠ 0 ("—"), extra serving units, micronutrients with %DV, edit (past entries keep their numbers), delete = archive, create from Library and from the recipe editor |
 | `tests/profile.spec.ts` | Manual target, calculated goal checked against a hand-worked Mifflin-St Jeor, non-retroactive goal history, macro targets (g / % / remainder, g per lb), Save + reload, "From your data" goal, missing-details message, change password, sign out (as Ivan, in order) |
 | `tests/meals.spec.ts` | Save entries as a meal, log / rename / delete saved meals, copy entries to another day (keeps meal + servings), copy a meal from another day in the picker, multi-select move |
 | `tests/food-search.spec.ts` | Library search (partial match, empty state, add with servings, never another user's foods), multi-add, Recent tab, nutrient snapshot survives a food edit, USDA import / no matches / outage (stubbed) |
+| `tests/offline-sync.spec.ts` | Logging offline (Playwright offline mode): entries reach the server once and in order without a reload, several in a row, an add-then-delete or two edits replay in the order made (the network is made to deliver them in the worst order), an entry / weigh-in / cardio session survives the app being closed, a save replayed after it already synced counts as done (as Judy) |
+| `tests/duplicate-writes.spec.ts` | Double taps on Add (weigh-in, cardio, Quick add) save once; a save whose reply is lost (committed, then the connection resets) is kept once, also after tapping again (weigh-in, cardio, workout start); a refused save leaves nothing (as Judy) |
+| `tests/consistency.spec.ts` | A day restored from the offline cache is replaced by the server version after a restart; another device's edit shows once this copy is over a minute old (fake clock); two devices editing different fields of an entry are both kept (as Judy) |
 | `tests/rls.spec.ts` | Alice can't read, forge, update or delete Bob's rows; anon sees nothing |
 
 ## Run it
@@ -53,8 +56,9 @@ Report: `npx playwright show-report`.
   which change what the Exercise tab offers) Erin (cardio + GPS, with a
   fixed 80 kg weigh-in so calorie estimates are known numbers), Frank (trainer
   memory), Grace (backup: a restore wipes the account), Heidi (entry edits
-  and weigh-ins) and Ivan (profile and goals; sign-out ends every session
-  on the account, so it runs last on a fresh sign-in). Parallel specs can't change each
+  and weigh-ins), Ivan (profile and goals; sign-out ends every session
+  on the account, so it runs last on a fresh sign-in) and Judy (the
+  resilience specs: offline, lost and repeated requests, stale caches). Parallel specs can't change each
   other's state, and the program spec runs its tests in order because they
   share Carol's record. Names are made unique per run, so the
   suite can rerun without a reset. `npm run db:reset` restores the seed.
@@ -68,6 +72,13 @@ Report: `npx playwright show-report`.
   (`support/trainer.ts`): replies are scripted and each request is recorded,
   so tests check what the app *sends* (conversation, data snapshot, memory)
   without calling a real model.
+- **Network faults on cue.** `support/network.ts` makes the resilience specs
+  deterministic with request interception, not timing: a reply lost after
+  the server committed, a refused request, a request held until the test
+  releases it (to force the worst delivery order), offline/online switching,
+  and readers for the app's write queue (`window.__queryClient`, dev builds
+  only) and its IndexedDB-saved cache. Waits are on conditions (the status
+  pill, the queue settling, a response), and these specs run with retries off.
 - **Fake GPS + fake clock.** `support/gps.ts` swaps `navigator.geolocation`
   for one the test drives and installs Playwright's clock, so a 6-minute walk
   with chosen noise runs in about a second and distances are exact.

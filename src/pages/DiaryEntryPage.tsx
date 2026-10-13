@@ -60,7 +60,7 @@ export function DiaryEntryPage() {
         title={entry.food_name}
         subtitle={entry.brand ?? undefined}
         left={
-          <Button variant="ghost" size="icon" onClick={() => nav(-1)}>
+          <Button variant="ghost" size="icon" aria-label="Back" onClick={() => nav(-1)}>
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }
@@ -80,8 +80,9 @@ export function DiaryEntryPage() {
                 />
               </div>
               <div className="flex-1 space-y-1.5">
-                <Label>Meal</Label>
+                <Label htmlFor="entry-meal">Meal</Label>
                 <Select
+                  id="entry-meal"
                   value={entry.meal}
                   onChange={(e) =>
                     updateEntry.mutate({

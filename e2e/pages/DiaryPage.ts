@@ -18,6 +18,48 @@ export class DiaryPage extends BasePage {
     await expect(this.heading).toBeVisible()
   }
 
+  async gotoDate(date: string): Promise<void> {
+    await this.page.goto(`/?date=${date}`)
+    await this.expectLoaded()
+  }
+
+  /** A meal's header with its calorie total, e.g. "Dinner 150 cal". */
+  mealTotal(meal: Meal, kcal: number): Locator {
+    return this.page.getByRole('button', { name: new RegExp(`^${meal} ${kcal} cal`) })
+  }
+
+  /**
+   * Press and hold an entry until its menu opens. Waits for the menu itself
+   * rather than a fixed delay, so it's as fast as the app allows.
+   */
+  async openMenu(row: Locator): Promise<void> {
+    await row.hover()
+    await this.page.mouse.down()
+    await expect(this.menuAction('Edit entry')).toBeVisible()
+    await this.page.mouse.up()
+  }
+
+  menuAction(name: 'Select multiple' | 'Move to meal' | 'Edit entry' | 'Delete entry'): Locator {
+    return this.page.getByRole('button', { name, exact: true })
+  }
+
+  /** Press and hold the first entry → Select multiple, then tap the rest. */
+  async selectEntries(first: Locator, ...rest: Locator[]): Promise<void> {
+    await this.openMenu(first)
+    await this.menuAction('Select multiple').click()
+    for (const row of rest) await row.click()
+  }
+
+  /** The bottom bar in selection mode. */
+  selectionAction(name: 'Move' | 'Save as meal' | 'Copy to day' | 'Delete'): Locator {
+    return this.page.getByRole('button', { name, exact: true })
+  }
+
+  /** The calorie ring's label: "N calories remaining" (goal + exercise − food). */
+  remaining(kcal: number): Locator {
+    return this.page.getByLabel(`${kcal} calories remaining`, { exact: true })
+  }
+
   /** A logged entry row; its accessible name is "{food name} {kcal}". */
   entryRow(foodName: string, kcal: number): Locator {
     return this.page.getByRole('button', { name: `${foodName} ${kcal}`, exact: true })

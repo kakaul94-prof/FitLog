@@ -22,8 +22,10 @@ own data, hosted on Cloudflare Pages with Supabase.
 | [F-07](#f-07-a-silent-claude-held-the-trainer-open) | A silent Claude held the trainer open | Low | Fixed |
 | [F-08](#f-08-long-chats-could-start-on-an-assistant-turn) | Long trainer chats could start on an assistant turn | Low (bug) | Fixed |
 | [F-09](#f-09-an-unusable-answer-showed-an-empty-bubble) | An unusable answer showed an empty bubble | Low (bug) | Fixed |
+| [F-10](#f-10-the-android-app-shipped-a-vulnerable-capacitor-runtime) | The Android app shipped a vulnerable Capacitor runtime | High (critical upstream) | Fixed |
+| [F-11](#f-11-the-web-app-shipped-a-react-router-with-an-open-redirect) | The web app shipped a React Router with an open redirect | Low (high upstream) | Fixed |
 | [A-01 to A-05](#accepted-risks) | Platform behaviours, documented and accepted | Informational | Accepted |
-| [S-01 to S-04](#scan-results) | Secret, dependency and ZAP scans | Up to critical (dependencies) | 2 clean, 2 partly fixed |
+| [S-01 to S-04](#scan-results) | Secret, dependency and ZAP scans | Up to critical (build tooling only) | 2 clean, 2 partly fixed |
 
 The two schema fixes ship as migrations that must be run on each hosted
 database (dev, then prod) from the Supabase SQL Editor. Both check the existing
@@ -154,6 +156,54 @@ proxy's error page, a garbled or empty stream) left the chat bubble empty.
 **Fix:** the trainer says it didn't get an answer, as it already did for refusals.
 **Guarded by:** `tests/functions/test_trainer.py::test_an_answer_with_no_usable_text_is_not_shown_as_an_empty_bubble`.
 
+### F-10: The Android app shipped a vulnerable Capacitor runtime
+
+**Found by:** `npm audit` in the security scans (`make test-security`, CI
+"Security scans" job), first recorded as part of S-03 on 2026-10-12.
+
+**Severity: High for this app** (critical upstream:
+[GHSA-rvm3-566m-v7fv](https://github.com/advisories/GHSA-rvm3-566m-v7fv)).
+`@capacitor/android` 8.4.1 let a frame navigation to Capacitor's internal proxy
+path (`/_capacitor_http_interceptor_`) fetch any URL and serve the response *at
+the app's own origin*, where its script could use every native plugin the app
+registers (camera, files, notifications, Bluetooth, location). Exploiting it
+needs the user to tap a crafted link inside the app, which is why it's high
+rather than critical here. The web app isn't affected; only the Android build
+ships this package.
+
+**Fix:** `@capacitor/android`, `@capacitor/core` and `@capacitor/cli` 8.4.1 →
+8.4.3, the patch release that fixes it (kept in step, as Capacitor requires).
+Not 8.5.0, which is vulnerable again until 8.5.1.
+
+**Verification:** `npm audit --omit=dev` reports 0 vulnerabilities in what the
+app ships; `npx cap sync android` changes no tracked native file; build, unit
+(533), API (646) and E2E (107, retries off) suites pass on the new versions.
+The debug APK is built by the Android Debug APK workflow, which now also runs on
+pull requests that change native dependencies (without publishing the APK), so a
+broken Android build is caught before the merge. Gradle can't run on the
+maintainer's PC (a Windows AF_UNIX defect), so CI is the Android check.
+
+### F-11: The web app shipped a React Router with an open redirect
+
+**Found by:** `npm audit` (as F-10), recorded in S-03 on 2026-10-12.
+
+**Severity: Low for this app** (high upstream). `react-router` 7.17.0 matched five
+advisories. Four only affect server rendering or the unstable RSC mode
+(`GHSA-chx6-hx7r-mcp5`, `GHSA-qwww-vcr4-c8h2`, `GHSA-h8fp-f39c-q6mh`,
+`GHSA-337j-9hxr-rhxg`), which this client-only app doesn't use. The one that
+applies is [GHSA-wrjc-x8rr-h8h6](https://github.com/advisories/GHSA-wrjc-x8rr-h8h6)
+(moderate): a path with a backslash, passed to `<Link>` or `navigate()`, could
+leave the site. FitLog only navigates to its own route constants, so there is
+no known way to reach it, but it ships in every page load.
+
+**Fix:** `react-router-dom` (and with it `react-router`) 7.17.0 → 7.18.4, the
+latest patch of the same major version. The changes between them are security
+fixes in URL and redirect validation; no API changed.
+
+**Verification:** as F-10 (same run). The E2E suite drives every route through
+the router, including deep links, the back button and the leave-unsaved-changes
+prompt (`useBlocker`).
+
 ---
 
 ## Accepted risks
@@ -181,35 +231,43 @@ summary is in the job's summary page.
 |---|---|---|---|
 | S-01 | Secrets (gitleaks, full history) | 0 secrets in 334 commits across all branches, and in the working tree | Clean |
 | S-02 | Python dependencies (pip-audit) | 0 known vulnerabilities in 61 packages | Clean |
-| S-03 | Node dependencies (npm audit) | 15 advisories: 2 critical, 9 high, 4 moderate | 3 fixed, 15 open |
+| S-03 | Node dependencies (npm audit) | 12 advisories: 1 critical, 8 high, 3 moderate, all in build and test tooling; 0 in what ships (`--omit=dev`) | 6 fixed, 12 open |
 | S-04 | Running app (OWASP ZAP baseline) | 0 high; 5 medium, 1 low, 3 informational after the header fix | Partly fixed |
 
 ### S-01: Secrets — clean
 
-Nothing secret has ever been committed. The two things gitleaks flags are
+Nothing secret has ever been committed. The things gitleaks flags are
 allowlisted in `.gitleaks.toml` with the reason: the Supabase CLI's public local
-development keys (`iss: supabase-demo`, the same on every machine) and the fake
-secrets in `api-tests/tests/security/test_leak_scanner.py` that prove the leak
-scanner works.
+development keys (`iss: supabase-demo`, the same on every machine), and the fake
+secrets in the tests that prove a leak check catches them
+(`api-tests/tests/security/test_leak_scanner.py`, `ai-evals/tests/test_checks.py`,
+`testkit/tests/test_leaks.py`) or that keys stay out of failure reports
+(`testkit/tests/test_config.py`). The CI scan of 2026-10-13 flagged one of these
+(jwt.io's public example token in `ai-evals/tests/test_checks.py`, merged with the
+AI evals) before its path was added.
 
 ### S-02: Python dependencies — clean
 
 All 61 packages the API suite resolves to (exact pins in
 `api-tests/requirements.txt`) have no known advisories.
 
-### S-03: Node dependencies — 15 open
+### S-03: Node dependencies — 12 open, none shipped
 
-**Fixed:** `wrangler` 4.136.1 → 4.149.0, which cleared 3 high advisories
-(`wrangler`, `miniflare`, `undici`). It runs the Pages Functions locally for the
-API tests and was added by this work.
+Run on 2026-10-12: 15 advisories (2 critical, 9 high, 4 moderate). Run on
+2026-10-13, after the fixes below: 12 (1 critical, 8 high, 3 moderate), and
+`npm audit --omit=dev` (what the web and Android apps actually ship) finds none.
 
-**Open.** Upgrading these changes the app and the Android build, so each needs
-its own tested change:
+**Fixed:**
+- `wrangler` 4.136.1 → 4.149.0, which cleared 3 high advisories (`wrangler`,
+  `miniflare`, `undici`). It runs the Pages Functions locally for the API tests
+  and was added by this work.
+- `@capacitor/android` 8.4.1 → 8.4.3 (critical): [F-10](#f-10-the-android-app-shipped-a-vulnerable-capacitor-runtime).
+- `react-router` / `react-router-dom` 7.17.0 → 7.18.4 (high / moderate): [F-11](#f-11-the-web-app-shipped-a-react-router-with-an-open-redirect).
+
+**Open.** None of these reaches users:
 
 | Package | Severity | Ships to users? | Proposed fix |
 |---|---|---|---|
-| `@capacitor/android` | critical | **Yes**, the Android app (remote content could load at the app's origin through the internal proxy path) | Compatible update, then rebuild and test the Android app |
-| `react-router`, `react-router-dom` | high / moderate | **Yes**, the web app (open redirect through a backslash in a link) | Compatible update |
 | `sharp` | high | No: build-time icon generation | Major version update |
 | `tar`, `postcss`, `browserslist`, `nanoid`, `source-map-js`, `brace-expansion`, `fast-uri`, `@xmldom/xmldom`, `baseline-browser-mapping`, `vitest`, `@vitest/mocker` | critical to moderate | No: build and test tooling only (`npm ls --omit=dev` finds none of them) | `npm audit fix` |
 

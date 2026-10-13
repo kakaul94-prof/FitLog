@@ -1,0 +1,65 @@
+[project]
+name = "fitlog-testkit"
+dynamic = ["version"]  # from testkit.__version__, so there is one place to bump it
+description = "Clients, test users, data builders and a recording Claude stub for testing FitLog's Supabase backend and Pages Functions"
+readme = "README.md"
+requires-python = ">=3.12"
+# Ranges, not pins: each suite pins exact versions in its own requirements file.
+dependencies = [
+  "httpx>=0.28,<1",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic>=2.7,<3",
+  "PyJWT>=2.8,<3",
+]
+
+[project.optional-dependencies]
+# The testkit's own tests (tests/). Suites that use the testkit bring their own pytest.
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+# src layout: an editable install puts src/ on the path with a plain .pth file,
+# which mypy follows, so suites type-check against the testkit with no extra config.
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+testkit = ["py.typed"]
+
+[tool.setuptools.dynamic]
+version = { attr = "testkit.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+xfail_strict = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "ANN", "PT", "N", "S", "RUF"]
+ignore = [
+  "S101",  # assert is how pytest checks things
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["testkit"]
+
+[tool.ruff.lint.per-file-ignores]
+# One line per table by design: adding a table to the suite is a one-line change.
+"src/testkit/tables.py" = ["E501"]
+# Fake keys and passwords, there to prove the testkit hides or finds them.
+"tests/**" = ["S105", "S106"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests"]
+mypy_path = "src"
+explicit_package_bases = true
+plugins = ["pydantic.mypy"]

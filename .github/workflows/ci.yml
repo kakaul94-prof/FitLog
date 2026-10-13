@@ -116,6 +116,16 @@ jobs:
           ruff format --check .
           mypy
 
+      # The shared testkit (installed above from requirements.txt) has its own
+      # offline tests, so a broken client fails here, not as 600 API failures.
+      - name: Lint, type-check and test the testkit package
+        working-directory: testkit
+        run: |
+          ruff check .
+          ruff format --check .
+          mypy
+          pytest
+
       - uses: supabase/setup-cli@v1
         with:
           version: 2.118.0

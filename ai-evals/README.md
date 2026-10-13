@@ -216,8 +216,9 @@ ai-evals/
   scripts/       publish-live.sh (appends a live run to the dashboard data)
 ```
 
-The evals reuse `api-tests/testkit` (clients, synthetic users, the recording
-Claude stub) as an installed package. Nothing about the browser is
+The evals reuse the shared [testkit](../testkit/README.md) package (clients,
+synthetic users, the recording Claude stub), installed through
+`api-tests/requirements.txt`. Nothing about the browser is
 re-implemented in Python: `harness/client.ts` imports the app's real
 `trainerContext.ts` (what the browser sends) and `trainer.ts` (which chip it
 offers), bundled with esbuild and run against the local stack.

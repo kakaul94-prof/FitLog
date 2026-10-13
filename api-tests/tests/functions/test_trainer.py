@@ -184,9 +184,7 @@ def test_memory_that_is_not_text_is_ignored(
     )
 
     system = _sent(claude).system or ""
-    assert (
-        "What you already know about them (saved from past conversations):\n- Real fact\n" in system
-    )
+    assert "<saved_memory>\n- Real fact\n</saved_memory>" in system  # and nothing else
 
 
 # -- bad requests never reach Claude ---------------------------------------------------------
@@ -215,23 +213,24 @@ def test_bad_requests_are_refused_before_calling_claude(
 # -- when Claude misbehaves --------------------------------------------------------------------
 
 
-# failure -> (what Claude does, what the user is told)
+# failure -> (what Claude does, the reason code the user is shown). Each code
+# maps to a fix in ai-evals/README.md; the secret's name stays in the log.
 UPSTREAM_FAILURES: dict[str, tuple[Reply, str]] = {
     "bad-key": (
         Reply.error(401, "authentication_error", "invalid x-api-key"),
-        "can't sign in to Claude",
+        "(code: key)",
     ),
     "no-credit": (
         Reply.error(400, "invalid_request_error", "Your credit balance is too low"),
-        "out of credits",
+        "(code: credits)",
     ),
     "rate-limited": (
         Reply.error(429, "rate_limit_error", "Number of requests exceeded"),
-        "Too many requests",
+        "(code: rate)",
     ),
-    "overloaded": (Reply.error(529, "overloaded_error", "Overloaded"), "having a moment"),
-    "server-error": (Reply.error(500, "api_error", "Internal server error"), "having a moment"),
-    "connection-dropped": (Reply.drop(), "unavailable"),
+    "overloaded": (Reply.error(529, "overloaded_error", "Overloaded"), "(code: upstream)"),
+    "server-error": (Reply.error(500, "api_error", "Internal server error"), "(code: upstream)"),
+    "connection-dropped": (Reply.drop(), "(code: unreachable)"),
 }
 
 

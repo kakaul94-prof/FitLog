@@ -1,0 +1,13 @@
+# Exact pins: a run today and a run in six months use the same tools.
+# Install from the repository root (the editable path is relative to it):
+#   pip install -r ai-evals/requirements.txt
+
+# Everything the API suite uses (pytest, httpx, pydantic, allure, ruff, mypy...)
+-r ../api-tests/requirements.txt
+# ...and its testkit package: clients, test users, the recording Claude stub
+-e ./api-tests
+
+# Live tier only: the LLM judge, and the dataset files
+anthropic==1.13.0
+PyYAML==6.0.3
+types-PyYAML==6.0.12.20260906

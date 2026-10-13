@@ -28,7 +28,10 @@ from typing import Any, Literal
 
 import httpx
 
-ReplyKind = Literal["stream", "message", "error", "raw", "hang", "drop", "stream_error", "refusal"]
+ReplyKind = Literal[
+    "stream", "message", "error", "raw", "hang", "drop", "stream_error", "refusal",
+    "stall", "max_tokens", "cut",
+]  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,21 @@ class Reply:
     def refusal(cls) -> "Reply":
         """A successful stream with no text and stop_reason "refusal"."""
         return cls("refusal")
+
+    @classmethod
+    def stall(cls, text_before: str, seconds: float) -> "Reply":
+        """A stream that starts, sends `text_before`, then goes silent for `seconds`."""
+        return cls("stall", text=text_before, delay_s=seconds)
+
+    @classmethod
+    def max_tokens(cls, text: str) -> "Reply":
+        """A complete stream that stopped at the max_tokens ceiling, mid-sentence."""
+        return cls("max_tokens", text=text)
+
+    @classmethod
+    def cut(cls, text_before: str) -> "Reply":
+        """A stream whose connection closes mid-answer, with no error event."""
+        return cls("cut", text=text_before)
 
 
 DEFAULT_REPLY = Reply.stream("Stub reply.")
@@ -166,6 +184,18 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_events([*events, _error_event("overloaded_error", "Overloaded")])
             case "refusal":
                 self._send_events(_text_events("", model, stop_reason="refusal"))
+            case "max_tokens":
+                self._send_events(_text_events(reply.text, model, stop_reason="max_tokens"))
+            case "stall" | "cut":
+                # The start and the text, but no stop events: the answer never finishes.
+                # "stall" then holds the connection open, sending keepalive pings as
+                # the real API does, so only a timeout that ignores pings can end it;
+                # "cut" closes it at once.
+                self._send_events(_text_events(reply.text, model)[:-3])
+                deadline = time.monotonic() + reply.delay_s
+                while time.monotonic() < deadline:
+                    time.sleep(0.5)
+                    self._write_event("ping", {"type": "ping"})
             case "message":
                 self._send(200, json.dumps(_message(reply.text, model)).encode())
             case "error":
@@ -198,9 +228,12 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("content-type", "text/event-stream")
         self.end_headers()
         for name, data in events:
-            self.wfile.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())
-            self.wfile.flush()
+            self._write_event(name, data)
             time.sleep(0.005)  # real chunks arrive apart; make the function stream them
+
+    def _write_event(self, name: str, data: dict[str, Any]) -> None:
+        self.wfile.write(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode())
+        self.wfile.flush()
 
     def log_message(self, format: str, *args: object) -> None:
         pass  # keep the functions server's log readable

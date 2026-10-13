@@ -6,9 +6,13 @@
 // "tests" share one shape and feed every panel here, so another test suite
 // shows up with no dashboard change. A new kind (e.g. "a11y" from axe, "load"
 // from k6) is ignored until it gets panels of its own, so it can't break the page.
+//
+// The AI trainer evals' live tier is manual and has its own record shape, so it
+// lives in data/ai-evals.json (appended by .github/workflows/ai-evals-live.yml)
+// and gets its own section at the bottom, hidden until the first live run.
 
-const LABELS = { e2e: 'E2E', api: 'API', unit: 'Unit' }
-const ORDER = ['e2e', 'api', 'unit'] // top of the test pyramid first
+const LABELS = { e2e: 'E2E', api: 'API', ai: 'AI evals', unit: 'Unit' }
+const ORDER = ['e2e', 'api', 'ai', 'unit'] // top of the test pyramid first
 const SLOTS = ['--s1', '--s2', '--s3', '--s4']
 const RECENT = 20
 
@@ -72,6 +76,12 @@ async function main() {
   } catch {
     allRuns = []
   }
+  try {
+    const res = await fetch('data/ai-evals.json', { cache: 'no-store' })
+    aiRuns = res.ok ? await res.json() : []
+  } catch {
+    aiRuns = []
+  }
   colorKeys = sourceKeys(allRuns)
   if (window.Chart) Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif'
   render()
@@ -84,12 +94,16 @@ function render() {
   const runs = branch === 'all' ? allRuns : allRuns.filter((r) => r.branch === branch)
   const app = document.getElementById('app')
   if (!runs.length) {
-    app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>'
+    app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>' + aiSection(aiRuns)
+    if (window.Chart && aiRuns.length) drawAiChart(aiRuns)
     return
   }
   const keys = sourceKeys(runs)
-  app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys)].join('')
-  if (window.Chart) drawCharts(runs, keys)
+  app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys), aiSection(aiRuns)].join('')
+  if (window.Chart) {
+    drawCharts(runs, keys)
+    if (aiRuns.length) drawAiChart(aiRuns)
+  }
 }
 
 function renderFilter() {
@@ -288,6 +302,75 @@ function recentRuns(runs, keys) {
   return `<section class="card"><h2>Recent runs</h2><p class="note">Newest first · last ${rows.length} of ${runs.length}</p>
     <div class="table-wrap"><table><thead><tr><th>When</th><th>Branch</th><th>Commit</th><th>Result</th>${heads}<th></th></tr></thead>
     <tbody>${rows.join('')}</tbody></table></div></section>`
+}
+
+// -- AI trainer evals, live tier ------------------------------------------------------
+
+const AI_LABELS = {
+  prompt_injection: 'Prompt injection',
+  information_exposure: 'Information exposure',
+  unintended_actions: 'Unintended actions',
+  output_quality: 'Output quality',
+}
+let aiRuns = []
+
+function aiSection(runs) {
+  if (!runs.length) return ''
+  const last = runs.at(-1)
+  const tile = (lbl, value, ctx) => `<div class="card kpi"><div class="label">${lbl}</div><div class="value">${value}</div><div class="ctx">${ctx}</div></div>`
+  const rate = (m) => (m?.rate == null ? '—' : `${pct(m.rate * 100)} <small>bar ${Math.round(m.bar * 100)}%</small>`)
+  const rows = Object.entries(last.categories)
+    .map(([cat, c]) => `<tr><td>${esc(AI_LABELS[cat] ?? cat)}</td><td class="num">${rate(c.metrics.rules)}</td>
+      <td class="num">${rate(c.metrics.judged)}</td><td>${c.met ? 'met' : '<strong>not met</strong>'}</td></tr>`)
+    .join('')
+  const flagged = [...last.failing.map((id) => `<code>${esc(id)}</code> failed every run`), ...last.inconsistent.map((id) => `<code>${esc(id)}</code> inconsistent`)]
+  return `<h2 class="section-title">AI trainer evals · live tier</h2>
+    <section class="grid kpis" aria-label="AI evals summary">
+      ${tile('Last live run', esc(last.gate), `${when(last.timestamp)} · ${esc(last.model)} · ${last.cases} cases × ${last.reps} runs`)}
+      ${tile('Cost', `$${last.cost.total_usd.toFixed(2)}`, `trainer $${last.cost.trainer_usd.toFixed(2)} · judge $${last.cost.judge_usd.toFixed(2)}`)}
+      ${tile('Inconsistent cases', last.inconsistent.length, 'passed some runs, not all')}
+      ${tile('Live runs', runs.length, `judge ${esc(last.judge_model)}`)}
+    </section>
+    <section class="grid two">
+      <div class="card"><h2>Pass rate by category</h2><p class="note">Runs whose rule checks all passed, per live run</p>
+        <div class="chart"><canvas id="c-ai" role="img" aria-label="AI eval pass rate by category chart"></canvas></div></div>
+      <div class="card"><h2>Latest run</h2><p class="note">Against each category's bar (see ai-evals/README.md)</p>
+        <div class="table-wrap"><table><thead><tr><th>Category</th><th class="num">Rule checks</th><th class="num">Judged</th><th>Gate</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+        ${flagged.length ? `<p class="note">${flagged.join(' · ')}</p>` : ''}</div>
+    </section>`
+}
+
+function drawAiChart(runs) {
+  const labels = runs.map((r) => new Date(r.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+  const datasets = Object.keys(AI_LABELS).map((cat, i) => ({
+    label: AI_LABELS[cat],
+    data: runs.map((r) => (r.categories[cat]?.metrics.rules?.rate == null ? null : r.categories[cat].metrics.rules.rate * 100)),
+    borderColor: css(SLOTS[i]),
+    backgroundColor: css(SLOTS[i]),
+    borderWidth: 2,
+    pointRadius: 3,
+    spanGaps: true,
+  }))
+  charts.push(
+    new Chart(document.getElementById('c-ai'), {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { align: 'start', labels: { color: css('--ink-2'), usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
+          tooltip: { callbacks: { label: (item) => ` ${item.dataset.label}: ${Math.round(item.parsed.y)}%` } },
+        },
+        scales: {
+          x: { grid: { display: false }, border: { color: css('--axis') }, ticks: { color: css('--muted'), maxRotation: 0 } },
+          y: { min: 0, max: 100, grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--muted'), callback: (v) => `${v}%` } },
+        },
+      },
+    }),
+  )
 }
 
 main()

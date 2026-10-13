@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs FitLog's Pages Functions locally for the API tests, with the Claude API
-# swapped for the recording stub (api-tests/testkit/anthropic_stub.py).
+# swapped for the recording stub (testkit/src/testkit/anthropic_stub.py).
 #
 #   bash api-tests/scripts/start-functions.sh          # foreground; Ctrl-C stops both
 #   bash api-tests/scripts/start-functions.sh --bg     # background; prints the env to export
@@ -18,7 +18,7 @@ FUNCTIONS_PORT="${FUNCTIONS_PORT:-8788}"
 STUB_PORT="${STUB_PORT:-8790}"
 PYTHON="${PYTHON:-python}"
 
-# Must match FAKE_ANTHROPIC_KEY in api-tests/testkit/config.py. Not a real key:
+# Must match FAKE_ANTHROPIC_KEY in testkit/src/testkit/config.py. Not a real key:
 # the stub never checks it, the tests check it is sent and never echoed back.
 FAKE_ANTHROPIC_KEY="sk-ant-test-local-stub-key"
 # Production waits much longer; tests use a short upstream timeout so the

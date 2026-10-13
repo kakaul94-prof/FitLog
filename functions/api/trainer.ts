@@ -18,7 +18,7 @@
 interface Env {
   ANTHROPIC_API_KEY?: string
   // Unset in production. The API tests point it at a local stand-in for the
-  // Claude API (api-tests/testkit/anthropic_stub.py) to see what we send.
+  // Claude API (testkit/src/testkit/anthropic_stub.py) to see what we send.
   ANTHROPIC_BASE_URL?: string
   // Unset in production (DEFAULT_UPSTREAM_TIMEOUT_MS applies); tests shorten it.
   ANTHROPIC_TIMEOUT_MS?: string

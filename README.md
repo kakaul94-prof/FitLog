@@ -232,8 +232,8 @@ e2e/
 ├── pages/         # Page Objects
 ├── tests/         # user-journey specs + RLS spec
 └── support/       # local-only env guard, Supabase API client
+testkit/           # shared Python package (fitlog-testkit): clients, token forger, factories, contracts, Claude stub
 api-tests/
-├── testkit/       # reusable clients, token forger, factories, contracts, Claude stub
 ├── tests/         # auth, authz, contracts, validation, security, functions, bdd
 └── scripts/       # local-env.sh, start-functions.sh
 metrics/           # CI quality metrics + security-scan summary

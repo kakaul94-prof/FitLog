@@ -88,7 +88,7 @@ export class FoodPickerPage extends BasePage {
   }
 
   readonly newFoodButton = this.page.getByRole('button', { name: 'New food', exact: true })
-  readonly copyDayButton = this.page.getByRole('button', { name: 'Copy day', exact: true })
+  readonly copyMealButton = this.page.getByRole('button', { name: 'Copy meal', exact: true })
   readonly copyFromDate = this.page.getByLabel('Copy from date')
 
   /** Press and hold a food in the list to open its menu (Delete food…). */

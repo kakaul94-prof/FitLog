@@ -149,7 +149,7 @@ test.describe('copying', () => {
     await diary.gotoDate(to)
     await diary.openAddFood('Snacks')
 
-    await picker.copyDayButton.click()
+    await picker.copyMealButton.click()
     await picker.copyFromDate.fill(from)
     await page.getByRole('button', { name: 'Copy 2 items' }).click()
 
@@ -163,7 +163,7 @@ test.describe('copying', () => {
     await diary.gotoDate(to)
     await diary.openAddFood('Snacks')
 
-    await picker.copyDayButton.click()
+    await picker.copyMealButton.click()
     await picker.copyFromDate.fill(from)
 
     await expect(page.getByRole('button', { name: 'Copy 0 items' })).toBeDisabled()

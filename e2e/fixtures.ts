@@ -47,6 +47,8 @@ type Fixtures = {
   graceDb: SupabaseClient
   heidiDb: SupabaseClient
   ivanDb: SupabaseClient
+  /** Judy owns the resilience specs (offline queue, lost and repeated requests). */
+  judyDb: SupabaseClient
   /** Scripted /api/trainer; records what the app sent. */
   trainer: TrainerStub
   /** Test-driven GPS + fake clock; installed before the page loads. */
@@ -80,6 +82,7 @@ export const test = base.extend<Fixtures>({
   graceDb: async ({}, use) => use(await signedInClient(USERS.grace)),
   heidiDb: async ({}, use) => use(await signedInClient(USERS.heidi)),
   ivanDb: async ({}, use) => use(await signedInClient(USERS.ivan)),
+  judyDb: async ({}, use) => use(await signedInClient(USERS.judy)),
   trainer: async ({ page }, use) => {
     const trainer = new TrainerStub(page)
     await trainer.install()

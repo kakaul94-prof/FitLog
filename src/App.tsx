@@ -102,6 +102,13 @@ function createIDBPersister(key: IDBValidKey = 'fitlog-query-cache'): Persister 
 }
 const persister = createIDBPersister()
 
+// Dev-only: expose the query client so end-to-end tests can see the offline
+// write queue (which writes are waiting their turn). Like window.__supabase,
+// it's stripped from production builds.
+if (import.meta.env.DEV) {
+  ;(globalThis as unknown as { __queryClient?: QueryClient }).__queryClient = queryClient
+}
+
 // Wire TanStack Query's online state to Capacitor Network so writes pause while
 // offline and resume on reconnect (Phase 2). Safe everywhere — the plugin's web
 // impl covers the browser PWA; the native plugin lands with the next APK build.

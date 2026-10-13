@@ -119,6 +119,27 @@ function newQuickRow(
 
 type InsertRow = ReturnType<typeof newDiaryRow> | ReturnType<typeof newQuickRow>
 
+/**
+ * Insert diary rows whose ids the app chose. The queue can send an insert
+ * again after it already reached the server (the app closed before it saved
+ * that the write was done), and the repeat is refused on our own primary key
+ * (23505). If every row is there, the write is done, not failed: failing it
+ * would roll the diary back to before the entry was added. Only the user's
+ * own rows are visible, so another user's row with the same id never counts.
+ * A multi-row insert is all-or-nothing, so a batch has landed whole or not at all.
+ */
+async function insertDiaryRows(rows: InsertRow[]): Promise<void> {
+  if (rows.length === 0) return
+  const { error } = await supabase.from('diary_entries').insert(rows)
+  if (!error) return
+  if (error.code === '23505') {
+    const ids = rows.map((r) => r.id)
+    const { data } = await supabase.from('diary_entries').select('id').in('id', ids)
+    if (data?.length === ids.length) return
+  }
+  throw error
+}
+
 /** Promote an insert row to a full DiaryEntry for the optimistic cache (the
  *  unknown user_id/position aren't rendered; the refetch on settle fills them). */
 function asCacheRow(row: InsertRow): DiaryEntry {
@@ -199,8 +220,7 @@ function logFoodMutation(
     mutationFn: async (v) => {
       const row =
         v._row ?? newDiaryRow(v.entry_date, v.meal, v.food, v.servings, v.unit, v.id)
-      const { error } = await supabase.from('diary_entries').insert(row)
-      if (error) throw error
+      await insertDiaryRows([row])
     },
     onMutate: async (v) => {
       // Forward the caller-chosen id: the picker's "added" tray edits the row
@@ -246,9 +266,7 @@ function logFoodsMutation(
         v.items.map((it) =>
           newDiaryRow(v.entry_date, v.meal, it.food, it.servings, it.unit, it.id),
         )
-      if (rows.length === 0) return
-      const { error } = await supabase.from('diary_entries').insert(rows)
-      if (error) throw error
+      await insertDiaryRows(rows)
     },
     onMutate: async (v) => {
       const rows = (v._rows = v.items.map((it) =>
@@ -284,8 +302,7 @@ function quickAddMutation(
     scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const row = v._row ?? newQuickRow(v.entry_date, v.meal, v.name, v.nutrients, v.id)
-      const { error } = await supabase.from('diary_entries').insert(row)
-      if (error) throw error
+      await insertDiaryRows([row])
     },
     onMutate: async (v) => {
       const row = (v._row = newQuickRow(v.entry_date, v.meal, v.name, v.nutrients, v.id))
@@ -333,9 +350,7 @@ function quickAddFoodsMutation(
         v.items.map((it) =>
           newQuickRow(v.entry_date, v.meal, it.name, it.nutrients),
         )
-      if (rows.length === 0) return
-      const { error } = await supabase.from('diary_entries').insert(rows)
-      if (error) throw error
+      await insertDiaryRows(rows)
     },
     onMutate: async (v) => {
       const rows = (v._rows = v.items.map((it) =>

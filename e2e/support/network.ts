@@ -63,6 +63,28 @@ export async function loseReplyOnce(page: Page, table: string, method: Method): 
   return { committed: status }
 }
 
+/**
+ * The page's next write of any kind (an insert, update, delete or function
+ * call on any table) reaches the database and commits, but its reply is lost.
+ * For multi-step operations, where it's the first step that gets cut off.
+ */
+export async function loseNextWriteReply(page: Page): Promise<LostReply> {
+  let committed!: (status: number) => void
+  const status = new Promise<number>((resolve) => (committed = resolve))
+  let used = false
+  await page.route(
+    (url) => url.pathname.startsWith('/rest/v1/'),
+    async (route) => {
+      if (used || route.request().method() === 'GET') return route.fallback()
+      used = true
+      const response = await route.fetch()
+      committed(response.status())
+      await route.abort('connectionreset')
+    },
+  )
+  return { committed: status }
+}
+
 /** The next such request never reaches the database: the server answers `status`. */
 export async function refuseOnce(page: Page, table: string, method: Method, status = 503): Promise<void> {
   let used = false

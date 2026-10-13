@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { expect, test } from '../fixtures'
 import type { Backup } from '../pages/BackupPage'
 import { signedInClient } from '../support/api'
 import { addWeighIn, createFood, createRecipe, diaryDay, logFood, logStrengthWorkout, weighIns, wipeAccount } from '../support/data'
 import { authFile, USERS } from '../support/env'
+import { loseNextWriteReply } from '../support/network'
 
 // Export and restore, as Grace. Restoring replaces her whole account, so she
 // has it to herself and these tests run one at a time. Each starts from the
@@ -172,4 +174,67 @@ test.describe('rejects files that are not a backup', () => {
       expect(await foodNames(graceDb)).toEqual(['E2E Oats', 'E2E Porridge'])
     })
   }
+})
+
+test.describe('a restore that fails partway', () => {
+  // A restore is all or nothing: if it can't finish, your data is exactly as it
+  // was; if it did finish, it's exactly the backup. Never part of each.
+  test.describe.configure({ retries: 0 })
+
+  /** Grace's whole account, comparable across a restore (triggers touch updated_at). */
+  async function account(db: SupabaseClient): Promise<Record<string, Row[]>> {
+    const out: Record<string, Row[]> = {}
+    for (const table of TABLES) {
+      const { data, error } = await db.from(table).select('*').order('id')
+      if (error) throw new Error(`account(${table}): ${error.message}`)
+      out[table] = (data as Row[]).map((row) => {
+        const { updated_at, ...rest } = row
+        void updated_at
+        return rest
+      })
+    }
+    return out
+  }
+
+  const restoreFailed = (page: import('@playwright/test').Page) => page.getByText(/^Couldn’t (clear|restore)/)
+
+  test('a backup the database refuses partway leaves your data as it was', async ({
+    page,
+    graceDb,
+    backupPage: backup,
+  }) => {
+    const file = await backup.exportBackup()
+    await graceDb.from('diary_entries').delete().eq('food_name', 'E2E Oats') // changed since the export
+    const before = await account(graceDb)
+    // One bad row near the end: a set whose workout isn't in the backup.
+    const orphan = { id: randomUUID(), workout_id: randomUUID(), exercise_key: 'bench_press', exercise_name: 'Bench Press', reps: 5, weight_lb: 135 }
+    const corrupt: Backup = { ...file, workout_sets: [...rows(file, 'workout_sets'), orphan] }
+
+    await backup.chooseFile(JSON.stringify(corrupt))
+    await backup.replaceButton.click()
+
+    await expect(restoreFailed(page)).toBeVisible()
+    expect(await account(graceDb), 'nothing wiped, nothing half-restored').toEqual(before)
+  })
+
+  test('a restore whose connection drops is applied fully or not at all', async ({
+    page,
+    graceDb,
+    backupPage: backup,
+  }) => {
+    const exported = await account(graceDb)
+    const file = await backup.exportBackup()
+    await graceDb.from('diary_entries').delete().eq('food_name', 'E2E Oats')
+    await addWeighIn(graceDb, '2025-04-02', 145)
+    const changed = await account(graceDb)
+    const lost = await loseNextWriteReply(page)
+
+    await backup.chooseFile(JSON.stringify(file))
+    await backup.replaceButton.click()
+    expect(await lost.committed, 'the first write reached the database').toBeLessThan(300)
+    await expect(restoreFailed(page)).toBeVisible()
+
+    const after = await account(graceDb)
+    expect([exported, changed], 'all of the backup, or none of it').toContainEqual(after)
+  })
 })

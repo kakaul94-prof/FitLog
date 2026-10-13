@@ -171,6 +171,14 @@ const KEYS = {
   updateEntry: ['diary', 'updateEntry'],
 } as const
 
+// Every queued diary write shares one scope, so TanStack sends them one at a
+// time in the order they were made, after a restart too. Unscoped, the queue
+// resumes them all at once on reconnect and the server can see them out of
+// order: an offline delete landing before the add it undoes (the entry comes
+// back), or an earlier edit overwriting a later one. Only the network call
+// waits its turn; the screen still updates at once in onMutate.
+const DIARY_SCOPE = { id: 'diary-writes' }
+
 // Logging anything for today defers tonight's streak nudge to tomorrow
 // (native app only; no-op on web). Runs in onMutate so it happens at log time
 // even for the picker → kill-the-app flow where DiaryPage never remounts.
@@ -187,6 +195,7 @@ function logFoodMutation(
 ): UseMutationOptions<void, Error, LogFoodVars, DiaryCtx> {
   return {
     mutationKey: KEYS.logFood,
+    scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const row =
         v._row ?? newDiaryRow(v.entry_date, v.meal, v.food, v.servings, v.unit, v.id)
@@ -230,6 +239,7 @@ function logFoodsMutation(
 ): UseMutationOptions<void, Error, LogFoodsVars, DiaryCtx> {
   return {
     mutationKey: KEYS.logFoods,
+    scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const rows =
         v._rows ??
@@ -271,6 +281,7 @@ function quickAddMutation(
 ): UseMutationOptions<void, Error, QuickAddVars, DiaryCtx> {
   return {
     mutationKey: KEYS.quickAdd,
+    scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const row = v._row ?? newQuickRow(v.entry_date, v.meal, v.name, v.nutrients, v.id)
       const { error } = await supabase.from('diary_entries').insert(row)
@@ -315,6 +326,7 @@ function quickAddFoodsMutation(
 ): UseMutationOptions<void, Error, QuickAddFoodsVars, DiaryCtx> {
   return {
     mutationKey: KEYS.quickAddFoods,
+    scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const rows =
         v._rows ??
@@ -355,6 +367,7 @@ function updateServingsMutation(
 ): UseMutationOptions<void, Error, { id: string; servings: number }, DiaryCtx> {
   return {
     mutationKey: KEYS.updateServings,
+    scope: DIARY_SCOPE,
     mutationFn: async (e) => {
       const { error } = await supabase
         .from('diary_entries')
@@ -381,6 +394,7 @@ function deleteEntryMutation(
 ): UseMutationOptions<void, Error, string, DiaryCtx> {
   return {
     mutationKey: KEYS.deleteEntry,
+    scope: DIARY_SCOPE,
     mutationFn: async (id) => {
       const { error } = await supabase
         .from('diary_entries')
@@ -410,6 +424,7 @@ function deleteEntriesMutation(
 ): UseMutationOptions<void, Error, string[], DiaryCtx> {
   return {
     mutationKey: KEYS.deleteEntries,
+    scope: DIARY_SCOPE,
     mutationFn: async (ids) => {
       if (ids.length === 0) return
       const { error } = await supabase
@@ -441,6 +456,7 @@ function moveMutation(
 ): UseMutationOptions<void, Error, { ids: string[]; meal: Meal }, DiaryCtx> {
   return {
     mutationKey: KEYS.move,
+    scope: DIARY_SCOPE,
     mutationFn: async (e) => {
       if (e.ids.length === 0) return
       const { error } = await supabase
@@ -469,6 +485,7 @@ function updateEntryMutation(
 ): UseMutationOptions<void, Error, UpdateEntryVars, DiaryCtx> {
   return {
     mutationKey: KEYS.updateEntry,
+    scope: DIARY_SCOPE,
     mutationFn: async ({ id, ...patch }) => {
       const { error } = await supabase
         .from('diary_entries')

@@ -117,6 +117,23 @@ export async function holdNext(
   return { arrived, release }
 }
 
+/**
+ * Hold every such request from now on (not just the first) until released,
+ * so a retry or a second refetch can't slip past while the test looks.
+ */
+export async function holdAll(page: Page, table: string, method: Method, match?: RequestMatch): Promise<HeldRequest> {
+  let arrive!: () => void
+  const arrived = new Promise<void>((resolve) => (arrive = resolve))
+  let release!: () => void
+  const released = new Promise<void>((resolve) => (release = resolve))
+  await onRest(page, table, method, async (route) => {
+    arrive()
+    await released
+    await route.continue()
+  }, match)
+  return { arrived, release }
+}
+
 // -- the app's write queue (TanStack Query mutations) -------------------------
 
 export interface QueuedWrite {

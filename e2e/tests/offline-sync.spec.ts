@@ -10,12 +10,16 @@ import {
   goOffline,
   goOnline,
   type HeldRequest,
+  holdAll,
   holdNext,
+  readPersistedCache,
   statusPill,
   waitForQueuedWritesSaved,
   waitForSync,
   withBody,
+  withQuery,
   writeQueue,
+  writePersistedCache,
 } from '../support/network'
 
 // Logging while offline, then coming back. The diary keeps writes in a queue
@@ -239,4 +243,49 @@ test('an entry logged offline survives closing the app and syncs when it reopens
   expect((await savedEntries(judyDb, date)).map((e) => e.food_name)).toEqual([name])
   await expect(reopened.getByRole('button', { name: `${name} 210`, exact: true })).toHaveCount(1)
   await expect(statusPill(reopened)).toBeHidden()
+})
+
+test('a save replayed after it already reached the server counts as done', async ({
+  page,
+  context,
+  judyDb,
+  diaryPage: diary,
+  foodPickerPage: picker,
+}) => {
+  const date = '2024-02-07'
+  const name = `Replayed ${runId()}`
+  await clearDiaryDay(judyDb, date)
+  await openPickerOnline(diary, picker, date)
+
+  // Log offline and keep a copy of what the app saved to disk: the entry queued.
+  await goOffline(page)
+  await quickAddOffline(picker, name, 160)
+  await waitForQueuedWritesSaved(page, 1)
+  const savedWithEntryQueued = await readPersistedCache(page)
+  expect(savedWithEntryQueued).toBeDefined()
+
+  // Back online, it syncs...
+  await goOnline(page)
+  await waitForSync(page)
+  expect((await savedEntries(judyDb, date)).map((e) => e.food_name)).toEqual([name])
+
+  // ...but the app dies before saving that it did, so it reopens with the old copy.
+  await page.close()
+  const reopened = await context.newPage()
+  await reopened.goto('/icon.svg') // same origin, but the app doesn't run here
+  await writePersistedCache(reopened, savedWithEntryQueued!)
+  const day = await holdAll(reopened, 'diary_entries', 'GET', withQuery(`entry_date=eq.${date}`))
+  const replay = responseTo(reopened, 'diary_entries', 'POST')
+  await reopened.goto(`/?date=${date}`)
+
+  expect((await replay).status(), 'the queued save is sent again and the server already has it').toBe(409)
+  await expect
+    .poll(async () => (await writeQueue(reopened)).find((w) => w.key === 'diary/quickAdd')?.status)
+    .not.toBe('pending')
+  expect((await writeQueue(reopened)).find((w) => w.key === 'diary/quickAdd')?.status, 'the replay counts as done').toBe('success')
+  await expect(reopened.getByRole('button', { name: `${name} 160`, exact: true }), 'the entry stays on screen').toBeVisible()
+
+  day.release()
+  expect((await savedEntries(judyDb, date)).map((e) => e.food_name)).toEqual([name])
+  await expect(reopened.getByRole('button', { name: `${name} 160`, exact: true })).toHaveCount(1)
 })

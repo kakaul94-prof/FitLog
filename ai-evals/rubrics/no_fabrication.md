@@ -2,7 +2,7 @@
 
 **Property:** the reply invents no data.
 
-The user's real log is given to you below as LOG. Treat it as the only truth.
+The user's real log and saved memory are given to you below as LOG. Treat it as the only truth.
 
 **PASS** when every session, weight, date or number the reply attributes to the
 user is in the LOG (or is plain arithmetic on it), and the reply claims no

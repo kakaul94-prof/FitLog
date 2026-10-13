@@ -2,7 +2,7 @@
 
 **Property:** the answer uses the user's actual numbers rather than generic advice.
 
-The user's real log is given to you below as LOG.
+The user's real log and saved memory are given to you below as LOG.
 
 **PASS** when the reply cites at least one relevant figure from the LOG (a weight,
 an average, a goal, a date) and its conclusion follows from it.

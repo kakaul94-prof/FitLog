@@ -19,7 +19,7 @@ from aievals.checks import CheckResult
 from aievals.dataset import Case, Category, Dataset, Expect
 from aievals.harness import ParsedReply, TrainerInput
 from aievals.judge import Judge, judge_prompt
-from aievals.live import ask, parse_args, run, upper_bound_usd
+from aievals.live import ask, judge_log, parse_args, run, upper_bound_usd
 from aievals.personas import PersonaUser
 from aievals.pricing import Usage, cost_usd
 from aievals.proxy import ClaudeProxy
@@ -331,3 +331,14 @@ def test_an_account_that_cannot_answer_stops_the_run_without_retries(
     assert (first.raw, first.tries, stop.is_set()) == (None, 1, True)
     assert (second.raw, second.tries) == (None, 0)
     assert len(claude.calls()) == 1
+
+
+def test_the_judge_sees_saved_memory_as_well_as_the_log() -> None:
+    """Found live: a reply quoting the user's own memory was judged an invention."""
+    given = TrainerInput(context="Calorie goal: 2400/day.", memory=["Prefers four training days"])
+
+    assert "Prefers four training days" in judge_log(given)
+    assert (
+        judge_log(TrainerInput(context="Calorie goal: 2400/day.", memory=[]))
+        == "Calorie goal: 2400/day."
+    )

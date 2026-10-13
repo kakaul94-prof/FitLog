@@ -261,6 +261,18 @@ def ask(
     return Attempt(case, rep, None, error or "skipped: the account can't answer", tries, 0.0)
 
 
+def judge_log(given: TrainerInput) -> str:
+    """Everything the trainer knew about the user: the snapshot AND saved memory.
+
+    A judge checking for invented facts must see the same facts the model saw,
+    or it fails correct answers that quote the user's own memory.
+    """
+    if not given.memory:
+        return given.context
+    facts = "\n".join(f"- {m}" for m in given.memory)
+    return f"{given.context}\n\nSaved memory (facts from past chats):\n{facts}"
+
+
 def shown_to_judge(reply: ParsedReply) -> str:
     """What the user sees: the bubble, plus the memory chip when one is offered."""
     if reply.remember:
@@ -281,7 +293,7 @@ def judge_all(
     def grade(job: tuple[int, str]) -> JudgeResult:
         i, rubric = job
         attempt, reply, given = scored[i]
-        return grader.grade(rubric, attempt.case.ask, shown_to_judge(reply), given.context)
+        return grader.grade(rubric, attempt.case.ask, shown_to_judge(reply), judge_log(given))
 
     with ThreadPoolExecutor(concurrency) as pool:
         verdicts = list(pool.map(grade, jobs[:limit]))
@@ -414,7 +426,7 @@ def run(opts: Options) -> int:
         cost=cost,
     )
     markdown = render_markdown(summary, outcomes)
-    logs = {cid: given.context for cid, (_, given) in prepared.items()}
+    logs = {cid: judge_log(given) for cid, (_, given) in prepared.items()}
     _write(out, runs, errors, calls, rules, summary, markdown, logs)
     if not opts.dry_run:
         append_history(REPORTS / "history.json", summary)

@@ -103,7 +103,10 @@ test.describe('restore', () => {
 
     const { data: ingredients } = await graceDb
       .from('recipe_ingredients')
-      .select('ingredient:foods!ingredient_food_id(name)')
+      // Two links run from recipe_ingredients to foods, so name the one to follow.
+      // Each link includes user_id (migration_owner_scoped_links.sql), so it's
+      // named by its constraint: a column-name hint only matches one-column links.
+      .select('ingredient:foods!recipe_ingredients_ingredient_food_id_owner_fkey(name)')
       .eq('recipe_food_id', porridgeId)
     expect(ingredients!.map((i) => (i.ingredient as unknown as { name: string }).name).sort()).toEqual(['E2E Milk', 'E2E Oats'])
     const { data: workouts } = await graceDb

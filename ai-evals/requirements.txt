@@ -2,10 +2,10 @@
 # Install from the repository root (the editable path is relative to it):
 #   pip install -r ai-evals/requirements.txt
 
-# Everything the API suite uses (pytest, httpx, pydantic, allure, ruff, mypy...)
+# Everything the API suite uses (pytest, httpx, pydantic, allure, ruff, mypy...),
+# including the shared testkit package (-e ./testkit): clients, test users, the
+# recording Claude stub
 -r ../api-tests/requirements.txt
-# ...and its testkit package: clients, test users, the recording Claude stub
--e ./api-tests
 
 # Live tier only: the LLM judge, and the dataset files
 anthropic==1.13.0

@@ -71,7 +71,7 @@ the functions tests are skipped locally (with the reason) and **fail** in CI.
 
 ### Safety rails
 
-- `testkit/config.py` refuses any URL that isn't local, so a copied `.env` can't
+- The testkit's `config.py` refuses any URL that isn't local, so a copied `.env` can't
   point the suite at dev or production.
 - The service-role key is used only by fixtures, to create and delete users. No
   request under test is ever sent with it.
@@ -84,20 +84,6 @@ the functions tests are skipped locally (with the reason) and **fail** in CI.
 
 ```
 api-tests/
-├── testkit/             # reusable, typed, documented; no assertions in here
-│   ├── config.py        # settings from the environment + the local-only guard
-│   ├── auth.py          # GoTrue client; service-role admin for fixtures only
-│   ├── rest.py          # PostgREST client (every call returns the raw response)
-│   ├── storage.py       # Storage client
-│   ├── functions.py     # Pages Functions client
-│   ├── tokens.py        # forged / tampered / expired JWTs
-│   ├── users.py         # per-run users, deleted at the end
-│   ├── tables.py        # THE registry of per-user tables
-│   ├── factories.py     # a valid row for any table, parents first
-│   ├── models.py        # pydantic contracts (tables, Claude requests, errors)
-│   ├── db.py            # psycopg: act as a user to test RLS policies directly
-│   ├── leaks.py         # finds secrets / internals / other users' data in text
-│   └── anthropic_stub.py  # recording stand-in for the Claude API
 ├── tests/               # one folder per area (table above)
 │   └── bdd/features/    # Gherkin
 └── scripts/
@@ -105,43 +91,22 @@ api-tests/
     └── start-functions.sh  # wrangler pages dev + the stub
 ```
 
-## Using the testkit elsewhere
-
-`testkit` is a normal package (`pip install -e api-tests`), so another suite (a
-load test, a data migration check) can reuse the clients and data builders:
-
-```python
-import httpx
-from testkit.auth import AdminAuth, AuthClient
-from testkit.config import Settings
-from testkit.factories import create_row
-from testkit.rest import RestClient
-from testkit.tables import TABLES_BY_NAME
-from testkit.users import UserFactory
-
-settings = Settings.from_env()                 # refuses non-local URLs
-http = httpx.Client()
-users = UserFactory(
-    AdminAuth(http, settings.supabase_url, settings.service_role_key),
-    AuthClient(http, settings.supabase_url, settings.anon_key),
-    run_id="loadtest",
-)
-alice = users.create("alice")                  # a real, signed-in user
-api = RestClient(http, settings.supabase_url, settings.anon_key).as_user(alice.access_token)
-workout = create_row(api, TABLES_BY_NAME["workouts"])
-users.delete_all()                             # and everything they own
-```
+The clients, test users, data builders, contracts and Claude stub the tests are
+written with are the shared [testkit](../testkit/README.md), an installable
+package (`fitlog-testkit`) that `requirements.txt` installs in editable mode.
+The AI evals use the same package. Its README has a five-minute guide to
+starting a new suite on it.
 
 ## Adding a table to the isolation tests
 
-One line. Add a `TableSpec` to `testkit/tables.py`:
+One line. Add a `TableSpec` to the testkit's `tables.py` (`testkit/src/testkit/tables.py`):
 
 ```python
 TableSpec("water_logs", m.WaterLog, lambda c: {"logged_on": DAY, "ml": 250}, ("ml", 500)),
 #          table name    contract    a valid row (c.token is unique)          column to edit in update probes
 ```
 
-and its response contract to `testkit/models.py`. The table is then covered by
+and its response contract to `models.py` next to it. The table is then covered by
 every RLS test (API and database), the CRUD contract tests and the export test.
 You don't have to remember: `test_every_public_table_is_covered_by_the_isolation_suite`
 fails as soon as the table exists without a spec. Other catalog guards fail if it
@@ -171,7 +136,7 @@ same guarantees told as stories a product owner can read.
 ## The Claude stub
 
 `/api/trainer` and `/api/scan-plate` call Claude. Locally they're pointed at
-`testkit/anthropic_stub.py` through `ANTHROPIC_BASE_URL` (unset in production).
+the testkit's `anthropic_stub.py` through `ANTHROPIC_BASE_URL` (unset in production).
 The stub records every request and plays back whatever a test queues:
 
 ```python

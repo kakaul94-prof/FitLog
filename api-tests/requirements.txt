@@ -1,5 +1,9 @@
 # Exact pins: a run today and a run in six months use the same tools.
-# Install: pip install -r api-tests/requirements.txt
+# Install from the repository root (the editable path is relative to it):
+#   pip install -r api-tests/requirements.txt
+
+# The shared testkit (clients, test users, the recording Claude stub), as a package
+-e ./testkit
 
 # Test runner, BDD and parallel runs
 pytest==9.1.1

@@ -236,11 +236,15 @@ summary is in the job's summary page.
 
 ### S-01: Secrets — clean
 
-Nothing secret has ever been committed. The two things gitleaks flags are
+Nothing secret has ever been committed. The things gitleaks flags are
 allowlisted in `.gitleaks.toml` with the reason: the Supabase CLI's public local
-development keys (`iss: supabase-demo`, the same on every machine) and the fake
-secrets in `api-tests/tests/security/test_leak_scanner.py` that prove the leak
-scanner works.
+development keys (`iss: supabase-demo`, the same on every machine), and the fake
+secrets in the tests that prove a leak check catches them
+(`api-tests/tests/security/test_leak_scanner.py`, `ai-evals/tests/test_checks.py`,
+`testkit/tests/test_leaks.py`) or that keys stay out of failure reports
+(`testkit/tests/test_config.py`). The CI scan of 2026-10-13 flagged one of these
+(jwt.io's public example token in `ai-evals/tests/test_checks.py`, merged with the
+AI evals) before its path was added.
 
 ### S-02: Python dependencies — clean
 

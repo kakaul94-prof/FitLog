@@ -45,8 +45,6 @@ known-first-party = ["aievals", "testkit"]
 strict = true
 python_version = "3.12"
 files = ["aievals", "tests"]
-# testkit is an editable install, which mypy can't follow; point it at the source.
-mypy_path = "../api-tests"
 explicit_package_bases = true
 plugins = ["pydantic.mypy"]
 

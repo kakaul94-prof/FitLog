@@ -64,7 +64,11 @@ stop
 
 if [ -z "$UPSTREAM_URL" ]; then
   cd "$ROOT/api-tests"
-  start_bg "$RUN_DIR/stub.log" "$PYTHON" -m testkit.anthropic_stub --port "$STUB_PORT"
+  # STUB_MAX_RECORDED=N keeps only the newest N calls. The load tests set it: a
+  # soak makes thousands of trainer calls and never reads them back.
+  stub_args=(--port "$STUB_PORT")
+  [ -n "${STUB_MAX_RECORDED:-}" ] && stub_args+=(--max-recorded "$STUB_MAX_RECORDED")
+  start_bg "$RUN_DIR/stub.log" "$PYTHON" -m testkit.anthropic_stub "${stub_args[@]}"
   echo "$BG_PID" >>"$RUN_DIR/pids"
   UPSTREAM="http://127.0.0.1:$STUB_PORT"
 else
@@ -73,8 +77,10 @@ fi
 
 cd "$ROOT"
 export WRANGLER_SEND_METRICS=false
+# FUNCTIONS_IP=0.0.0.0 when the caller is in a container: perf-tests/run.sh
+# running k6 in Docker reaches the functions through host.docker.internal.
 start_bg "$RUN_DIR/wrangler.log" npx --no-install wrangler pages dev "$ASSETS" \
-  --ip 127.0.0.1 --port "$FUNCTIONS_PORT" \
+  --ip "${FUNCTIONS_IP:-127.0.0.1}" --port "$FUNCTIONS_PORT" \
   --compatibility-date 2025-01-01 \
   --binding "VITE_SUPABASE_URL=$SUPABASE_URL" \
   --binding "VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" \

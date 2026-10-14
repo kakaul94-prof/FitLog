@@ -82,6 +82,12 @@ async function main() {
   } catch {
     aiRuns = []
   }
+  try {
+    const res = await fetch('data/perf.json', { cache: 'no-store' })
+    perfRuns = res.ok ? ((await res.json()).runs ?? []) : []
+  } catch {
+    perfRuns = []
+  }
   colorKeys = sourceKeys(allRuns)
   if (window.Chart) Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif'
   render()
@@ -94,14 +100,18 @@ function render() {
   const runs = branch === 'all' ? allRuns : allRuns.filter((r) => r.branch === branch)
   const app = document.getElementById('app')
   if (!runs.length) {
-    app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>' + aiSection(aiRuns)
-    if (window.Chart && aiRuns.length) drawAiChart(aiRuns)
+    app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>' + perfSection(perfRuns) + aiSection(aiRuns)
+    if (window.Chart) {
+      if (perfRuns.length) drawPerfChart(perfRuns)
+      if (aiRuns.length) drawAiChart(aiRuns)
+    }
     return
   }
   const keys = sourceKeys(runs)
-  app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys), aiSection(aiRuns)].join('')
+  app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys), perfSection(perfRuns), aiSection(aiRuns)].join('')
   if (window.Chart) {
     drawCharts(runs, keys)
+    if (perfRuns.length) drawPerfChart(perfRuns)
     if (aiRuns.length) drawAiChart(aiRuns)
   }
 }
@@ -371,6 +381,69 @@ function drawAiChart(runs) {
       },
     }),
   )
+}
+
+// --- Performance (k6, perf-tests/) ------------------------------------------------
+// data/perf.json: one record per nightly or manual perf run (appended by
+// metrics/publish-perf.sh), each carrying the scenarios it ran: load, soak,
+// stress, spike. Numbers are from journey requests only; budgets are in
+// perf-tests/config/thresholds.ts.
+let perfRuns = []
+const PERF_ORDER = ['load', 'soak', 'stress', 'spike', 'smoke']
+const perfScenarios = (runs) =>
+  [...new Set(runs.flatMap((r) => Object.keys(r.scenarios ?? {})))].sort((a, b) => PERF_ORDER.indexOf(a) - PERF_ORDER.indexOf(b))
+const ms = (v) => (v == null ? '—' : v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`)
+const ratePct = (v) => (v == null ? '—' : `${(v * 100).toFixed(2)}%`)
+const perfVerdict = (s) =>
+  s.passed
+    ? s.reasons.length
+      ? '<span class="badge flaky"><span class="dot" aria-hidden="true">!</span>Report-only</span>'
+      : badge('passed')
+    : badge('failed')
+
+function perfSection(runs) {
+  if (!runs.length) return ''
+  const last = runs.at(-1)
+  const names = perfScenarios([last])
+  const primary = last.scenarios[names.includes('load') ? 'load' : names[0]]
+  const tile = (lbl, value, ctx) => `<div class="card kpi"><div class="label">${lbl}</div><div class="value">${value}</div><div class="ctx">${ctx}</div></div>`
+  const held = primary.thresholds.total - primary.thresholds.failed.length
+  const rows = names
+    .flatMap((name) =>
+      Object.entries(last.scenarios[name].groups).map(
+        ([op, g]) => `<tr><td>${esc(name)}</td><td>${esc(op)}</td><td class="num">${ms(g.p95)}</td><td class="num">${ms(g.p99)}</td>
+          <td class="num">${g.budget ? `${g.budget.p95} / ${g.budget.p99} ms` : '—'}</td><td class="num">${ratePct(g.errorRate)}</td><td class="num">${g.count}</td></tr>`,
+      ),
+    )
+    .join('')
+  const notes = names.flatMap((name) => last.scenarios[name].reasons.map((r) => `<strong>${esc(name)}:</strong> ${esc(r)}`))
+  const drift = names.map((name) => last.scenarios[name].phases).find((p) => p?.drift != null)
+  return `<h2 class="section-title">Performance · k6</h2>
+    <section class="grid kpis" aria-label="Performance summary">
+      ${tile('Last run', names.map((n) => `${esc(n)} ${perfVerdict(last.scenarios[n])}`).join('<br>'), `${when(last.timestamp)} · ${last.sha.slice(0, 7)} (${esc(last.branch)})`)}
+      ${tile(`p95 latency · ${esc(primary.scenario)}`, ms(primary.latency?.p95), `p99 ${ms(primary.latency?.p99)} · ${primary.vusMax} virtual users`)}
+      ${tile('Error rate', ratePct(primary.errorRate), `${primary.requests.count} requests · ${primary.requests.rps ?? '—'}/s`)}
+      ${tile('Thresholds held', `${held}/${primary.thresholds.total}`, primary.thresholds.failed.length ? esc(primary.thresholds.failed[0]) : drift ? `soak drift ${drift.drift}× (limit ${drift.driftMax}×)` : 'every budget held')}
+    </section>
+    <section class="grid two">
+      <div class="card"><h2>p95 latency by scenario</h2><p class="note">Journey requests, per published run</p>
+        <div class="chart"><canvas id="c-perf" role="img" aria-label="p95 latency by scenario chart"></canvas></div></div>
+      <div class="card"><h2>Latest run by endpoint group</h2><p class="note">Budgets from perf-tests/config/thresholds.ts</p>
+        <div class="table-wrap"><table><thead><tr><th>Scenario</th><th>Group</th><th class="num">p95</th><th class="num">p99</th><th class="num">Budget</th><th class="num">Errors</th><th class="num">Requests</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>
+        ${notes.length ? `<p class="note">${notes.join('<br>')}</p>` : ''}</div>
+    </section>`
+}
+
+function drawPerfChart(runs) {
+  const names = perfScenarios(runs)
+  const labels = runs.map((r) => new Date(r.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+  const datasets = names.map((name, i) => ({
+    label: name,
+    color: css(SLOTS[i % SLOTS.length]),
+    data: runs.map((r) => r.scenarios[name]?.latency?.p95 ?? null),
+  }))
+  line('c-perf', runs, labels, datasets, { fmt: ms, beginAtZero: true })
 }
 
 main()

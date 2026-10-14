@@ -10,7 +10,7 @@
       --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
       --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11, 11, 11, 0.10);
       /* Categorical series, fixed order (validated for color-vision deficiency). */
-      --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+      --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #7e57c2;
       /* Status: always shown with an icon + label, never color alone. */
       --good: #0ca30c; --warn: #fab219; --bad: #d03b3b;
     }
@@ -18,7 +18,7 @@
       :root {
         --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
         --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
-        --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+        --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #9575cd;
       }
     }
     * { box-sizing: border-box; }
@@ -68,7 +68,7 @@
     <header>
       <div>
         <h1>FitLog Quality</h1>
-        <p class="sub">Test results from every CI run on <code>main</code> and <code>dev</code>, nightly performance runs, and the AI trainer's live evals</p>
+        <p class="sub">Test results from every CI run on <code>main</code> and <code>dev</code>, nightly performance runs, the AI trainer's live evals and the production canary</p>
       </div>
       <div class="filter" id="branch-filter" role="group" aria-label="Branch"></div>
     </header>
@@ -76,7 +76,8 @@
     <footer>
       Flaky = failed, then passed on retry (Playwright, 2 retries in CI). Unit tests run without retries.
       Source: <a href="https://github.com/kakaul94-prof/FitLog/tree/main/metrics">metrics/</a> ·
-      data: <a href="data/history.json">history.json</a> (last 200 runs) · <a href="data/perf.json">perf.json</a> (performance)
+      data: <a href="data/history.json">history.json</a> (last 200 runs) · <a href="data/perf.json">perf.json</a> (performance) ·
+      <a href="data/ai-evals.json">ai-evals.json</a> · <a href="data/prod-canary.json">prod-canary.json</a> (last 360 canary runs)
     </footer>
   </main>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>

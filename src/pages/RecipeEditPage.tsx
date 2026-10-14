@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Plus, X, Search, Copy } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
@@ -10,7 +10,12 @@ import { Select } from '@/components/ui/select'
 import { NutrientBreakdown } from '@/components/NutrientBreakdown'
 import { StartFromSourceSheet } from '@/components/StartFromSourceSheet'
 import { useFoods } from '@/features/foods/useFoods'
-import { ingredientUnits, ingredientNutrients } from '@/lib/nutrients'
+import {
+  ingredientUnits,
+  ingredientNutrients,
+  recipePerServing,
+  storedPanelDrift,
+} from '@/lib/nutrients'
 import type { Food } from '@/lib/database.types'
 import type { RecipeIngredientRow } from '@/features/recipes/useRecipes'
 import {
@@ -25,6 +30,8 @@ import {
 export function RecipeEditPage() {
   const { id } = useParams()
   const nav = useNavigate()
+  // Opened from a diary entry / the add-food sheet → back returns there.
+  const fromEntry = !!(useLocation().state as { fromEntry?: boolean } | null)?.fromEntry
   const { data } = useRecipe(id)
   const recipe = data?.recipe
   const ingredients = data?.ingredients ?? []
@@ -48,7 +55,32 @@ export function RecipeEditPage() {
     }
   }, [recipe])
 
+  // Imported recipes (MyFitnessPal) keep their exact panel, which doesn't match
+  // the ingredient sum; every edit below recomputes and replaces it — ask once.
+  const [switchOk, setSwitchOk] = useState(false)
+  const drift = recipe
+    ? storedPanelDrift(
+        recipe.nutrients,
+        recipePerServing(
+          ingredients.map((r) => r.ri),
+          new Map(ingredients.flatMap((r) => (r.food ? [[r.food.id, r.food] as const] : []))),
+          recipe.recipe_servings ?? 1,
+        ),
+      )
+    : null
+  const okToRecompute = () => {
+    if (!drift || switchOk) return true
+    const ok = confirm(
+      `This recipe uses its saved nutrition (${Math.round(drift.stored)} cal per serving). ` +
+        `Editing switches it to the ingredient total (about ${Math.round(drift.computed)} cal). ` +
+        `Past diary days won't change. Continue?`,
+    )
+    if (ok) setSwitchOk(true)
+    return ok
+  }
+
   const pick = async (food: Food) => {
+    if (!okToRecompute()) return
     await addIng.mutateAsync({
       recipeFoodId: id!,
       food,
@@ -66,7 +98,12 @@ export function RecipeEditPage() {
       <PageHeader
         title="Edit recipe"
         left={
-          <Button variant="ghost" size="icon" onClick={() => nav('/recipes')}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back"
+            onClick={() => (fromEntry ? nav(-1) : nav('/recipes'))}
+          >
             <ChevronLeft className="h-5 w-5" />
           </Button>
         }
@@ -110,8 +147,9 @@ export function RecipeEditPage() {
               onChange={(e) => setYieldServings(e.target.value)}
               onBlur={() => {
                 const v = parseFloat(yieldServings) || 1
-                if (v !== recipe?.recipe_servings)
-                  updateRecipe.mutate({ id: id!, recipe_servings: v })
+                if (v === recipe?.recipe_servings) return
+                if (okToRecompute()) updateRecipe.mutate({ id: id!, recipe_servings: v })
+                else setYieldServings(String(recipe?.recipe_servings ?? 1))
               }}
             />
           </div>
@@ -126,8 +164,8 @@ export function RecipeEditPage() {
               <IngredientRow
                 key={row.ri.id}
                 row={row}
-                onChange={(amount, unit) =>
-                  row.food &&
+                onChange={(amount, unit) => {
+                  if (!row.food || !okToRecompute()) return false
                   updateIng.mutate({
                     id: row.ri.id,
                     recipeFoodId: id!,
@@ -135,12 +173,16 @@ export function RecipeEditPage() {
                     amount,
                     unit,
                   })
-                }
+                  return true
+                }}
                 onRemove={() =>
+                  okToRecompute() &&
                   removeIng.mutate({ id: row.ri.id, recipeFoodId: id! })
                 }
                 onEdit={() =>
-                  row.food && nav(`/foods/${row.food.id}?ingredientOf=${id}`)
+                  row.food &&
+                  okToRecompute() &&
+                  nav(`/foods/${row.food.id}?ingredientOf=${id}`)
                 }
               />
             ))}
@@ -186,7 +228,7 @@ export function RecipeEditPage() {
             <Button
               variant="outline"
               className="mt-1 w-full"
-              onClick={() => setSourceOpen(true)}
+              onClick={() => okToRecompute() && setSourceOpen(true)}
             >
               <Plus className="h-4 w-4" /> Create a new food
             </Button>
@@ -233,7 +275,8 @@ function IngredientRow({
   onEdit,
 }: {
   row: RecipeIngredientRow
-  onChange: (amount: number, unit: string) => void
+  /** False when the edit was declined — the row snaps back to the saved value. */
+  onChange: (amount: number, unit: string) => boolean
   onRemove: () => void
   onEdit: () => void
 }) {
@@ -251,13 +294,17 @@ function IngredientRow({
   const amt = parseFloat(amount) || 0
   const kcal = food ? ingredientNutrients(food, amt, unit).kcal ?? 0 : 0
 
+  const revert = () => {
+    setAmount(String(ri.amount ?? ri.servings))
+    setUnit(ri.unit ?? 'base')
+  }
   const commitAmount = () => {
     if (amt > 0 && (amt !== (ri.amount ?? ri.servings) || unit !== (ri.unit ?? 'base')))
-      onChange(amt, unit)
+      if (!onChange(amt, unit)) revert()
   }
   const commitUnit = (nextUnit: string) => {
     setUnit(nextUnit)
-    if (amt > 0) onChange(amt, nextUnit)
+    if (amt > 0 && !onChange(amt, nextUnit)) revert()
   }
 
   return (

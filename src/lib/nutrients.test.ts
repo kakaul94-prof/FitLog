@@ -13,6 +13,7 @@ import {
   ingredientServings,
   matchServingUnit,
   recipePerServing,
+  storedPanelDrift,
 } from './nutrients'
 import type { Food, Nutrients } from './database.types'
 
@@ -367,5 +368,26 @@ describe('recipePerServing', () => {
   it('treats a zero yield as a single serving', () => {
     const byId = new Map<string, Food>([['a', mkFood('a', { kcal: 100 })]])
     expect(recipePerServing([ri('a', 1)], byId, 0)).toEqual({ kcal: 100 })
+  })
+})
+
+describe('storedPanelDrift', () => {
+  it('is null when the stored panel matches the ingredient sum', () => {
+    expect(storedPanelDrift({ kcal: 214 }, { kcal: 213 })).toBeNull()
+  })
+
+  it('flags a stored panel that differs by more than 3%', () => {
+    expect(storedPanelDrift({ kcal: 420 }, { kcal: 455 })).toEqual({
+      stored: 420,
+      computed: 455,
+    })
+  })
+
+  it('flags a stored panel with no ingredients behind it', () => {
+    expect(storedPanelDrift({ kcal: 300 }, {})).toEqual({ stored: 300, computed: 0 })
+  })
+
+  it('is null when nothing is stored yet (a new recipe)', () => {
+    expect(storedPanelDrift({}, { kcal: 500 })).toBeNull()
   })
 })

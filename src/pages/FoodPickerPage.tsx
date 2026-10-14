@@ -27,6 +27,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { StartFromSourceSheet } from '@/components/StartFromSourceSheet'
 import { CopyMealSheet } from '@/components/CopyMealSheet'
+import { RecipeIngredientsCard } from '@/components/RecipeIngredientsCard'
 import {
   useFoods,
   useDeleteFood,
@@ -976,6 +977,7 @@ function ServingSheet({
                 <span>Fat {Math.round(scaled.fat ?? 0)}g</span>
               </div>
             </div>
+            {food.source === 'recipe' && <RecipeIngredientsCard foodId={food.id} />}
             <Button
               className="w-full"
               disabled={s <= 0 || pending}

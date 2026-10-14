@@ -3,7 +3,7 @@
 // (summary.json) and a short text table on stdout.
 import { ENDPOINTS, type Op } from '../config/endpoints.ts'
 import type { Profile } from '../config/profiles.ts'
-import { FN_TTFB, LATENCY, SOAK_DRIFT_MAX } from '../config/thresholds.ts'
+import { FN_TTFB, LATENCY, SOAK_DRIFT_MAX, SOAK_DRIFT_MIN_MS } from '../config/thresholds.ts'
 
 export interface Metric {
   type: 'trend' | 'counter' | 'rate' | 'gauge'
@@ -65,7 +65,7 @@ export interface Headline {
   endpoints: Record<string, { op: Op; p95: number | null; budgetP95: number | null; ok: boolean | null }>
   fnTtfb: { p95: number | null; budget: number }
   journeys: Record<string, { count: number; p95Ms: number | null }>
-  phases: { firstP95: number | null; lastP95: number | null; drift: number | null; driftMax: number }
+  phases: { firstP95: number | null; lastP95: number | null; drift: number | null; driftMax: number; driftMinMs: number }
   thresholds: ThresholdResult[]
   thresholdsPassed: number
   thresholdsFailed: number
@@ -154,7 +154,7 @@ export function buildHeadline(data: SummaryData, profile: Profile, journeyNames:
     endpoints,
     fnTtfb: { p95: p95(m['http_req_waiting{op:fn}']), budget: FN_TTFB.p95 },
     journeys,
-    phases: { firstP95, lastP95, drift: firstP95 && lastP95 ? Math.round((lastP95 / firstP95) * 100) / 100 : null, driftMax: SOAK_DRIFT_MAX },
+    phases: { firstP95, lastP95, drift: firstP95 && lastP95 ? Math.round((lastP95 / firstP95) * 100) / 100 : null, driftMax: SOAK_DRIFT_MAX, driftMinMs: SOAK_DRIFT_MIN_MS },
     thresholds,
     thresholdsPassed: thresholds.length - failed,
     thresholdsFailed: failed,
@@ -193,7 +193,7 @@ export function textSummary(h: Headline): string {
     lines.push('')
     lines.push(`  journeys  ${journeys.map(([name, j]) => `${name} ${j.count}× (p95 ${ms(j.p95Ms)})`).join(' · ')}`)
   }
-  if (h.phases.drift != null) lines.push(`  drift     last-third p95 ${ms(h.phases.lastP95)} / first-third ${ms(h.phases.firstP95)} = ${h.phases.drift}× (soak limit ${h.phases.driftMax}×)`)
+  if (h.phases.drift != null) lines.push(`  drift     last-third p95 ${ms(h.phases.lastP95)} / first-third ${ms(h.phases.firstP95)} = ${h.phases.drift}× (soak limit ${h.phases.driftMax}× and +${h.phases.driftMinMs} ms)`)
   lines.push('')
   lines.push(`  thresholds: ${h.thresholdsPassed} passed, ${h.thresholdsFailed} failed`)
   for (const t of h.thresholds.filter((t) => !t.ok)) lines.push(`    ✗ ${t.metric}  ${t.expr}`)

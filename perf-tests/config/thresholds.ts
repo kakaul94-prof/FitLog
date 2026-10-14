@@ -47,8 +47,13 @@ export const FN_TTFB = {
   why: 'With Claude stubbed, time-to-first-byte is the sign-in check (one GoTrue round trip) plus prompt assembly; a second is already generous for that.',
 }
 
-/** Soak: p95 of the last third may not exceed p95 of the first third by more than this. */
+/** Soak: p95 of the last third may not exceed p95 of the first third by more
+ *  than this ratio... */
 export const SOAK_DRIFT_MAX = 1.25
+/** ...and by at least this much. A ratio alone flakes when both thirds are a
+ *  few milliseconds (46 → 61 ms is noise, not a leak); the degradation a soak
+ *  exists to catch grows by tens to hundreds of milliseconds. */
+export const SOAK_DRIFT_MIN_MS = 50
 
 /** The share of checks that may fail without failing the run (a failed check
  *  means an unexpected body or status, not necessarily an HTTP error). */

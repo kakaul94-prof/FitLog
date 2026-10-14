@@ -50,8 +50,11 @@ if (code !== 0 && code !== 99) {
   if (h.thresholdsFailed > 0) {
     budgets.push(`${h.thresholdsFailed} threshold(s) breached: ${h.thresholds.filter((t) => !t.ok).map((t) => `${t.metric} ${t.expr}`).join('; ')}`)
   }
-  if (h.scenario === 'soak' && h.phases.drift != null && h.phases.drift > h.phases.driftMax) {
-    budgets.push(`latency drifted: last-third p95 is ${h.phases.drift}× the first third (limit ${h.phases.driftMax}×)`)
+  // Drift: a ratio AND an absolute rise, so a few milliseconds of noise between
+  // thirds can't fail a run (config/thresholds.ts explains the numbers).
+  const { drift, driftMax, firstP95, lastP95, driftMinMs = 0 } = h.phases
+  if (h.scenario === 'soak' && drift != null && drift > driftMax && lastP95 - firstP95 >= driftMinMs) {
+    budgets.push(`latency drifted: last-third p95 ${Math.round(lastP95)} ms is ${drift}× the first third's ${Math.round(firstP95)} ms (limit ${driftMax}× and +${driftMinMs} ms)`)
   }
   if (h.k6RunMs < h.windowMs * 0.9) {
     budgets.push(`the run ended early, after ${Math.round(h.k6RunMs / 1000)} s of a ${Math.round(h.windowMs / 1000)} s window (aborted by the error-rate guard?)`)

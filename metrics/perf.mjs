@@ -45,7 +45,7 @@ export function slimHeadline(h) {
     endpoints,
     fnTtfb: h.fnTtfb ? { p95: num(h.fnTtfb.p95), budget: h.fnTtfb.budget } : null,
     journeys: h.journeys ?? {},
-    phases: h.phases ? { firstP95: num(h.phases.firstP95), lastP95: num(h.phases.lastP95), drift: num(h.phases.drift), driftMax: h.phases.driftMax } : null,
+    phases: h.phases ? { firstP95: num(h.phases.firstP95), lastP95: num(h.phases.lastP95), drift: num(h.phases.drift), driftMax: h.phases.driftMax, driftMinMs: h.phases.driftMinMs ?? null } : null,
     thresholds: { total: (h.thresholds ?? []).length, failed: (h.thresholds ?? []).filter((t) => !t.ok).map((t) => `${t.metric} ${t.expr}`) },
   }
 }

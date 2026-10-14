@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { NutrientBreakdown } from '@/components/NutrientBreakdown'
+import { RecipeIngredientsCard } from '@/components/RecipeIngredientsCard'
 import {
   useDiaryEntry,
   useUpdateDiaryEntry,
@@ -104,7 +105,17 @@ export function DiaryEntryPage() {
           </CardContent>
         </Card>
 
-        <NutrientBreakdown nutrients={scaled} />
+        <NutrientBreakdown
+          nutrients={scaled}
+          afterPie={
+            <RecipeIngredientsCard
+              foodId={entry.food_id}
+              servings={s}
+              servingUnit={{ qty: entry.serving_qty, label: entry.serving_unit }}
+              defaultOpen
+            />
+          }
+        />
 
         {dirty && (
           <Button

@@ -259,6 +259,19 @@ export function resolveIngredientUnit(food: Food, unit: string): IngredientUnit 
   return units.find((u) => u.unit === unit) ?? units[0]
 }
 
+/**
+ * How many recipe servings one `unit` of a recipe food is. The base serving is
+ * one recipe serving; a portion / mass unit converts by grams, else calories.
+ */
+export function recipeServingsPerUnit(recipe: Food, unit: string): number {
+  const u = resolveIngredientUnit(recipe, unit)
+  if (u.unit === 'base') return 1
+  if (u.grams && recipe.serving_grams) return u.grams / recipe.serving_grams
+  const base = recipe.nutrients.kcal
+  const per = u.nutrients.kcal
+  return base && per ? per / base : 1
+}
+
 /** Nutrients for `amount` of `unit` of an ingredient food. */
 export function ingredientNutrients(
   food: Food,
@@ -311,4 +324,21 @@ export function recipePerServing(
     }),
   )
   return scaleNutrients(total, 1 / (yieldServings || 1))
+}
+
+/**
+ * A recipe whose stored per-serving calories differ from its ingredient sum by
+ * more than `tolerance` (e.g. a MyFitnessPal panel imported verbatim). Any
+ * recipe edit recomputes from the ingredients and replaces the stored numbers,
+ * so the editor asks first. Null when they agree or nothing is stored.
+ */
+export function storedPanelDrift(
+  stored: Nutrients,
+  computed: Nutrients,
+  tolerance = 0.03,
+): { stored: number; computed: number } | null {
+  const s = stored.kcal ?? 0
+  const c = computed.kcal ?? 0
+  if (s <= 0) return null
+  return Math.abs(c - s) / s > tolerance ? { stored: s, computed: c } : null
 }

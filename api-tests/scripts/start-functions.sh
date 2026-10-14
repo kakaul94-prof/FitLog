@@ -18,7 +18,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-RUN_DIR="$ROOT/reports/functions"
+RUN_DIR="${FUNCTIONS_RUN_DIR:-$ROOT/reports/functions}" # pids + logs; perf-tests keeps its own
 FUNCTIONS_PORT="${FUNCTIONS_PORT:-8788}"
 STUB_PORT="${STUB_PORT:-8790}"
 PYTHON="${PYTHON:-python}"
@@ -61,6 +61,14 @@ ASSETS="$ROOT/dist"
 
 mkdir -p "$RUN_DIR"
 stop
+
+# A server that is already answering on the port belongs to someone else (a
+# second checkout, another suite): wrangler would fail to bind and the
+# readiness check below would mistake that server for ours.
+if curl -s -o /dev/null "http://127.0.0.1:$FUNCTIONS_PORT/" 2>/dev/null; then
+  echo "start-functions: something is already listening on 127.0.0.1:$FUNCTIONS_PORT; stop it or set FUNCTIONS_PORT" >&2
+  exit 1
+fi
 
 if [ -z "$UPSTREAM_URL" ]; then
   cd "$ROOT/api-tests"

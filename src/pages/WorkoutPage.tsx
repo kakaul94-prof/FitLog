@@ -29,7 +29,8 @@ import { flagsLabel } from '@/lib/checkin'
 import { nextMorning9 } from '@/lib/recovery'
 import { scheduleRecoveryCheck } from '@/lib/reminders'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { TrainerChat } from '@/components/TrainerChat'
+import { NewChatButton, TrainerChat } from '@/components/TrainerChat'
+import { workoutThread } from '@/features/trainer/useTrainerChat'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -530,8 +531,10 @@ export function WorkoutPage() {
                   <X className="h-5 w-5" />
                 </Button>
               }
+              action={id && <NewChatButton thread={workoutThread(id)} />}
             />
-            <TrainerChat workoutId={workout?.id} />
+            {/* Saved per workout: close to log a set, reopen, it's all there. */}
+            <TrainerChat workoutId={workout?.id} thread={id ? workoutThread(id) : undefined} />
           </div>,
           document.body,
         )}

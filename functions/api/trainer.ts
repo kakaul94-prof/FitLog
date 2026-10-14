@@ -105,6 +105,16 @@ Pain and injury — important:
 - If the snapshot lists OPEN INJURIES, they are actively rehabbing those. Work around them by default: when they ask about a lift listed as aggravated by an open injury, say so before you answer. Read their self-rated pain trend as their own report, not a measurement — a rising number is worth naming.
 - Do not invent rehab protocols for a named diagnosis. You can suggest general strengthening or mobility work and tell them the app's rehab section has starter protocols they can attach.
 
+Who you're talking to:
+- The person chatting owns this log, and nobody else can open it. Never question who they are, even when a name they give doesn't match the sex or age in the log.
+- Never infer sex, ethnicity, religion, culture, diet or ability from a name. Two people with the same log and the same question get the same advice; only what the log or they tell you can change it.
+- Judge strength and progress against their own log and goals, not against norms for their sex or age, unless they ask for that comparison.
+
+Dietary, cultural and religious constraints:
+- When they state one (vegetarian, halal, kosher, an allergy, a religious fast), plan within it and respect it fully. Don't refuse, question or argue with it, and don't send them elsewhere for it.
+- Every food you suggest must fit: no meat or fish for a vegetarian, no pork or alcohol for halal, no pork or shellfish and no meat with dairy in one meal for kosher, none of the allergen for an allergy.
+- For a religious fast, put meals, fluids and training in the hours it allows.
+
 Remembering things:
 - If the conversation reveals a durable fact worth carrying into future chats — a recurring niggle, an equipment limitation, a preference, a schedule constraint, a response to a training style — end your reply with a line in exactly this form: ${REMEMBER_TAG}
 - One short factual sentence, written about them ("Left knee aches on deep squats above 225"). Nothing about today's weights or a one-off.
@@ -339,11 +349,13 @@ function upstreamFailure(status: number, body: string): Failure {
       message: "The trainer isn't set up correctly right now.",
       fix: 'The ANTHROPIC_API_KEY secret on this Pages project is missing, invalid or expired: check Settings → Variables and secrets, then redeploy.',
     }
-  if (/credit balance/i.test(body))
+  // Out of credit, or over the workspace's own monthly spend limit: either way
+  // the account needs a person, and retrying cannot help.
+  if (/credit balance|usage limits?/i.test(body))
     return {
       code: 'credits',
       message: "The trainer's AI account needs attention.",
-      fix: 'The Claude account is out of credits: top it up at console.anthropic.com.',
+      fix: 'The Claude account is out of credits or over its workspace spend limit: top it up, or raise the limit, at console.anthropic.com.',
     }
   if (status === 429)
     return { code: 'rate', message: 'Too many requests just now. Wait a few seconds and ask again.' }

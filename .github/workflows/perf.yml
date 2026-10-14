@@ -21,11 +21,6 @@ on:
       vus:
         description: Peak virtual users (blank = the scenario's default)
         default: ''
-  # TEMPORARY, to prove the workflow before it reaches the default branch
-  # (GitHub only runs schedules and manual dispatches from there). Removed
-  # before this branch is merged.
-  push:
-    branches: [feat/perf-tests]
 
 concurrency:
   group: perf-${{ github.ref }}

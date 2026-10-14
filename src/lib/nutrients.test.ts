@@ -14,6 +14,7 @@ import {
   matchServingUnit,
   recipePerServing,
   storedPanelDrift,
+  recipeServingsPerUnit,
 } from './nutrients'
 import type { Food, Nutrients } from './database.types'
 
@@ -389,5 +390,38 @@ describe('storedPanelDrift', () => {
 
   it('is null when nothing is stored yet (a new recipe)', () => {
     expect(storedPanelDrift({}, { kcal: 500 })).toBeNull()
+  })
+})
+
+describe('recipeServingsPerUnit', () => {
+  const recipe: Food = {
+    id: 'r1',
+    user_id: 'u1',
+    name: 'Mac',
+    brand: null,
+    source: 'recipe',
+    source_id: null,
+    serving_qty: 1,
+    serving_unit: 'serving',
+    serving_grams: 200,
+    recipe_servings: 8,
+    nutrients: { kcal: 400 },
+    portions: [{ id: 'p1', label: 'bowl', grams: 300 }],
+    archived: false,
+    created_at: '',
+    updated_at: '',
+  }
+
+  it('counts the base serving as one recipe serving', () => {
+    expect(recipeServingsPerUnit(recipe, 'base')).toBe(1)
+  })
+
+  it('converts portions and mass units by grams', () => {
+    expect(recipeServingsPerUnit(recipe, 'p1')).toBe(1.5)
+    expect(recipeServingsPerUnit(recipe, 'g')).toBe(1 / 200)
+  })
+
+  it('falls back to the base serving for an unknown unit', () => {
+    expect(recipeServingsPerUnit(recipe, 'gone')).toBe(1)
   })
 })

@@ -107,7 +107,14 @@ export function DiaryEntryPage() {
 
         <NutrientBreakdown
           nutrients={scaled}
-          afterPie={<RecipeIngredientsCard foodId={entry.food_id} defaultOpen />}
+          afterPie={
+            <RecipeIngredientsCard
+              foodId={entry.food_id}
+              servings={s}
+              servingUnit={{ qty: entry.serving_qty, label: entry.serving_unit }}
+              defaultOpen
+            />
+          }
         />
 
         {dirty && (

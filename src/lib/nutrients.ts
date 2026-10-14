@@ -259,6 +259,19 @@ export function resolveIngredientUnit(food: Food, unit: string): IngredientUnit 
   return units.find((u) => u.unit === unit) ?? units[0]
 }
 
+/**
+ * How many recipe servings one `unit` of a recipe food is. The base serving is
+ * one recipe serving; a portion / mass unit converts by grams, else calories.
+ */
+export function recipeServingsPerUnit(recipe: Food, unit: string): number {
+  const u = resolveIngredientUnit(recipe, unit)
+  if (u.unit === 'base') return 1
+  if (u.grams && recipe.serving_grams) return u.grams / recipe.serving_grams
+  const base = recipe.nutrients.kcal
+  const per = u.nutrients.kcal
+  return base && per ? per / base : 1
+}
+
 /** Nutrients for `amount` of `unit` of an ingredient food. */
 export function ingredientNutrients(
   food: Food,

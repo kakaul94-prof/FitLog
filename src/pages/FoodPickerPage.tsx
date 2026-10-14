@@ -977,7 +977,18 @@ function ServingSheet({
                 <span>Fat {Math.round(scaled.fat ?? 0)}g</span>
               </div>
             </div>
-            {food.source === 'recipe' && <RecipeIngredientsCard foodId={food.id} />}
+            {food.source === 'recipe' && (
+              // Same measure the Add button snapshots onto the diary entry.
+              <RecipeIngredientsCard
+                foodId={food.id}
+                servings={s}
+                servingUnit={
+                  selected.unit === 'base'
+                    ? { qty: food.serving_qty, label: food.serving_unit }
+                    : { qty: 1, label: selected.label }
+                }
+              />
+            )}
             <Button
               className="w-full"
               disabled={s <= 0 || pending}

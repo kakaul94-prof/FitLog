@@ -7,7 +7,7 @@
 # rejected push we reset to the latest gh-pages and re-apply, up to 3 times.
 set -euo pipefail
 
-SITE="$1"
+SITE="$(cd "$1" && pwd)" # absolute: it is used again from inside ai-evals/
 ROOT="$PWD"
 summary=$(ls -d "$ROOT"/reports/ai-evals-live/*/summary.json 2>/dev/null | grep -v -- '-dry/' | tail -n 1 || true)
 if [ -z "$summary" ]; then

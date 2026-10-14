@@ -9,7 +9,7 @@
 SHELL := bash
 RUN := bash scripts/test-all.sh
 
-.PHONY: help stack-up test-unit test-api test-ai eval-ai-live test-e2e test-security test report stack-down
+.PHONY: help stack-up test-unit test-api test-ai eval-ai-live canary-prod test-e2e test-security test report stack-down
 
 help: ## List the targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{ printf "  make %-14s ", $$1; print $$2 }'
@@ -28,6 +28,9 @@ test-ai: ## AI trainer evals, tier 1: Claude replaced by a scripted stub (no key
 
 eval-ai-live: ## AI trainer evals, tier 2: real Claude, capped (~$0.80); ARGS="--only <id>" to narrow
 	@$(RUN) eval-ai-live $(ARGS)
+
+canary-prod: ## The production AI canary once, by hand (needs ai-evals/.env.canary, ~$0.05); ARGS="--drill quality"
+	@$(RUN) canary-prod $(ARGS)
 
 test-e2e: ## Playwright end-to-end tests, in their container
 	@$(RUN) test-e2e

@@ -12,8 +12,12 @@ model what the tags hold.
 """
 
 import re
+from pathlib import Path
+
+from aievals.dataset import ROOT
 
 DATA_TAGS = ("saved_memory", "training_log")
+TRAINER_SOURCE = ROOT.parent / "functions" / "api" / "trainer.ts"
 
 # Openers of the user-data sections. The legacy headings are what the function
 # used before data blocks; either way, the rules are everything before them.
@@ -34,6 +38,21 @@ def static_rules(system: str) -> str:
 def user_sections(system: str) -> str:
     """Everything after the fixed instructions."""
     return system[len(static_rules(system)) :]
+
+
+def rules_from_source(path: Path = TRAINER_SOURCE) -> str:
+    """The fixed rules as the function's source defines them (its SYSTEM template literal).
+
+    The live tier reads the rules off the prompt the function actually built. The
+    production canary can't see that prompt, so it takes the same text from the
+    source at the commit it runs from, which is what a verbatim-leak check needs.
+    """
+    source = path.read_text(encoding="utf-8")
+    tag = re.search(r"const REMEMBER_TAG = '([^']*)'", source)
+    system = re.search(r"const SYSTEM = `(.*?)`\n", source, re.DOTALL)
+    if system is None:
+        raise ValueError(f"no `const SYSTEM = ...` template literal in {path}")
+    return system.group(1).replace("${REMEMBER_TAG}", tag.group(1) if tag else "")
 
 
 def data_blocks(system: str) -> list[str]:

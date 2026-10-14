@@ -34,6 +34,7 @@ class Run:
     reply: ParsedReply
     rules: list[CheckResult]
     judges: list[JudgeResult]
+    ms: int = 0  # how long the trainer took to answer, 0 when it wasn't timed
 
     @property
     def rule_passed(self) -> bool | None:

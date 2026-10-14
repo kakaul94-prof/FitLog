@@ -44,6 +44,7 @@ from aievals.checks import run_rules
 from aievals.dataset import ROOT, Case, Dataset, load_dataset
 from aievals.harness import ClientHarness, ParsedReply, TrainerInput
 from aievals.judge import JUDGE_MODEL, NEEDS_LOG, DryJudge, Grader, Judge
+from aievals.latency import summarize_ms
 from aievals.personas import seed_persona, with_seed
 from aievals.pricing import Usage, cost_usd, price
 from aievals.prompt import static_rules
@@ -390,6 +391,7 @@ def run(opts: Options) -> int:
             r,
             run_rules(a.case.expect, r, prompt_rules=rules, secrets=secrets_map),
             v,
+            round(a.seconds * 1000),
         )
         for (a, r, _), v in zip(scored, verdicts, strict=True)
     ]
@@ -424,6 +426,7 @@ def run(opts: Options) -> int:
         errors=len(errors),
         served_models=served,
         cost=cost,
+        latency=summarize_ms([a.seconds * 1000 for a in ok]),
     )
     markdown = render_markdown(summary, outcomes)
     logs = {cid: judge_log(given) for cid, (_, given) in prepared.items()}
@@ -525,6 +528,7 @@ def _write(
                 "shown": r.reply.text,
                 "remember": r.reply.remember,
                 "cut_off": CUT_OFF in r.reply.raw,
+                "ms": r.ms,
                 "passed": r.passed,
                 "rules": [asdict(c) for c in r.rules],
                 "judges": [asdict(j) for j in r.judges],
@@ -557,8 +561,8 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     p.add_argument("--only", nargs="*", default=[], help="case ids to run (default: all)")
     p.add_argument("--category", help="run one category only")
     p.add_argument("--reps", type=int, default=3, help="runs per case (default 3)")
-    p.add_argument("--max-trainer-calls", type=int, default=200)
-    p.add_argument("--max-judge-calls", type=int, default=100)
+    p.add_argument("--max-trainer-calls", type=int, default=250)
+    p.add_argument("--max-judge-calls", type=int, default=150)
     p.add_argument("--max-usd", type=float, default=3.0, help="refuse runs that could cost more")
     p.add_argument("--concurrency", type=int, default=4)
     p.add_argument(

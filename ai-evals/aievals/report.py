@@ -45,6 +45,7 @@ def build_summary(
     errors: int,
     served_models: Sequence[str],
     cost: Cost,
+    latency: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -73,6 +74,8 @@ def build_summary(
         "inconsistent": [o.case.id for o in outcomes if o.status == "inconsistent"],
         "unscored": [o.case.id for o in outcomes if o.status == "unscored"],
         "errors": errors,
+        # p50/p95/max milliseconds, question to whole answer (aievals/latency.py).
+        "latency": latency,
         "cost": {
             "trainer_usd": round(cost.trainer_usd, 4),
             "judge_usd": round(cost.judge_usd, 4),
@@ -125,6 +128,12 @@ def render_markdown(summary: dict[str, Any], outcomes: Sequence[CaseOutcome]) ->
         f"(trainer ${cost['trainer_usd']:.2f} for {cost['trainer_calls']} calls, "
         f"judge ${cost['judge_usd']:.2f} for {cost['judge_calls']} calls).",
     ]
+    if latency := summary.get("latency"):
+        lines.append(
+            f"Latency, question to whole answer: p50 {latency['p50_ms']:,} ms, "
+            f"p95 {latency['p95_ms']:,} ms, max {latency['max_ms']:,} ms "
+            f"over {latency['samples']} answers."
+        )
     return "\n".join(lines) + "\n"
 
 

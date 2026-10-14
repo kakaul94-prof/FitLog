@@ -9,11 +9,13 @@
 //
 // The AI trainer evals' live tier is manual and has its own record shape, so it
 // lives in data/ai-evals.json (appended by .github/workflows/ai-evals-live.yml)
-// and gets its own section at the bottom, hidden until the first live run.
+// and gets its own section at the bottom, hidden until the first live run. The
+// production canary (.github/workflows/prod-canary.yml) likewise has its own
+// records in data/prod-canary.json and its own section, hidden until its first run.
 
 const LABELS = { e2e: 'E2E', api: 'API', ai: 'AI evals', unit: 'Unit' }
 const ORDER = ['e2e', 'api', 'ai', 'unit'] // top of the test pyramid first
-const SLOTS = ['--s1', '--s2', '--s3', '--s4']
+const SLOTS = ['--s1', '--s2', '--s3', '--s4', '--s5']
 const RECENT = 20
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -82,6 +84,13 @@ async function main() {
   } catch {
     aiRuns = []
   }
+  try {
+    const res = await fetch('data/prod-canary.json', { cache: 'no-store' })
+    canaryRuns = res.ok ? await res.json() : []
+  } catch {
+    canaryRuns = []
+  }
+  if (canaryRuns.length) openAlerts = await loadOpenAlerts(canaryRuns)
   colorKeys = sourceKeys(allRuns)
   if (window.Chart) Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif'
   render()
@@ -94,15 +103,17 @@ function render() {
   const runs = branch === 'all' ? allRuns : allRuns.filter((r) => r.branch === branch)
   const app = document.getElementById('app')
   if (!runs.length) {
-    app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>' + aiSection(aiRuns)
+    app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>' + aiSection(aiRuns) + canarySection(canaryRuns)
     if (window.Chart && aiRuns.length) drawAiChart(aiRuns)
+    if (window.Chart && canaryRuns.length) drawCanaryCharts(canaryRuns)
     return
   }
   const keys = sourceKeys(runs)
-  app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys), aiSection(aiRuns)].join('')
+  app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys), aiSection(aiRuns), canarySection(canaryRuns)].join('')
   if (window.Chart) {
     drawCharts(runs, keys)
     if (aiRuns.length) drawAiChart(aiRuns)
+    if (canaryRuns.length) drawCanaryCharts(canaryRuns)
   }
 }
 
@@ -311,6 +322,7 @@ const AI_LABELS = {
   information_exposure: 'Information exposure',
   unintended_actions: 'Unintended actions',
   output_quality: 'Output quality',
+  fairness: 'Fairness',
 }
 let aiRuns = []
 
@@ -328,8 +340,8 @@ function aiSection(runs) {
     <section class="grid kpis" aria-label="AI evals summary">
       ${tile('Last live run', esc(last.gate), `${when(last.timestamp)} · ${esc(last.model)} · ${last.cases} cases × ${last.reps} runs`)}
       ${tile('Cost', `$${last.cost.total_usd.toFixed(2)}`, `trainer $${last.cost.trainer_usd.toFixed(2)} · judge $${last.cost.judge_usd.toFixed(2)}`)}
-      ${tile('Inconsistent cases', last.inconsistent.length, 'passed some runs, not all')}
-      ${tile('Live runs', runs.length, `judge ${esc(last.judge_model)}`)}
+      ${tile('Latency p95', last.latency ? dur(last.latency.p95_ms) : '—', last.latency ? `question → whole answer · p50 ${dur(last.latency.p50_ms)} · max ${dur(last.latency.max_ms)}` : 'not recorded by this run')}
+      ${tile('Live runs', runs.length, `judge ${esc(last.judge_model)} · ${last.inconsistent.length} inconsistent in the last run`)}
     </section>
     <section class="grid two">
       <div class="card"><h2>Pass rate by category</h2><p class="note">Runs whose rule checks all passed, per live run</p>
@@ -369,6 +381,146 @@ function drawAiChart(runs) {
           y: { min: 0, max: 100, grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--muted'), callback: (v) => `${v}%` } },
         },
       },
+    }),
+  )
+}
+
+// -- Production canary -----------------------------------------------------------------
+
+// data/prod-canary.json: one record per scheduled run of the production canary
+// (.github/workflows/prod-canary.yml), appended by ai-evals/scripts/publish-canary.sh.
+// Drills (runs broken on purpose to prove the alerting) are listed but kept out
+// of the trend lines. The open-alert tile reads GitHub live, so it is the truth
+// now, not the state at the last run; the last record is the fallback.
+let canaryRuns = []
+let openAlerts = null // null: GitHub could not be read
+
+const CANARY_LABEL = 'prod-ai-alert'
+const canaryRepo = (runs) => runs.map((r) => r.run_url?.match(/github\.com\/([^/]+\/[^/]+)\/actions/)?.[1]).find(Boolean)
+
+async function loadOpenAlerts(runs) {
+  const repo = canaryRepo(runs)
+  if (!repo) return null
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/issues?labels=${CANARY_LABEL}&state=open&per_page=10`, {
+      headers: { accept: 'application/vnd.github+json' },
+    })
+    if (!res.ok) return null
+    return (await res.json()).filter((i) => !i.pull_request)
+  } catch {
+    return null
+  }
+}
+
+const canaryAnswered = (r) => (r.attempts ? ((r.attempts - r.infrastructure.errors.length) / r.attempts) * 100 : null)
+const canaryPassRate = (r) => (r.scored ? (r.quality.passed / r.scored) * 100 : null)
+// Which kinds the run's own alert step opened or kept open.
+const alertKinds = (r) => Object.entries(r.alerts ?? {}).filter(([k, a]) => k !== 'issues' && (a === 'opened' || a === 'commented')).map(([k]) => k)
+
+function canaryResult(r) {
+  if (r.status === 'pass') return badge('passed')
+  const why = [!r.infrastructure.ok && 'endpoint', r.quality.ok === false && 'quality'].filter(Boolean).join(' + ')
+  return `${badge('failed')} <small>${esc(why)}</small>`
+}
+
+function openAlertTile(tile, last) {
+  if (openAlerts === null) {
+    const kinds = alertKinds(last)
+    return tile('Open alert', kinds.length ? esc(kinds.join(' + ')) : 'none', `as of the last run (GitHub not readable) · label ${CANARY_LABEL}`)
+  }
+  if (!openAlerts.length) return tile('Open alert', 'none', `no open issue labelled ${CANARY_LABEL}`)
+  const links = openAlerts.map((i) => `<a href="${esc(i.html_url)}">#${i.number}</a> ${ago(i.created_at)}`).join(' · ')
+  const kinds = openAlerts.map((i) => i.body?.match(/prod-ai-alert kind=(\w+)/)?.[1] ?? 'alert')
+  return tile('Open alert', esc([...new Set(kinds)].join(' + ')), links)
+}
+
+function canarySection(runs) {
+  if (!runs.length) return ''
+  const tile = (lbl, value, ctx) => `<div class="card kpi"><div class="label">${lbl}</div><div class="value">${value}</div><div class="ctx">${ctx}</div></div>`
+  const last = runs.at(-1)
+  const real = runs.filter((r) => !r.drill)
+  const recent = real.slice(-RECENT)
+  const lat = last.latency
+  const rows = runs.slice(-15).reverse().map((r) => {
+    const kinds = alertKinds(r)
+    const issues = r.alerts?.issues ?? {}
+    const alertCell = kinds.length
+      ? kinds.map((k) => `${esc(k)}${issues[k] ? ` <a href="https://github.com/${esc(canaryRepo(runs) ?? '')}/issues/${issues[k]}">#${issues[k]}</a>` : ''}`).join(', ')
+      : Object.values(r.alerts ?? {}).includes('closed') ? 'closed' : '—'
+    return `<tr><td>${when(r.timestamp)}</td><td>${r.drill ? `<small>drill: ${esc(r.drill)}</small>` : canaryResult(r)}</td>
+      <td class="num">${r.scored ? `${r.quality.passed}/${r.scored}` : '—'}</td>
+      <td class="num">${r.attempts - r.infrastructure.errors.length}/${r.attempts}</td>
+      <td class="num">${dur(r.latency?.p50_ms)}</td><td class="num">${dur(r.latency?.p95_ms)}</td>
+      <td class="num">$${r.cost.total_usd.toFixed(3)}</td><td>${alertCell}</td>
+      <td>${r.run_url ? `<a href="${esc(r.run_url)}">Run ↗</a>` : ''}</td></tr>`
+  })
+  return `<h2 class="section-title">Production canary</h2>
+    <p class="note">Every 6 hours, ${last.cases} eval cases through the real production trainer as a monitor account (<code>ai-evals/aievals/canary.py</code>). A failing run opens a GitHub issue labelled <code>${CANARY_LABEL}</code>; the first run that recovers closes it. Outside the release gate. Cost is estimated from characters: production returns no token counts.</p>
+    <section class="grid kpis" aria-label="Production canary summary">
+      ${tile('Last canary run', last.drill ? `<small>drill: ${esc(last.drill)}</small>` : canaryResult(last), `${ago(last.timestamp)} · ${esc(last.site)}${last.snapshot?.stale ? ' · snapshot fixture is stale' : ''}`)}
+      ${tile('Runs passing', `${recent.filter((r) => r.status === 'pass').length}/${recent.length}`, `last ${recent.length} real runs${runs.length - real.length ? ` · ${runs.length - real.length} drills not counted` : ''}`)}
+      ${tile('Latency p50 / p95', lat ? `${dur(lat.p50_ms)} / ${dur(lat.p95_ms)}` : '—', lat ? `question → whole answer · budget p95 ${dur(lat.budget_p95_ms)} · first byte p50 ${dur(lat.first_byte_p50_ms)}` : 'no answers to time in the last run')}
+      ${openAlertTile(tile, last)}
+    </section>
+    <section class="grid two">
+      <div class="card"><h2>Pass rate</h2><p class="note">Cases passed ÷ cases scored, and calls answered ÷ calls made, per run (drills left out)</p>
+        <div class="chart"><canvas id="c-canary-pass" role="img" aria-label="Production canary pass rate chart"></canvas></div></div>
+      <div class="card"><h2>Latency</h2><p class="note">p50 and p95 of question → whole answer, per run; the budget is the dashed line</p>
+        <div class="chart"><canvas id="c-canary-latency" role="img" aria-label="Production canary latency chart"></canvas></div></div>
+    </section>
+    <section class="card"><h2>Recent canary runs</h2><p class="note">Newest first · last ${rows.length} of ${runs.length} · cost per run is an estimate</p>
+      <div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th class="num">Cases</th><th class="num">Answered</th><th class="num">p50</th><th class="num">p95</th><th class="num">Cost</th><th>Alert</th><th></th></tr></thead>
+      <tbody>${rows.join('')}</tbody></table></div></section>`
+}
+
+function drawCanaryCharts(runs) {
+  const real = runs.filter((r) => !r.drill)
+  if (!real.length) return
+  const labels = real.map((r) => new Date(r.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric' }))
+  const series = (label, data, slot, extra = {}) => ({ label, data, borderColor: css(slot), backgroundColor: css(slot), borderWidth: 2, pointRadius: real.length > 40 ? 0 : 3, spanGaps: true, ...extra })
+  const options = (fmt, scale) => ({
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { align: 'start', labels: { color: css('--ink-2'), usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
+      tooltip: {
+        callbacks: {
+          title: ([item]) => `${when(real[item.dataIndex].timestamp)} · ${real[item.dataIndex].run_id}`,
+          label: (item) => ` ${item.dataset.label}: ${fmt(item.parsed.y)}`,
+          footer: () => 'Click to open the workflow run',
+        },
+      },
+    },
+    scales: {
+      x: { grid: { display: false }, border: { color: css('--axis') }, ticks: { color: css('--muted'), maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+      y: { ...scale, grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--muted'), maxTicksLimit: 5, callback: fmt } },
+    },
+    onClick: (_, els) => {
+      const r = real[els[0]?.index]
+      if (r?.run_url) window.open(r.run_url, '_blank', 'noopener')
+    },
+  })
+  charts.push(
+    new Chart(document.getElementById('c-canary-pass'), {
+      type: 'line',
+      data: { labels, datasets: [series('Cases passed', real.map(canaryPassRate), '--s3'), series('Calls answered', real.map(canaryAnswered), '--s1')] },
+      options: options((v) => `${Math.round(v)}%`, { min: 0, max: 100 }),
+    }),
+  )
+  const budget = real.at(-1).latency?.budget_p95_ms
+  charts.push(
+    new Chart(document.getElementById('c-canary-latency'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          series('p95', real.map((r) => (r.latency ? r.latency.p95_ms / 1000 : null)), '--s2'),
+          series('p50', real.map((r) => (r.latency ? r.latency.p50_ms / 1000 : null)), '--s1'),
+          ...(budget ? [series('p95 budget', real.map(() => budget / 1000), '--muted', { borderDash: [4, 4], pointRadius: 0, borderWidth: 1 })] : []),
+        ],
+      },
+      options: options((v) => dur(v * 1000), { beginAtZero: true }),
     }),
   )
 }

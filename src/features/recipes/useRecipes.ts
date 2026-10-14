@@ -329,7 +329,9 @@ export function useUpdateRecipe() {
     }) => {
       const { error } = await supabase.from('foods').update(patch).eq('id', id)
       if (error) throw error
-      await recompute(id)
+      // Only the yield changes the per-serving numbers — a rename must not
+      // replace a stored panel (e.g. an imported MyFitnessPal one).
+      if (patch.recipe_servings !== undefined) await recompute(id)
       return { id }
     },
     onSuccess: (d) => {

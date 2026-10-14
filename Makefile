@@ -9,7 +9,8 @@
 SHELL := bash
 RUN := bash scripts/test-all.sh
 
-.PHONY: help stack-up test-unit test-api test-ai eval-ai-live test-e2e test-security test report stack-down
+.PHONY: help stack-up test-unit test-api test-ai eval-ai-live test-e2e test-security test report stack-down \
+	perf-smoke perf-load perf-stress perf-soak perf-clean
 
 help: ## List the targets
 	@grep -E '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{ printf "  make %-14s ", $$1; print $$2 }'
@@ -40,6 +41,21 @@ test: ## Every layer, bottom of the pyramid first; stops at the first failure
 
 report: ## Build the Allure report from the last API and AI-eval runs and open it
 	@$(RUN) report
+
+perf-smoke: ## k6 smoke: 2 virtual users for a minute, zero errors allowed (the PR gate)
+	@$(RUN) perf-smoke
+
+perf-load: ## k6 load: the realistic journey mix at expected load, ~7 min, budgets enforced
+	@$(RUN) perf-load
+
+perf-stress: ## k6 stress (30→300 users) then spike (10→250 in 10 s), ~13 min, report-only
+	@$(RUN) perf-stress
+
+perf-soak: ## k6 soak: expected load held for SOAK_DURATION (default 60m) + drift check
+	@$(RUN) perf-soak
+
+perf-clean: ## Delete any @perf.test users a stopped perf run left behind
+	@$(RUN) perf-clean
 
 stack-down: ## Stop the local stack
 	@$(RUN) stack-down

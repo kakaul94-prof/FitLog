@@ -13,6 +13,11 @@
 #   test-security  security scans: gitleaks, npm audit, pip-audit, ZAP (report only)
 #   test           unit, API, AI evals, then E2E; stops at the first failing layer
 #   report         build the Allure report from the last API and AI-eval runs and open it
+#   perf-smoke     k6 smoke: 2 virtual users for a minute (perf-tests/)
+#   perf-load      k6 load: the realistic journey mix at expected load, budgets enforced
+#   perf-stress    k6 stress, then spike: report-only, finds where it breaks
+#   perf-soak      k6 soak: expected load for SOAK_DURATION (default 60m) + drift check
+#   perf-clean     delete any @perf.test users a stopped perf run left
 #   stack-down     stop the stack (and the functions server, if running)
 set -euo pipefail
 
@@ -116,6 +121,13 @@ report() {
   npx --yes "$ALLURE" open reports/allure-report
 }
 
+# k6 scenarios (perf-tests/run.sh does the rest: local-only guard, functions +
+# stub, native or Docker k6, reports, clean-up).
+perf() {
+  stack_running || die "the local Supabase stack isn't running: make stack-up"
+  bash perf-tests/run.sh "$@"
+}
+
 stack_down() {
   bash api-tests/scripts/start-functions.sh --stop >/dev/null 2>&1 || true
   npx --no-install supabase stop
@@ -133,6 +145,11 @@ case "$command" in
   test-security) test_security ;;
   test) stack_up && test_unit && test_api && test_ai && test_e2e ;;
   report) report ;;
+  perf-smoke) perf smoke "$@" ;;
+  perf-load) perf load "$@" ;;
+  perf-stress) perf stress "$@" && perf spike "$@" ;;
+  perf-soak) perf soak "$@" ;;
+  perf-clean) perf cleanup ;;
   stack-down) stack_down ;;
-  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; [ -z "$command" ] || exit 1 ;;
+  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; [ -z "$command" ] || exit 1 ;;
 esac

@@ -7,6 +7,13 @@ Notable changes to `fitlog-testkit`. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `anthropic_stub`: `serve(port, max_recorded=N)` and the CLI's `--max-recorded N`
+  keep only the newest N recorded calls. The load tests (`perf-tests/`) set it,
+  since a soak makes thousands of trainer calls it never reads back; without it
+  every call is kept, as before.
+
 ## [0.1.0] - 2026-10-13
 
 The first release as a package of its own. The code itself is unchanged: it was

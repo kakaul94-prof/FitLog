@@ -246,6 +246,66 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # Performance smoke (perf-tests/, also `make perf-smoke`): two virtual users
+  # run the real journey mix against the same disposable stack for a minute,
+  # zero errors allowed, latency budgets relaxed (a shared runner's speed
+  # varies between runs). It proves the scripts, the seed and the budgets still
+  # apply to the code under review; the measured numbers come from the nightly
+  # perf.yml. Fails the PR's checks, but is not a deploy-prod gate.
+  perf-smoke:
+    name: Performance smoke (k6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install wrangler (runs the Pages Functions), the suite's types and the Claude stub
+        run: |
+          npm ci
+          npm ci --prefix perf-tests
+          pip install -e ./testkit
+      - name: Type-check the suite
+        run: npm run typecheck --prefix perf-tests
+      - uses: grafana/setup-k6-action@v1.2.2
+        with:
+          k6-version: '2.3.0'
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Start test database
+        run: supabase start
+      - name: Point the suite at the local stack
+        run: bash api-tests/scripts/local-env.sh
+
+      # run.sh starts the functions + stub itself, runs k6 natively, and
+      # deletes the run's users afterwards.
+      - name: Run the smoke scenario
+        run: bash perf-tests/run.sh smoke
+        env:
+          CI: 'true'
+
+      - name: Functions server log
+        if: failure()
+        run: tail -n 60 reports/perf/functions/wrangler.log reports/perf/functions/stub.log || true
+      - name: Job summary
+        if: ${{ !cancelled() }}
+        run: node metrics/perf-summary.mjs
+      - name: Upload the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-smoke
+          path: reports/perf/
+          if-no-files-found: ignore
+          retention-days: 7
+
   # Secrets in the git history, vulnerable dependencies and an OWASP ZAP
   # baseline scan of the built app (scripts/security-scan.sh, also
   # `make test-security`). Report only: findings land in the job summary and

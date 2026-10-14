@@ -118,10 +118,12 @@ class RecordedCall:
 
 
 class _State:
-    def __init__(self) -> None:
+    def __init__(self, max_recorded: int | None = None) -> None:
         self.lock = threading.Lock()
         self.replies: deque[Reply] = deque()
-        self.calls: list[RecordedCall] = []
+        # Bounded when asked (a load test makes thousands of calls and never
+        # reads them back); otherwise every call is kept, as the tests expect.
+        self.calls: deque[RecordedCall] = deque(maxlen=max_recorded)
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -277,9 +279,15 @@ def _message(text: str, model: str) -> dict[str, Any]:
     }
 
 
-def serve(port: int, host: str = "127.0.0.1") -> ThreadingHTTPServer:
-    """A stub server bound to `host:port` (call `serve_forever()` on it)."""
-    handler = type("Handler", (_Handler,), {"state": _State()})
+def serve(
+    port: int, host: str = "127.0.0.1", *, max_recorded: int | None = None
+) -> ThreadingHTTPServer:
+    """A stub server bound to `host:port` (call `serve_forever()` on it).
+
+    `max_recorded` keeps only the newest N calls, for long runs that never read
+    them back; by default every call is kept.
+    """
+    handler = type("Handler", (_Handler,), {"state": _State(max_recorded)})
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     return server
@@ -318,6 +326,13 @@ class AnthropicStub:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=8790)
-    port = parser.parse_args().port
-    print(f"anthropic stub listening on http://127.0.0.1:{port}", flush=True)
-    serve(port).serve_forever()
+    parser.add_argument(
+        "--max-recorded",
+        type=int,
+        default=None,
+        metavar="N",
+        help="keep only the newest N recorded calls (default: all of them)",
+    )
+    args = parser.parse_args()
+    print(f"anthropic stub listening on http://127.0.0.1:{args.port}", flush=True)
+    serve(args.port, max_recorded=args.max_recorded).serve_forever()

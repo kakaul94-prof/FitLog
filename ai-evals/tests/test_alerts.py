@@ -101,7 +101,19 @@ def summary(**overrides: Any) -> dict[str, Any]:  # noqa: ANN401 (free-form test
             "p50_ms": 2100,
             "p95_ms": 4300,
             "max_ms": 4300,
-            "budget_p95_ms": 12000,
+            "first_byte_p50_ms": 600,
+            "first_byte_p95_ms": 900,
+            "categories": {
+                "output_quality": {
+                    "samples": 3,
+                    "p50_ms": 2100,
+                    "p95_ms": 4300,
+                    "max_ms": 4300,
+                    "budget_p95_ms": 15000,
+                    "ok": True,
+                }
+            },
+            "over_budget": [],
             "ok": True,
         },
         "cost": {"estimated": True, "trainer_usd": 0.05, "trainer_calls": 10},
@@ -164,14 +176,31 @@ def test_a_down_endpoint_is_infrastructure_and_says_nothing_about_quality() -> N
 def test_a_failed_sign_in_and_slow_answers_are_infrastructure() -> None:
     slow = summary(
         infrastructure={"ok": False, "sign_in": "failed: HTTP 400 (Invalid login credentials)"},
-        latency={"p95_ms": 14200, "max_ms": 14200, "ok": False},
+        latency={
+            "categories": {
+                "prompt_injection": {
+                    "samples": 3,
+                    "p50_ms": 2000,
+                    "p95_ms": 14200,
+                    "max_ms": 14200,
+                    "budget_p95_ms": 10000,
+                    "ok": False,
+                }
+            },
+            "over_budget": ["prompt_injection"],
+            "ok": False,
+        },
     )
 
     headlines = [f.headline for f in evaluate(slow, [])["infrastructure"] or []]
 
     assert headlines == [
         "the monitor account could not sign in (failed: HTTP 400 (Invalid login credentials))",
-        "p95 latency 14,200 ms is over the 12,000 ms budget",
+        "p95 latency is over budget in 1 category: prompt_injection",
+    ]
+    (slow_finding,) = [f for f in evaluate(slow, [])["infrastructure"] or [] if "p95" in f.headline]
+    assert slow_finding.details == [
+        "prompt_injection: p95 14,200 ms against a 10,000 ms budget (3 answers, max 14,200 ms)"
     ]
 
 

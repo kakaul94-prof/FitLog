@@ -104,7 +104,10 @@ function render() {
   const app = document.getElementById('app')
   if (!runs.length) {
     app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>' + aiSection(aiRuns) + canarySection(canaryRuns)
-    if (window.Chart && aiRuns.length) drawAiChart(aiRuns)
+    if (window.Chart && aiRuns.length) {
+      drawAiChart(aiRuns)
+      drawAiLatency(aiRuns)
+    }
     if (window.Chart && canaryRuns.length) drawCanaryCharts(canaryRuns)
     return
   }
@@ -112,7 +115,10 @@ function render() {
   app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys), aiSection(aiRuns), canarySection(canaryRuns)].join('')
   if (window.Chart) {
     drawCharts(runs, keys)
-    if (aiRuns.length) drawAiChart(aiRuns)
+    if (aiRuns.length) {
+      drawAiChart(aiRuns)
+      drawAiLatency(aiRuns)
+    }
     if (canaryRuns.length) drawCanaryCharts(canaryRuns)
   }
 }
@@ -331,9 +337,19 @@ function aiSection(runs) {
   const last = runs.at(-1)
   const tile = (lbl, value, ctx) => `<div class="card kpi"><div class="label">${lbl}</div><div class="value">${value}</div><div class="ctx">${ctx}</div></div>`
   const rate = (m) => (m?.rate == null ? '—' : `${pct(m.rate * 100)} <small>bar ${Math.round(m.bar * 100)}%</small>`)
+  const other = (c) =>
+    Object.entries(c.metrics)
+      .filter(([name]) => name !== 'rules' && name !== 'judged')
+      .map(([name, m]) => `${esc(name.replace('_', ' '))} ${rate(m)}`)
+      .join('<br>') || '—'
   const rows = Object.entries(last.categories)
     .map(([cat, c]) => `<tr><td>${esc(AI_LABELS[cat] ?? cat)}</td><td class="num">${rate(c.metrics.rules)}</td>
-      <td class="num">${rate(c.metrics.judged)}</td><td>${c.met ? 'met' : '<strong>not met</strong>'}</td></tr>`)
+      <td class="num">${rate(c.metrics.judged)}</td><td class="num">${other(c)}</td><td>${c.met ? 'met' : '<strong>not met</strong>'}</td></tr>`)
+    .join('')
+  const groups = (last.fairness_groups ?? [])
+    .map((g) => `<tr><td><code>${esc(g.group)}</code></td><td>${g.status === 'equivalent' ? 'equivalent' : g.status === 'unscored' ? 'unscored' : '<strong>different</strong>'}</td>
+      <td class="num">${g.parity_gap == null ? '—' : pct(g.parity_gap * 100)}</td>
+      <td>${Object.entries(g.differences ?? {}).map(([v, d]) => `<code>${esc(v)}</code>: ${esc(d.join('; '))}`).join('<br>') || '—'}</td></tr>`)
     .join('')
   const flagged = [...last.failing.map((id) => `<code>${esc(id)}</code> failed every run`), ...last.inconsistent.map((id) => `<code>${esc(id)}</code> inconsistent`)]
   return `<h2 class="section-title">AI trainer evals · live tier</h2>
@@ -347,10 +363,44 @@ function aiSection(runs) {
       <div class="card"><h2>Pass rate by category</h2><p class="note">Runs whose rule checks all passed, per live run</p>
         <div class="chart"><canvas id="c-ai" role="img" aria-label="AI eval pass rate by category chart"></canvas></div></div>
       <div class="card"><h2>Latest run</h2><p class="note">Against each category's bar (see ai-evals/README.md)</p>
-        <div class="table-wrap"><table><thead><tr><th>Category</th><th class="num">Rule checks</th><th class="num">Judged</th><th>Gate</th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>Category</th><th class="num">Rule checks</th><th class="num">Judged</th><th class="num">Other</th><th>Gate</th></tr></thead>
         <tbody>${rows}</tbody></table></div>
         ${flagged.length ? `<p class="note">${flagged.join(' · ')}</p>` : ''}</div>
-    </section>`
+    </section>
+    ${runs.some((r) => r.latency) ? `<section class="grid two">
+      <div class="card"><h2>Latency</h2><p class="note">p50 and p95 of question → whole answer, per live run. Informative here: answers go through a local proxy</p>
+        <div class="chart"><canvas id="c-ai-latency" role="img" aria-label="AI eval latency chart"></canvas></div></div>
+      <div class="card"><h2>Latency by category</h2><p class="note">Latest live run · ${budgetSummary(last.latency) || 'not recorded by this run'}</p>
+        ${last.latency?.categories ? latencyTable(last.latency) : ''}</div>
+    </section>` : ''}
+    ${groups ? `<section class="card"><h2>Fairness groups</h2><p class="note">Latest live run · each group asks the same thing of the same log, varying one attribute. Parity gap: largest difference in rule pass rate from the baseline (one run in three is allowed)</p>
+      <div class="table-wrap"><table><thead><tr><th>Group</th><th>Result</th><th class="num">Parity gap</th><th>Target differences</th></tr></thead><tbody>${groups}</tbody></table></div></section>` : ''}`
+}
+
+function drawAiLatency(runs) {
+  const timed = runs.filter((r) => r.latency)
+  if (!timed.length || !document.getElementById('c-ai-latency')) return
+  const labels = timed.map((r) => new Date(r.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
+  const ds = (label, key, slot) => ({ label, data: timed.map((r) => r.latency[key] / 1000), borderColor: css(slot), backgroundColor: css(slot), borderWidth: 2, pointRadius: 3, spanGaps: true })
+  charts.push(
+    new Chart(document.getElementById('c-ai-latency'), {
+      type: 'line',
+      data: { labels, datasets: [ds('p95', 'p95_ms', '--s2'), ds('p50', 'p50_ms', '--s1')] },
+      options: {
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { align: 'start', labels: { color: css('--ink-2'), usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
+          tooltip: { callbacks: { label: (item) => ` ${item.dataset.label}: ${dur(item.parsed.y * 1000)}` } },
+        },
+        scales: {
+          x: { grid: { display: false }, border: { color: css('--axis') }, ticks: { color: css('--muted'), maxRotation: 0 } },
+          y: { beginAtZero: true, grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--muted'), callback: (v) => dur(v * 1000) } },
+        },
+      },
+    }),
+  )
 }
 
 function drawAiChart(runs) {
@@ -383,6 +433,22 @@ function drawAiChart(runs) {
       },
     }),
   )
+}
+
+// Per-category p95 against its budget, for the latest run of either tier.
+function latencyRows(lat) {
+  return Object.entries(lat?.categories ?? {})
+    .map(([cat, m]) => `<tr><td>${esc(AI_LABELS[cat] ?? cat)}</td><td class="num">${dur(m.p50_ms)}</td><td class="num">${dur(m.p95_ms)}</td>
+      <td class="num">${m.budget_p95_ms ? dur(m.budget_p95_ms) : '—'}</td><td>${m.ok ? 'within' : '<strong>over</strong>'}</td><td class="num">${m.samples}</td></tr>`)
+    .join('')
+}
+const latencyTable = (lat) =>
+  `<div class="table-wrap"><table><thead><tr><th>Category</th><th class="num">p50</th><th class="num">p95</th><th class="num">p95 budget</th><th>Budget</th><th class="num">Answers</th></tr></thead><tbody>${latencyRows(lat)}</tbody></table></div>`
+const budgetSummary = (lat) => {
+  const cats = Object.values(lat?.categories ?? {})
+  if (!cats.length) return ''
+  const over = lat.over_budget ?? []
+  return over.length ? `p95 over budget in ${over.map((c) => esc(AI_LABELS[c] ?? c)).join(', ')}` : `all ${cats.length} categories within their p95 budget`
 }
 
 // -- Production canary -----------------------------------------------------------------
@@ -459,15 +525,16 @@ function canarySection(runs) {
     <section class="grid kpis" aria-label="Production canary summary">
       ${tile('Last canary run', last.drill ? `<small>drill: ${esc(last.drill)}</small>` : canaryResult(last), `${ago(last.timestamp)} · ${esc(last.site)}${last.snapshot?.stale ? ' · snapshot fixture is stale' : ''}`)}
       ${tile('Runs passing', `${recent.filter((r) => r.status === 'pass').length}/${recent.length}`, `last ${recent.length} real runs${runs.length - real.length ? ` · ${runs.length - real.length} drills not counted` : ''}`)}
-      ${tile('Latency p50 / p95', lat ? `${dur(lat.p50_ms)} / ${dur(lat.p95_ms)}` : '—', lat ? `question → whole answer · budget p95 ${dur(lat.budget_p95_ms)} · first byte p50 ${dur(lat.first_byte_p50_ms)}` : 'no answers to time in the last run')}
+      ${tile('Latency p50 / p95', lat ? `${dur(lat.p50_ms)} / ${dur(lat.p95_ms)}` : '—', lat ? `question → whole answer · first byte p50 ${dur(lat.first_byte_p50_ms)} · ${budgetSummary(lat)}` : 'no answers to time in the last run')}
       ${openAlertTile(tile, last)}
     </section>
     <section class="grid two">
       <div class="card"><h2>Pass rate</h2><p class="note">Cases passed ÷ cases scored, and calls answered ÷ calls made, per run (drills left out)</p>
         <div class="chart"><canvas id="c-canary-pass" role="img" aria-label="Production canary pass rate chart"></canvas></div></div>
-      <div class="card"><h2>Latency</h2><p class="note">p50 and p95 of question → whole answer, per run; the budget is the dashed line</p>
+      <div class="card"><h2>Latency</h2><p class="note">p50 and p95 of question → whole answer, and p50 to the first byte, per run</p>
         <div class="chart"><canvas id="c-canary-latency" role="img" aria-label="Production canary latency chart"></canvas></div></div>
     </section>
+    ${lat?.categories ? `<section class="card"><h2>Latency by category</h2><p class="note">Latest canary run · each category's p95 has its own budget; one over budget opens an infrastructure alert</p>${latencyTable(lat)}</section>` : ''}
     <section class="card"><h2>Recent canary runs</h2><p class="note">Newest first · last ${rows.length} of ${runs.length} · cost per run is an estimate</p>
       <div class="table-wrap"><table><thead><tr><th>When</th><th>Result</th><th class="num">Cases</th><th class="num">Answered</th><th class="num">p50</th><th class="num">p95</th><th class="num">Cost</th><th>Alert</th><th></th></tr></thead>
       <tbody>${rows.join('')}</tbody></table></div></section>`
@@ -508,7 +575,6 @@ function drawCanaryCharts(runs) {
       options: options((v) => `${Math.round(v)}%`, { min: 0, max: 100 }),
     }),
   )
-  const budget = real.at(-1).latency?.budget_p95_ms
   charts.push(
     new Chart(document.getElementById('c-canary-latency'), {
       type: 'line',
@@ -517,7 +583,7 @@ function drawCanaryCharts(runs) {
         datasets: [
           series('p95', real.map((r) => (r.latency ? r.latency.p95_ms / 1000 : null)), '--s2'),
           series('p50', real.map((r) => (r.latency ? r.latency.p50_ms / 1000 : null)), '--s1'),
-          ...(budget ? [series('p95 budget', real.map(() => budget / 1000), '--muted', { borderDash: [4, 4], pointRadius: 0, borderWidth: 1 })] : []),
+          series('first byte p50', real.map((r) => (r.latency?.first_byte_p50_ms != null ? r.latency.first_byte_p50_ms / 1000 : null)), '--s3', { borderDash: [4, 4] }),
         ],
       },
       options: options((v) => dur(v * 1000), { beginAtZero: true }),

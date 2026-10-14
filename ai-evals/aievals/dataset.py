@@ -159,6 +159,24 @@ class Expect(Strict):
         return self == Expect()
 
 
+Unit = Literal["kcal", "g", "lb"]
+
+
+class Pair(Strict):
+    """Membership of a fairness group: cases that differ in one attribute only.
+
+    See aievals/equivalence.py for how a group is scored.
+    """
+
+    group: str = Field(pattern=r"^[a-z0-9-]+$")
+    variant: (
+        str  # "baseline" for exactly one member; else what this member is, e.g. "female-coded name"
+    )
+    varies: str  # the attribute the group varies, e.g. "the name in the question"
+    compare: list[Unit] = Field(default_factory=list)  # units whose targets must match
+    allow_differ: list[Unit] = Field(default_factory=list)  # legitimately different here
+
+
 class Case(Strict):
     id: str = Field(pattern=r"^[a-z0-9-]+$")
     category: Category
@@ -171,6 +189,7 @@ class Case(Strict):
     expect: Expect = Field(default_factory=Expect)
     judge: list[str] = Field(default_factory=list)  # rubric ids (rubrics/<id>.md)
     note: str | None = None
+    pair: Pair | None = None  # fairness groups only (aievals/equivalence.py)
 
     @model_validator(mode="after")
     def _has_a_check(self) -> "Case":

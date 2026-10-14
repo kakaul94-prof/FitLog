@@ -58,7 +58,7 @@ from aievals.checks import run_rules
 from aievals.dataset import ROOT, Case, Dataset, Strict, load_dataset
 from aievals.harness import ClientHarness, ParsedReply, TrainerInput
 from aievals.judge import JUDGE_MODEL, NEEDS_LOG, Grader, Judge
-from aievals.latency import summarize_ms
+from aievals.latency import Sample, report
 from aievals.live import (
     ACCOUNT_FAILURES,
     JUDGE_MAX_TOKENS,
@@ -78,9 +78,10 @@ from aievals.personas import seed_persona
 from aievals.pricing import Usage, cost_usd
 from aievals.prompt import rules_from_source
 from aievals.scoring import CaseOutcome, JudgeResult, Run, case_outcomes
-from aievals.thresholds import BARS
+from aievals.thresholds import BARS, LATENCY_BUDGETS_MS
 from testkit.auth import AdminAuth, AuthClient
 from testkit.config import Settings
+from testkit.functions import FunctionsClient
 from testkit.leaks import find_leaks
 from testkit.rest import RestClient
 from testkit.users import UserFactory
@@ -134,7 +135,8 @@ class Options:
     judge: bool = False
     drill: Drill | None = None
     max_usd: float = 0.25
-    p95_budget_ms: int = 12_000
+    # p95 budget per category (aievals/thresholds.py); tests pass their own.
+    latency_budgets_ms: dict[str, int] = field(default_factory=lambda: dict(LATENCY_BUDGETS_MS))
     call_timeout_s: float = 60.0
     out: Path = REPORTS
 
@@ -328,40 +330,21 @@ def ask_once(
     given: TrainerInput,
     timeout_s: float,
 ) -> tuple[str | None, str | None, Timing | None]:
-    """One POST to /api/trainer, streamed, timed to the first byte and to the end."""
-    body = {
-        "messages": [
-            *(t.model_dump() for t in case.history),
-            {"role": "user", "content": case.ask},
-        ],
-        "context": given.context,
-        "memory": list(given.memory),
-    }
-    headers = {"content-type": "application/json", "authorization": f"Bearer {token}"}
-    start = time.monotonic()
-    first: float | None = None
-    chunks: list[bytes] = []
+    """One POST to /api/trainer, streamed as the app reads it, timed to first byte and end."""
+    trainer = FunctionsClient(http, site_url, token)
     try:
-        with http.stream(
-            "POST",
-            f"{site_url}/api/trainer",
-            json=body,
-            headers=headers,
+        resp = trainer.ask_trainer_timed(
+            case.ask,
+            history=[t.model_dump() for t in case.history],
+            context=given.context,
+            memory=given.memory,
             timeout=httpx.Timeout(timeout_s, connect=10),
-        ) as resp:
-            for chunk in resp.iter_bytes():
-                if first is None and chunk:
-                    first = time.monotonic()
-                chunks.append(chunk)
-            status = resp.status_code
+        )
     except httpx.HTTPError as e:
         return None, f"no response ({type(e).__name__})", None
-    end = time.monotonic()
-    text = b"".join(chunks).decode("utf-8", errors="replace")
-    if status == 200 and text and not text.startswith(NO_ANSWER):
-        first_ms = round(((first if first is not None else end) - start) * 1000)
-        return text, None, Timing(first_ms, round((end - start) * 1000))
-    return None, f"HTTP {status}: {text[:160]}", None
+    if resp.status == 200 and resp.text and not resp.text.startswith(NO_ANSWER):
+        return resp.text, None, Timing(resp.first_byte_ms, resp.total_ms)
+    return None, f"HTTP {resp.status}: {resp.text[:160]}", None
 
 
 def ask(
@@ -667,18 +650,14 @@ def build_summary(
     failed_ids = {o.case.id for o in failed}
     scored = [o for o in outcomes if o.runs]
     errors = [{"case": a.case.id, "error": a.error} for a in attempts if a.raw is None]
-    timings = [a.timing for a in attempts if a.timing is not None]
-    latency = summarize_ms([t.total_ms for t in timings])
-    if latency is not None:
-        first = summarize_ms([t.first_byte_ms for t in timings]) or {}
-        latency.update(
-            {
-                "first_byte_p50_ms": first.get("p50_ms"),
-                "first_byte_p95_ms": first.get("p95_ms"),
-                "budget_p95_ms": opts.p95_budget_ms,
-                "ok": latency["p95_ms"] <= opts.p95_budget_ms,
-            }
-        )
+    latency = report(
+        [
+            Sample(a.case.category, a.timing.total_ms, a.timing.first_byte_ms)
+            for a in attempts
+            if a.timing is not None
+        ],
+        opts.latency_budgets_ms,
+    )
     trainer_usage = sum((estimated_usage(rules, given, r.case, r.reply.raw) for r in runs), Usage())
     judge_usage = sum((j.usage for r in runs for j in r.judges), Usage())
     judge_calls = sum(len(r.judges) for r in runs)
@@ -761,14 +740,17 @@ def render_markdown(s: dict[str, Any]) -> str:
     if i["errors"]:
         endpoint = f"{len(i['errors'])} of {s['attempts']} calls got no answer"
     if lat is not None and not lat["ok"]:
-        endpoint = (
-            endpoint + "; " if endpoint and endpoint != "ok" else ""
-        ) + "p95 latency over budget"
+        endpoint = (endpoint + "; " if endpoint and endpoint != "ok" else "") + (
+            f"p95 over budget in {', '.join(lat['over_budget'])}"
+        )
     latency = (
         "no answers to time"
         if lat is None
-        else f"p50 {lat['p50_ms']:,} ms, p95 {lat['p95_ms']:,} ms "
-        f"(budget {lat['budget_p95_ms']:,}), first byte p50 {lat['first_byte_p50_ms']:,} ms"
+        else f"p50 {lat['p50_ms']:,} ms, p95 {lat['p95_ms']:,} ms, "
+        f"first byte p50 {lat['first_byte_p50_ms']:,} ms; per category p95 (budget): "
+        + ", ".join(
+            f"{c} {m['p95_ms']:,} ({m['budget_p95_ms']:,})" for c, m in lat["categories"].items()
+        )
     )
     lines = [
         f"## Production AI canary: {s['status'].upper()}"
@@ -954,7 +936,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     r.add_argument(
         "--max-usd", type=float, default=Options.max_usd, help="refuse runs that could cost more"
     )
-    r.add_argument("--p95-budget-ms", type=int, default=Options.p95_budget_ms)
     r.add_argument(
         "--call-timeout", type=float, default=Options.call_timeout_s, help="seconds per call"
     )
@@ -983,7 +964,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 judge=a.judge,
                 drill=a.drill,
                 max_usd=a.max_usd,
-                p95_budget_ms=a.p95_budget_ms,
                 call_timeout_s=a.call_timeout,
                 out=a.out,
             )

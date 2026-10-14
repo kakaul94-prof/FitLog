@@ -7,6 +7,15 @@ Notable changes to `fitlog-testkit`. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-14
+
+### Added
+
+- `FunctionsClient.ask_trainer_timed()`: the trainer call read as a stream, as the
+  app reads it, returning a `TimedReply` with the status, the text, and the
+  milliseconds to the first byte and to the end. The AI evals' live tier and
+  production canary record latency with it.
+
 ## [0.1.0] - 2026-10-13
 
 The first release as a package of its own. The code itself is unchanged: it was

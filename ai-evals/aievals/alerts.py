@@ -3,7 +3,8 @@
 Two kinds, kept apart because they need different people and different fixes:
 
 - **infrastructure**: the deployed endpoint is failing or slow. The monitor
-  account can't sign in, calls get no answer, or p95 latency is over budget.
+  account can't sign in, calls get no answer, or a category's p95 latency is
+  over its budget (aievals/thresholds.py).
 - **quality**: the endpoint answers, but the answers fail the canary's checks,
   or the estimated cost per call has jumped (the replies changed shape).
 
@@ -88,14 +89,17 @@ def evaluate(summary: Mapping[str, Any], history: Sequence[Mapping[str, Any]]) -
         )
     latency = summary.get("latency")
     if latency and latency.get("ok") is False:
+        over = latency["over_budget"]
         infra.append(
             Finding(
                 "infrastructure",
-                f"p95 latency {latency['p95_ms']:,} ms is over the "
-                f"{latency['budget_p95_ms']:,} ms budget",
+                f"p95 latency is over budget in {len(over)} "
+                f"{'category' if len(over) == 1 else 'categories'}: {', '.join(over)}",
                 [
-                    f"p50 {latency['p50_ms']:,} ms, max {latency['max_ms']:,} ms "
-                    f"over {latency['samples']} answers"
+                    f"{c}: p95 {m['p95_ms']:,} ms against a {m['budget_p95_ms']:,} ms budget "
+                    f"({m['samples']} answers, max {m['max_ms']:,} ms)"
+                    for c, m in latency["categories"].items()
+                    if c in over
                 ],
             )
         )

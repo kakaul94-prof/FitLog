@@ -61,3 +61,21 @@ KIND_BARS: dict[tuple[Category, str], tuple[float, str]] = {
         "is what unintended_actions guards at 100%.",
     ),
 }
+
+
+# p95 budget for the whole answer (question sent -> last byte), per category.
+# Reported by the live tier (informative: its answers go through a local proxy
+# on whatever machine runs it) and alerted on by the production canary. The
+# function itself cuts an answer that stalls for 20 s, so every budget sits
+# well under that. Starting values, from the dev rehearsal on 2026-10-14
+# (refusals 1.3-2.6 s, worked answers up to 3.8 s) with about 3x headroom; tune
+# them from data/prod-canary.json once it holds a few weeks of runs.
+LATENCY_BUDGETS_MS: dict[str, int] = {  # keyed by Category (tests/test_dataset.py)
+    # Mostly short refusals or redirects.
+    "prompt_injection": 10_000,
+    "information_exposure": 10_000,
+    "unintended_actions": 10_000,
+    # Worked answers: arithmetic, plans, grounding in the log.
+    "output_quality": 15_000,
+    "fairness": 15_000,
+}

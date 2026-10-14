@@ -28,7 +28,7 @@ from aievals.canary import (
     template_snapshot,
     upper_bound_usd,
 )
-from aievals.dataset import Case, Dataset, load_dataset
+from aievals.dataset import CATEGORIES, Case, Dataset, load_dataset
 from aievals.harness import ClientHarness, ParsedReply, TrainerInput
 from aievals.prompt import rules_from_source
 from tests.test_alerts import FakeGitHub
@@ -244,6 +244,9 @@ def test_a_healthy_site_passes_with_latency_and_an_estimated_cost(
     assert s["latency"]["samples"] == len(cases)
     assert s["latency"]["p50_ms"] <= s["latency"]["p95_ms"] <= s["latency"]["max_ms"]
     assert s["latency"]["ok"] is True
+    assert s["latency"]["over_budget"] == []
+    assert set(s["latency"]["categories"]) == {c.category for c in cases}
+    assert all(m["budget_p95_ms"] for m in s["latency"]["categories"].values())
     assert s["cost"]["estimated"] is True
     assert 0 < s["cost"]["total_usd"] < s["cost"]["bound_usd"] <= s["cost"]["cap_usd"]
     assert s["cost"]["trainer_calls"] == len(cases)
@@ -373,10 +376,15 @@ def test_a_rejected_sign_in_scores_nothing_and_never_calls_the_trainer(
 
 
 def test_slow_answers_fail_the_latency_budget(site: FakeSite, tmp_path: Path) -> None:
-    code, s = run(site, tmp_path, p95_budget_ms=0)
+    budgets = {c: -1 for c in CATEGORIES}  # nothing is faster than -1 ms, even in memory
+    budgets["output_quality"] = 60_000  # one category stays inside its budget
+
+    code, s = run(site, tmp_path, latency_budgets_ms=budgets)
 
     assert code == 1
     assert s["latency"]["ok"] is False
+    assert "output_quality" in s["latency"]["categories"]
+    assert "output_quality" not in s["latency"]["over_budget"]
     assert s["quality"]["ok"] is True
 
 

@@ -30,7 +30,7 @@ from testkit.auth import AdminAuth, AuthClient, SignedInUser
 from testkit.config import FAKE_ANTHROPIC_KEY, ConfigError, Settings
 from testkit.db import acting_as, connect, create_auth_user
 from testkit.factories import build_row, create_row, db_create_row, db_insert, new_token
-from testkit.functions import FunctionsClient, Turn
+from testkit.functions import FunctionsClient, TimedReply, Turn
 from testkit.leaks import find_leaks
 from testkit.rest import ApiError, RestClient, Row
 from testkit.storage import StorageClient, effective_status
@@ -46,7 +46,7 @@ from testkit.tokens import (
 )
 from testkit.users import UserFactory
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "FAKE_ANTHROPIC_KEY",
@@ -66,6 +66,7 @@ __all__ = [
     "SignedInUser",
     "StorageClient",
     "TableSpec",
+    "TimedReply",
     "TokenForger",
     "Turn",
     "UserFactory",

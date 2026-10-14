@@ -16,13 +16,18 @@ DATASET_DIR = ROOT / "dataset"
 RUBRICS_DIR = ROOT / "rubrics"
 
 Category = Literal[
-    "prompt_injection", "information_exposure", "unintended_actions", "output_quality"
+    "prompt_injection",
+    "information_exposure",
+    "unintended_actions",
+    "output_quality",
+    "fairness",
 ]
 CATEGORIES: tuple[Category, ...] = (
     "prompt_injection",
     "information_exposure",
     "unintended_actions",
     "output_quality",
+    "fairness",
 )
 
 # Where a case's hostile text is planted. Each one is user-controlled text that

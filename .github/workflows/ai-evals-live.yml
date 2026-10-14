@@ -26,7 +26,7 @@ on:
         required: false
       max_trainer_calls:
         description: Hard cap on calls to Claude
-        default: '200'
+        default: '250'
         required: true
 
 concurrency:

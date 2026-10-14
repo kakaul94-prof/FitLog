@@ -3,21 +3,31 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronDown, ChevronRight, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useRecipe } from '@/features/recipes/useRecipes'
-import { ingredientNutrients, resolveIngredientUnit } from '@/lib/nutrients'
+import {
+  ingredientNutrients,
+  matchServingUnit,
+  recipeServingsPerUnit,
+  resolveIngredientUnit,
+} from '@/lib/nutrients'
 import { cn } from '@/lib/utils'
 
 /**
- * Collapsible, read-only list of a recipe's ingredients (whole-recipe amounts)
- * with a jump into the recipe editor. Renders nothing unless `foodId` is a
- * recipe. It shows the recipe as it is now — a logged entry's numbers are a
- * snapshot and don't follow later recipe edits.
+ * Collapsible, read-only list of a recipe's ingredients with a jump into the
+ * recipe editor. Renders nothing unless `foodId` is a recipe. Given `servings`
+ * (a count of `servingUnit`, the logged measure), amounts are scaled to that
+ * portion; otherwise they're for the whole recipe. It shows the recipe as it
+ * is now — a logged entry's numbers are a snapshot and don't follow edits.
  */
 export function RecipeIngredientsCard({
   foodId,
+  servings,
+  servingUnit,
   defaultOpen = false,
   className,
 }: {
   foodId: string | null | undefined
+  servings?: number
+  servingUnit?: { qty: number | null; label: string | null }
   defaultOpen?: boolean
   className?: string
 }) {
@@ -28,6 +38,11 @@ export function RecipeIngredientsCard({
   if (!recipe || recipe.source !== 'recipe') return null
   const rows = data.ingredients
   const makes = recipe.recipe_servings ?? 1
+  const unitId =
+    (servingUnit && matchServingUnit(recipe, servingUnit.qty, servingUnit.label)) ??
+    'base'
+  const eaten = servings == null ? null : servings * recipeServingsPerUnit(recipe, unitId)
+  const scale = eaten == null ? 1 : eaten / makes
 
   return (
     <div className={cn('rounded-lg border border-border', className)}>
@@ -52,12 +67,14 @@ export function RecipeIngredientsCard({
       {open && (
         <div className="border-t border-border px-3 pb-3">
           <p className="pt-2 text-xs text-muted-foreground">
-            Amounts for the whole recipe
+            {eaten == null
+              ? 'Amounts for the whole recipe'
+              : `In your ${formatAmount(eaten, '')} ${eaten === 1 ? 'serving' : 'servings'}`}
           </p>
           {rows.length ? (
             <ul className="max-h-56 divide-y divide-border overflow-y-auto">
               {rows.map(({ ri, food }) => {
-                const amt = ri.amount ?? ri.servings
+                const amt = (ri.amount ?? ri.servings) * scale
                 const unit = ri.unit ?? 'base'
                 const label = food ? resolveIngredientUnit(food, unit).label : ''
                 const kcal = food ? ingredientNutrients(food, amt, unit).kcal ?? 0 : 0
@@ -90,9 +107,10 @@ export function RecipeIngredientsCard({
   )
 }
 
-// "454 g", "2 cup" — or "2 × 100 g" when the unit label carries its own count.
+// "85 g", "0.38 cup" — or "2 × 100 g" when the unit label carries its own count.
+// Whole numbers from 10 up; scaled-down portions keep two decimals.
 function formatAmount(amount: number, label: string): string {
-  const n = String(+amount.toFixed(2))
+  const n = String(amount >= 10 ? Math.round(amount) : +amount.toFixed(2))
   if (!label) return n
   return /^\d/.test(label) ? `${n} × ${label}` : `${n} ${label}`
 }

@@ -112,3 +112,20 @@ def test_only_call_fails_unless_there_was_exactly_one(http: httpx.Client, stub_u
     ask(http, stub_url)
     with pytest.raises(AssertionError, match="got 2"):
         stub.only_call()
+
+
+def test_max_recorded_keeps_only_the_newest_calls(http: httpx.Client) -> None:
+    """--max-recorded N (the load tests use it): memory stays flat over a long run."""
+    server = serve(0, max_recorded=2)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        for n in range(3):
+            http.post(
+                f"{url}/v1/messages", json={**REQUEST, "max_tokens": n}, headers={"x-api-key": "k"}
+            )
+        calls = AnthropicStub(http, url).calls()
+        assert [c.body["max_tokens"] for c in calls] == [1, 2]  # the first one was dropped
+    finally:
+        server.shutdown()
+        server.server_close()

@@ -52,6 +52,7 @@ Four layers, each where it is cheapest to prove what it proves:
 | API, database and security | pytest + pytest-bdd ([`api-tests/`](api-tests/README.md)) | 646 tests, ~1 min | Every table is private to its owner (through the API and in Postgres itself), forged tokens are refused everywhere, responses match strict contracts, bad input is refused cleanly, nothing leaks, and the AI functions send and handle exactly what they should |
 | AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | __T1__ tests, ~2 min; live tier on demand; production canary every 6 h | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); the real model's behaviour on 87 cases x 3 runs, including fairness (counterfactual name, age and sex pairs scored for equivalence, and stated dietary and religious constraints), judged where rules can't decide (by hand, capped at a few dollars); and a canary of ten cases through the deployed production trainer every six hours, with a latency budget and GitHub-issue alerts |
 | End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
+| Performance | k6 ([`perf-tests/`](perf-tests/README.md)) | smoke on every PR (~2 min); load + soak nightly; stress and spike by hand | The backend holds its latency and error budgets under realistic user journeys at expected load, degrades predictably past it, and doesn't drift over a long run |
 
 One command runs them all, bottom of the pyramid first, stopping at the first failing layer:
 
@@ -70,6 +71,7 @@ make test          # or, without make: bash scripts/test-all.sh test
 | `make test-e2e` | Playwright, in its container |
 | `make test-security` | Security scans: gitleaks, npm audit, pip-audit and an OWASP ZAP baseline scan (report only) |
 | `make report` | Builds and opens the Allure report of the last API and AI-eval runs |
+| `make perf-smoke` / `perf-load` / `perf-stress` / `perf-soak` | The k6 scenarios against the local stack (see Performance tests); `make perf-clean` removes a stopped run's users |
 
 A `tsc + vite` build check is run before every commit to keep the tree type-safe. Security issues the suites and scans have found, and how each was fixed, are tracked in [`SECURITY-FINDINGS.md`](SECURITY-FINDINGS.md); what the AI trainer evals found is in [`AI-SAFETY-FINDINGS.md`](AI-SAFETY-FINDINGS.md).
 
@@ -107,6 +109,14 @@ flowchart LR
   end
 ```
 
+### Performance tests
+
+[`perf-tests/`](perf-tests/README.md) is a small k6 framework (TypeScript, no bundler) that replays FitLog's real user journeys — open the diary, search for and log a meal, log a workout set by set, log a weigh-in, ask the trainer — against the same disposable local stack, with think time between actions and per-run users seeded with months of history. Four scenarios share one journey mix: **smoke** (2 users, a minute; gates every PR), **load** (30 users, 5 minutes steady), **stress** and **spike** (up to 300 users, report-only: where does it break?) and **soak** (expected load held for an hour, with a drift check). Latency and error budgets are set per endpoint group with a written rationale, a breach fails the run, and every run's headline numbers (p95/p99, error rate, throughput, which budgets held) go to the quality dashboard's Performance section. It refuses to run against anything but the local stack, stubs Claude, never reaches USDA, and deletes its users afterwards.
+
+```bash
+make perf-smoke     # ~2 min; make perf-load, perf-stress, perf-soak (SOAK_DURATION=10m to shorten)
+```
+
 ### CI/CD pipeline
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every pull request and every push to `dev` or `main`:
@@ -117,6 +127,7 @@ flowchart LR
   PUSH --> API[API: supabase start, functions + Claude stub, pytest]
   PUSH --> E2E[E2E: supabase start, then Playwright container]
   PUSH --> SEC[Security scans: gitleaks, npm audit, pip-audit, ZAP]
+  PUSH --> PERF[Perf smoke: supabase start, functions + stub, k6]
   API --> ALLURE[Allure report artifact]
   E2E -- on failure --> ART[Report uploaded as artifact]
   UNIT --> GATE{All three passed and branch is main?}
@@ -127,12 +138,15 @@ flowchart LR
   API -. JUnit XML .-> METRICS
   E2E -. results .-> METRICS
   SEC -. report only .-> SUMMARY[Job summary + artifact]
+  PERF -. fails the PR, not the deploy .-> SUMMARY
   DEPLOY -. every 6 h, after release .-> CANARY[Production AI canary: 10 cases through the live trainer]
   CANARY -. on failure .-> ALERT[GitHub issue labelled prod-ai-alert]
   CANARY -. results .-> METRICS
 ```
 
-Production is only deployed from `main`, and only after the unit, API and E2E jobs all pass. The API job runs in parallel with E2E on its own runner, so it adds no time to a release. The security scans and the metrics job report on every run but are deliberately outside the release gate: findings are reviewed and fixed as their own changes, not by blocking a deploy. The `dev` site still auto-deploys through Cloudflare's Git integration.
+Production is only deployed from `main`, and only after the unit, API and E2E jobs all pass. The API job runs in parallel with E2E on its own runner, so it adds no time to a release. The security scans and the metrics job report on every run but are deliberately outside the release gate: findings are reviewed and fixed as their own changes, not by blocking a deploy. The performance smoke job fails a PR's checks but is not a `deploy-prod` dependency. The `dev` site still auto-deploys through Cloudflare's Git integration.
+
+A second workflow, [`perf.yml`](.github/workflows/perf.yml), runs the load scenario and a 10-minute soak against `dev` every night and publishes their headline numbers to the dashboard; by hand it runs any scenario (stress, spike, a long soak) on any branch.
 
 After a release the [production AI canary](.github/workflows/prod-canary.yml) keeps watching: every six hours it sends ten of the trainer evals' cases through the live production trainer as a dedicated monitor account, and opens a GitHub issue labelled `prod-ai-alert` (one for the endpoint erroring or slowing past its p95 budget, another for answers below the quality bar) that it closes itself when a later run recovers. It is a monitor, not a gate: it cannot block a deploy, writes nothing in production, and refuses to run if a run could cost more than $0.25. Details and set-up in [`ai-evals/README.md`](ai-evals/README.md#production-canary-shift-right).
 
@@ -210,6 +224,7 @@ npm run dev       # http://localhost:5173
 | `npm run test:e2e` | Run the E2E suite on the host (needs `npm run db:start`) |
 | `npm run db:start` / `db:stop` / `db:reset` | Manage the local Supabase test stack |
 | `make test` / `test-api` / `test-ai` / `test-security` / `report` | Every test layer, the API suite, the AI evals, the security scans, the Allure report (see Testing) |
+| `make perf-smoke` / `perf-load` / `perf-stress` / `perf-soak` / `perf-clean` | The k6 performance scenarios (see Performance tests) |
 
 ## Deployment
 
@@ -253,10 +268,16 @@ ai-evals/
 ├── harness/       # the app's own trainer code, bundled for Node
 ├── aievals/       # checks, judge, proxy, live runner, canary + alerts, calibration
 └── tests/         # tier 1: injection, exposure, actions, output, failures, canary, alerts
-metrics/           # CI quality metrics + security-scan summary
+perf-tests/
+├── config/        # scenario profiles (VUs, durations, seed), budgets + thresholds, endpoint registry
+├── lib/           # local-only guard, PostgREST request builder, auth, seeding, journey mix, summary
+├── journeys/      # viewDiary, logMeal, logWorkout, logWeight, askTrainer + the weighted mix
+├── scenarios/     # smoke, load, stress, spike, soak (a few lines each)
+└── run.sh         # stack guard → functions + stub → k6 (native or Docker) → verdict → clean-up
+metrics/           # CI quality metrics, performance history + security-scan summary
 scripts/           # test-all.sh (behind the Makefile), security-scan.sh
 compose.yaml       # `e2e` service (docker compose run e2e)
-Makefile           # make test, test-api, test-ai, eval-ai-live, canary-prod, test-security, report ...
+Makefile           # make test, test-api, test-ai, eval-ai-live, canary-prod, test-security, report, perf-* ...
 ```
 
 ## Notes

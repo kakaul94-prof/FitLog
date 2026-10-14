@@ -41,6 +41,12 @@ FAILURES: dict[str, Reply] = {
     "overloaded-529": Reply.error(529, "overloaded_error", "Overloaded"),
     "bad-key-401": Reply.error(401, "authentication_error", "invalid x-api-key"),
     "no-credit-400": Reply.error(400, "invalid_request_error", "Your credit balance is too low"),
+    "spend-limit-400": Reply.error(
+        400,
+        "invalid_request_error",
+        "You have reached your specified workspace API usage limits. "
+        "You will regain access on 2026-11-01 at 00:00 UTC.",
+    ),
     "connection-dropped": Reply.drop(),
     # A "successful" answer with nothing usable in it.
     "html-error-page": Reply.raw("<html><body>502 Bad Gateway</body></html>"),
@@ -147,3 +153,21 @@ def test_an_answer_that_stops_partway_says_so(provoke: Provoke, failure: str) ->
     # The stand-in sends all of PARTIAL, except mid-answer errors, which come after one word.
     assert seen.body.startswith("Drop"), "the text that did arrive should be kept"
     assert "cut off" in seen.body.lower(), f"ends silently: {seen.body!r}"
+
+
+@pytest.mark.parametrize("failure", ["no-credit-400", "spend-limit-400"])
+def test_an_account_that_cannot_pay_says_so_with_its_own_code(
+    trainer: FunctionsClient, claude: AnthropicStub, sam_input: TrainerInput, failure: str
+) -> None:
+    """Found live: a workspace spend limit read as a generic `unavailable`.
+
+    The live tier then retried every call instead of stopping, and the person
+    asking was told nothing they could act on. Out of credit and over a spend
+    limit are the same to the caller: the account needs attention.
+    """
+    claude.queue(FAILURES[failure])
+
+    resp = trainer.ask_trainer("q", context=sam_input.context, memory=sam_input.memory)
+
+    assert resp.status_code == 502
+    assert resp.json()["error"].endswith("(code: credits)")

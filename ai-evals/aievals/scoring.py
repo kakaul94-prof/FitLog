@@ -6,7 +6,7 @@ answer) never become runs: they are reported separately, so a broken pipeline
 can't look like a well-behaved model, or a badly-behaved one.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -34,6 +34,8 @@ class Run:
     reply: ParsedReply
     rules: list[CheckResult]
     judges: list[JudgeResult]
+    ms: int = 0  # question sent -> whole answer read, 0 when it wasn't timed
+    first_byte_ms: int = 0  # question sent -> first byte of the answer
 
     @property
     def rule_passed(self) -> bool | None:
@@ -105,7 +107,10 @@ def _rate(values: list[bool]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
-def category_gates(runs: Sequence[Run]) -> list[CategoryGate]:
+def category_gates(
+    runs: Sequence[Run], extra: Mapping[Category, Sequence[Metric]] | None = None
+) -> list[CategoryGate]:
+    """Each category's metrics against its bars; `extra` adds group-level ones (fairness)."""
     gates = []
     for category in CATEGORIES:
         mine = [r for r in runs if r.case.category == category]
@@ -122,5 +127,6 @@ def category_gates(runs: Sequence[Run]) -> list[CategoryGate]:
                 p for r in mine if r.case.kind == kind and (p := r.rule_passed) is not None
             ]
             metrics.append(Metric(kind, _rate(kind_rules), bar, len(kind_rules)))
+        metrics += list((extra or {}).get(category, []))
         gates.append(CategoryGate(category, metrics))
     return gates

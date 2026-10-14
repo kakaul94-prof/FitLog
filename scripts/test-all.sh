@@ -9,6 +9,7 @@
 #   test-api       API / database / security suite (pytest + pytest-bdd)
 #   test-ai        AI trainer evals, tier 1: deterministic, Claude replaced by a stub
 #   eval-ai-live   AI trainer evals, tier 2: real Claude (key in ai-evals/.env.live), capped
+#   canary-prod    the production AI canary once (target in ai-evals/.env.canary), capped
 #   test-e2e       Playwright E2E, in its container
 #   test-security  security scans: gitleaks, npm audit, pip-audit, ZAP (report only)
 #   test           unit, API, AI evals, then E2E; stops at the first failing layer
@@ -100,6 +101,16 @@ eval_ai_live() {
   (cd ai-evals && "$py" -m aievals.live "$@")
 }
 
+canary_prod() {
+  local py
+  py="$(python_bin ai-evals)"
+  "$py" -c 'import testkit, yaml, anthropic' 2>/dev/null || die "the AI evals' packages are missing (see make test-ai)"
+  need node "install Node 22+ (replies are parsed by the app's own code)"
+  # No stack: it talks to the deployed site named in ai-evals/.env.canary, and
+  # refuses to start if its worst case could cost more than its cap.
+  (cd ai-evals && "$py" -m aievals.canary run "$@")
+}
+
 test_e2e() {
   stack_running || die "the local Supabase stack isn't running: make stack-up"
   docker compose run --rm --build e2e
@@ -141,6 +152,7 @@ case "$command" in
   test-api) test_api "$@" ;;
   test-ai) test_ai "$@" ;;
   eval-ai-live) eval_ai_live "$@" ;;
+  canary-prod) canary_prod "$@" ;;
   test-e2e) test_e2e ;;
   test-security) test_security ;;
   test) stack_up && test_unit && test_api && test_ai && test_e2e ;;

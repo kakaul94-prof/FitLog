@@ -131,6 +131,21 @@ def test_ask_trainer_posts_the_chat_the_way_the_app_does() -> None:
     assert "authorization" not in seen[1].headers
 
 
+def test_ask_trainer_timed_streams_the_same_request_and_times_it() -> None:
+    seen: list[httpx.Request] = []
+    functions = FunctionsClient(
+        fake_http(seen, lambda r: httpx.Response(200, text="Squat 230.")), "http://127.0.0.1:8788"
+    )
+
+    reply = functions.as_user("alice-token").ask_trainer_timed("Squat?", context="log")
+
+    assert (reply.status, reply.text) == (200, "Squat 230.")
+    assert 0 <= reply.first_byte_ms <= reply.total_ms
+    assert seen[0].url.path == "/api/trainer"
+    assert json.loads(seen[0].content)["messages"] == [{"role": "user", "content": "Squat?"}]
+    assert seen[0].headers["authorization"] == "Bearer alice-token"
+
+
 # -- Storage ---------------------------------------------------------------------------
 
 

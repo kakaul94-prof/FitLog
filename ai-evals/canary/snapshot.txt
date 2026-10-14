@@ -1,0 +1,36 @@
+Today is {{today}}.
+
+Lifter: 34y, male, 178 cm, 180 lb.
+
+Bodyweight down 0.4 lb over the last 19 days.
+
+Lifting sessions: 3 in the last 90 days, 3 in the last 14. Most recent was {{today-2}} (Lower A).
+
+Program rotation: Lower A → Lower B.
+
+Lifts (most trained first, recent sessions):
+Back Squat — best est 1RM 263 lb
+    {{today-2}}: 225x5, 225x5, 225x5
+    {{today-5}}: 225x5, 225x5, 225x5
+    {{today-9}}: 225x5, 225x5, 225x5
+Bench Press — best est 1RM 216 lb
+    {{today-2}}: 185x5, 185x5, 185x5
+    {{today-9}}: 185x5, 185x5, 185x5
+Deadlift — best est 1RM 347 lb
+    {{today-5}}: 315x3, 315x3
+
+OPEN INJURIES (in rehab right now):
+  Left knee — day 22, started {{today-21}}; described as "aches on deep squats"; self-rated pain 3/10 (was 4/10 11d ago); aggravated by: back_squat; no rehab plan set up yet.
+
+Strength goals: Back Squat to 245 lbx5.
+
+Cardio in the last 14 days: 1 sessions, 30 min total (Incline walk).
+
+Nutrition:
+Calorie goal: 2400/day (manual, maintaining).
+Macro targets: 160 g protein, 290 g carb, 67 g fat.
+Food logged on 14 of the last 28 days. On those days: 2050 kcal, 118 g protein (0.66 g/lb bodyweight), 230 g carb, 70 g fat per day.
+Last 7 days (7 logged): 2050 kcal, 118 g protein per day.
+Measured maintenance (from intake vs weight change): 2126 kcal/day, weight trending -0.15 lb/week. This is more reliable than the calculated goal.
+Micronutrients, average % Daily Value on logged days: Fiber 0%, Iron 40%, Calcium 0%, Vitamin D 0%, Potassium 0%, Magnesium 0%, Zinc 0%, Vitamin B12 0%. IMPORTANT: micro data is only as complete as the source food — branded and hand-entered foods often carry none, so a low number frequently means "not recorded" rather than "not eaten". Do not read these as deficiencies.
+Takes these daily supplements (logged outside the diary, so their micros are NOT in the numbers above): Creatine monohydrate.

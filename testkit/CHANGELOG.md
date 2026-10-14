@@ -7,8 +7,14 @@ Notable changes to `fitlog-testkit`. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-14
+
 ### Added
 
+- `FunctionsClient.ask_trainer_timed()`: the trainer call read as a stream, as the
+  app reads it, returning a `TimedReply` with the status, the text, and the
+  milliseconds to the first byte and to the end. The AI evals' live tier and
+  production canary record latency with it.
 - `anthropic_stub`: `serve(port, max_recorded=N)` and the CLI's `--max-recorded N`
   keep only the newest N recorded calls. The load tests (`perf-tests/`) set it,
   since a soak makes thousands of trainer calls it never reads back; without it

@@ -50,7 +50,7 @@ Four layers, each where it is cheapest to prove what it proves:
 |---|---|--:|---|
 | Unit | [Vitest](https://vitest.dev) | 533 tests, ~10 s | The pure logic: calorie goals, macros, 1RM, progression, dates, nutrients |
 | API, database and security | pytest + pytest-bdd ([`api-tests/`](api-tests/README.md)) | 646 tests, ~1 min | Every table is private to its owner (through the API and in Postgres itself), forged tokens are refused everywhere, responses match strict contracts, bad input is refused cleanly, nothing leaks, and the AI functions send and handle exactly what they should |
-| AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 182 tests, ~1 min; live tier on demand | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); and the real model's behaviour on 58 cases x 3 runs, judged where rules can't decide (by hand, capped at a few dollars) |
+| AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 264 tests, ~2 min; live tier on demand; production canary every 6 h | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); the real model's behaviour on 87 cases x 3 runs, including fairness (counterfactual name, age and sex pairs scored for equivalence, and stated dietary and religious constraints), judged where rules can't decide (by hand, capped at a few dollars); and a canary of ten cases through the deployed production trainer every six hours, with a latency budget and GitHub-issue alerts |
 | End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
 | Performance | k6 ([`perf-tests/`](perf-tests/README.md)) | smoke on every PR (~2 min); load + soak nightly; stress and spike by hand | The backend holds its latency and error budgets under realistic user journeys at expected load, degrades predictably past it, and doesn't drift over a long run |
 
@@ -67,6 +67,7 @@ make test          # or, without make: bash scripts/test-all.sh test
 | `make test-api` | The API suite, with JUnit XML and Allure results in `reports/` |
 | `make test-ai` | The AI trainer evals, tier 1 (deterministic, no API key) |
 | `make eval-ai-live` | The AI trainer evals, tier 2: the real Claude API, capped (needs a key; see `ai-evals/README.md`) |
+| `make canary-prod` | The production AI canary once, by hand: ten cases through the deployed trainer, capped at $0.25 (needs `ai-evals/.env.canary`; see `ai-evals/README.md`) |
 | `make test-e2e` | Playwright, in its container |
 | `make test-security` | Security scans: gitleaks, npm audit, pip-audit and an OWASP ZAP baseline scan (report only) |
 | `make report` | Builds and opens the Allure report of the last API and AI-eval runs |
@@ -138,11 +139,16 @@ flowchart LR
   E2E -. results .-> METRICS
   SEC -. report only .-> SUMMARY[Job summary + artifact]
   PERF -. fails the PR, not the deploy .-> SUMMARY
+  DEPLOY -. every 6 h, after release .-> CANARY[Production AI canary: 10 cases through the live trainer]
+  CANARY -. on failure .-> ALERT[GitHub issue labelled prod-ai-alert]
+  CANARY -. results .-> METRICS
 ```
 
 Production is only deployed from `main`, and only after the unit, API and E2E jobs all pass. The API job runs in parallel with E2E on its own runner, so it adds no time to a release. The security scans and the metrics job report on every run but are deliberately outside the release gate: findings are reviewed and fixed as their own changes, not by blocking a deploy. The performance smoke job fails a PR's checks but is not a `deploy-prod` dependency. The `dev` site still auto-deploys through Cloudflare's Git integration.
 
 A second workflow, [`perf.yml`](.github/workflows/perf.yml), runs the load scenario and a 10-minute soak against `dev` every night and publishes their headline numbers to the dashboard; by hand it runs any scenario (stress, spike, a long soak) on any branch.
+
+After a release the [production AI canary](.github/workflows/prod-canary.yml) keeps watching: every six hours it sends ten of the trainer evals' cases through the live production trainer as a dedicated monitor account, and opens a GitHub issue labelled `prod-ai-alert` (one for the endpoint erroring or slowing past its p95 budget, another for answers below the quality bar) that it closes itself when a later run recovers. It is a monitor, not a gate: it cannot block a deploy, writes nothing in production, and refuses to run if a run could cost more than $0.25. Details and set-up in [`ai-evals/README.md`](ai-evals/README.md#production-canary-shift-right).
 
 ### Quality metrics dashboard
 
@@ -157,6 +163,8 @@ Every CI run records its results so quality can be tracked over time, not just p
 | Flaky rate + top flaky tests | Tests that failed, then passed on a retry; ranked by how often across runs |
 | Suite duration + slowest 10 tests | Wall-clock time per suite; each slow test against its own 10-run average |
 | Last run status | Result, branch, commit link and per-job outcome, including infrastructure failures with no test results |
+| AI evals, live tier | Rule-check pass rate per category, cost, p50/p95 latency per run and per category against its budget (informative), and the fairness groups' parity |
+| Production canary | Pass rate, calls answered, p50/p95 latency and estimated cost per run through the live production trainer, every six hours, with the open-alert status read live from GitHub |
 
 **How flaky detection works.** In CI Playwright retries a failing test up to twice. Playwright then marks a test that failed and later passed as `flaky`, and the metrics keep that status rather than counting it as a pass. Retries keep a release from being blocked by a one-off timing problem without hiding it, and the dashboard shows which tests rely on them. Unit tests run with no retries on purpose, because they should be deterministic. For flakes rare enough to slip past retries, the manual [Flake hunt](.github/workflows/flake-hunt.yml) workflow runs every E2E test N times with retries off and ranks tests by failure rate.
 
@@ -255,10 +263,11 @@ api-tests/
 ├── tests/         # auth, authz, contracts, validation, security, functions, bdd
 └── scripts/       # local-env.sh, start-functions.sh
 ai-evals/
-├── dataset/       # personas + 58 eval cases (YAML), rubrics/, calibration/
+├── dataset/       # personas + 68 eval cases (YAML), rubrics/, calibration/
+├── canary/        # the production canary's ten cases + snapshot fixture
 ├── harness/       # the app's own trainer code, bundled for Node
-├── aievals/       # checks, judge, proxy, live runner, calibration
-└── tests/         # tier 1: injection, exposure, actions, output, failures
+├── aievals/       # checks, judge, proxy, live runner, canary + alerts, calibration
+└── tests/         # tier 1: injection, exposure, actions, output, failures, canary, alerts
 perf-tests/
 ├── config/        # scenario profiles (VUs, durations, seed), budgets + thresholds, endpoint registry
 ├── lib/           # local-only guard, PostgREST request builder, auth, seeding, journey mix, summary
@@ -268,7 +277,7 @@ perf-tests/
 metrics/           # CI quality metrics, performance history + security-scan summary
 scripts/           # test-all.sh (behind the Makefile), security-scan.sh
 compose.yaml       # `e2e` service (docker compose run e2e)
-Makefile           # make test, test-api, test-ai, eval-ai-live, test-security, report, perf-* ...
+Makefile           # make test, test-api, test-ai, eval-ai-live, canary-prod, test-security, report, perf-* ...
 ```
 
 ## Notes

@@ -42,14 +42,29 @@ import httpx
 
 from aievals.checks import run_rules
 from aievals.dataset import ROOT, Case, Dataset, load_dataset
+from aievals.equivalence import (
+    PAIR_RUBRIC,
+    Agreement,
+    GroupResult,
+    PairJob,
+    PairVerdict,
+    agreements,
+    control_pairs,
+    fairness_metrics,
+    groups,
+    pair_jobs,
+    score_group,
+)
 from aievals.harness import ClientHarness, ParsedReply, TrainerInput
 from aievals.judge import JUDGE_MODEL, NEEDS_LOG, DryJudge, Grader, Judge
+from aievals.latency import Sample, report
 from aievals.personas import seed_persona, with_seed
 from aievals.pricing import Usage, cost_usd, price
 from aievals.prompt import static_rules
 from aievals.proxy import ClaudeProxy, ProxiedCall
 from aievals.report import Cost, append_history, build_summary, render_markdown
 from aievals.scoring import JudgeResult, Run, case_outcomes, category_gates
+from aievals.thresholds import LATENCY_BUDGETS_MS
 from testkit.anthropic_stub import AnthropicStub
 from testkit.auth import AdminAuth, AuthClient, SignedInUser
 from testkit.config import FAKE_ANTHROPIC_KEY, Settings
@@ -95,7 +110,8 @@ class Attempt:
     raw: str | None  # the reply, or None when no reply could be scored
     error: str | None
     tries: int
-    seconds: float
+    total_ms: int  # question sent -> whole answer read (0 without an answer)
+    first_byte_ms: int  # question sent -> first byte of the answer
 
 
 # -- setup -------------------------------------------------------------------------------
@@ -215,7 +231,17 @@ def upper_bound_usd(
             judged = 2_500 + len(case.ask) + TRAINER_MAX_TOKENS * 4
             judged += len(given.context) if rubric in NEEDS_LOG else 0
             judge += cost_usd(JUDGE_MODEL, Usage(judged // chars_per_token, JUDGE_MAX_TOKENS))
-    return (trainer + judge) * reps
+    # A fairness pair: two answers and both questions, judged together.
+    pair = cost_usd(
+        JUDGE_MODEL, Usage((2_500 + TRAINER_MAX_TOKENS * 8) // chars_per_token, JUDGE_MAX_TOKENS)
+    )
+    return (trainer + judge) * reps + pair * pair_count(cases, reps)
+
+
+def pair_count(cases: Sequence[Case], reps: int) -> int:
+    """Pair judgements in a run: each variant per repetition, plus each group's control."""
+    found = groups(cases)
+    return sum(len(g.variants) for g in found) * reps + len(found) * control_pairs(reps)
 
 
 # -- running -------------------------------------------------------------------------------
@@ -240,17 +266,16 @@ def ask(
     error, tries = "", 0
     while tries < MAX_TRIES and not stop.is_set():
         tries += 1
-        start = time.monotonic()
         try:
-            resp = trainer.ask_trainer(
+            resp = trainer.ask_trainer_timed(
                 case.ask, history=history, context=given.context, memory=given.memory, timeout=120
             )
         except httpx.HTTPError as e:
             error = f"no response ({type(e).__name__})"
         else:
-            if resp.status_code == 200 and not resp.text.startswith(NO_ANSWER):
-                return Attempt(case, rep, resp.text, None, tries, time.monotonic() - start)
-            error = f"HTTP {resp.status_code}: {resp.text[:160]}"
+            if resp.status == 200 and not resp.text.startswith(NO_ANSWER):
+                return Attempt(case, rep, resp.text, None, tries, resp.total_ms, resp.first_byte_ms)
+            error = f"HTTP {resp.status}: {resp.text[:160]}"
             code = m.group(1) if (m := REASON_CODE.search(resp.text)) else ""
             if code in ACCOUNT_FAILURES:
                 stop.set()
@@ -258,7 +283,7 @@ def ask(
                 break
         if tries < MAX_TRIES:
             time.sleep(2**tries + random.uniform(0, 1))  # noqa: S311 (jitter, not crypto)
-    return Attempt(case, rep, None, error or "skipped: the account can't answer", tries, 0.0)
+    return Attempt(case, rep, None, error or "skipped: the account can't answer", tries, 0, 0)
 
 
 def judge_log(given: TrainerInput) -> str:
@@ -314,7 +339,7 @@ def run(opts: Options) -> int:
             "environment, or try the pipeline for free with --dry-run."
         )
     trainer_calls = len(cases) * opts.reps
-    judge_calls = sum(len(c.judge) for c in cases) * opts.reps
+    judge_calls = sum(len(c.judge) for c in cases) * opts.reps + pair_count(cases, opts.reps)
     if trainer_calls > opts.max_trainer_calls or judge_calls > opts.max_judge_calls:
         print(
             f"Refusing to start: this run needs {trainer_calls} trainer calls "
@@ -390,18 +415,39 @@ def run(opts: Options) -> int:
             r,
             run_rules(a.case.expect, r, prompt_rules=rules, secrets=secrets_map),
             v,
+            a.total_ms,
+            a.first_byte_ms,
         )
         for (a, r, _), v in zip(scored, verdicts, strict=True)
     ]
+    # Fairness groups: parity and same targets from the runs, equivalence from the judge.
+    by_case: dict[str, list[Run]] = {}
+    for r in runs:
+        by_case.setdefault(r.case.id, []).append(r)
+    group_results = [score_group(g, by_case) for g in groups(cases)]
+    jobs = [job for g in groups(cases) for job in pair_jobs(g, by_case)]
+    spent = sum(len(v) for v in verdicts)
+    pairs = judge_pairs(
+        grader,
+        jobs,
+        0 if account_failed else max(0, opts.max_judge_calls - spent),
+        opts.concurrency,
+    )
     errors += [
         {"case": r.case.id, "rep": r.rep, "error": f"judge: {j.reason}"}
         for r in runs
         for j in r.judges
         if j.passed is None
     ]
+    errors += [
+        {"case": p.variant, "rep": p.rep, "error": f"pair judge: {p.result.reason}"}
+        for p in pairs
+        if p.result.passed is None
+    ]
 
     trainer_usage = sum((c.usage for c in calls), Usage())
     judge_usage = sum((j.usage for v in verdicts for j in v), Usage())
+    judge_usage += sum((p.result.usage for p in pairs), Usage())
     cost = Cost(
         trainer_model=TRAINER_MODEL,
         trainer_usd=0.0 if opts.dry_run else cost_usd(TRAINER_MODEL, trainer_usage),
@@ -409,7 +455,9 @@ def run(opts: Options) -> int:
         judge_model=grader.model,
         judge_usd=0.0 if opts.dry_run else cost_usd(JUDGE_MODEL, judge_usage),
         judge_calls=sum(
-            1 for v in verdicts for j in v if not j.reason.startswith(("judge budget", "skipped"))
+            1
+            for j in [*(j for v in verdicts for j in v), *(p.result for p in pairs)]
+            if not j.reason.startswith(("judge budget", "skipped"))
         ),
     )
     outcomes = case_outcomes(cases, runs)
@@ -420,14 +468,40 @@ def run(opts: Options) -> int:
         reps=opts.reps,
         dry_run=opts.dry_run,
         outcomes=outcomes,
-        gates=category_gates(runs),
+        gates=category_gates(runs, {"fairness": fairness_metrics(group_results, pairs)}),
         errors=len(errors),
         served_models=served,
         cost=cost,
+        # Informative here: reported against the budgets, never part of the gate.
+        latency=report(
+            [Sample(a.case.category, a.total_ms, a.first_byte_ms) for a in ok],
+            LATENCY_BUDGETS_MS,
+        ),
     )
+    if group_results:
+        agreed = agreements(pairs)
+        summary["fairness_groups"] = [group_record(g, agreed) for g in group_results]
     markdown = render_markdown(summary, outcomes)
     logs = {cid: judge_log(given) for cid, (_, given) in prepared.items()}
     _write(out, runs, errors, calls, rules, summary, markdown, logs)
+    if pairs:
+        (out / "pairs.jsonl").write_text(
+            "".join(
+                json.dumps(
+                    {
+                        "group": p.group,
+                        "variant": p.variant,
+                        "rep": p.rep,
+                        "control": p.control,
+                        "passed": p.result.passed,
+                        "reason": p.result.reason,
+                    }
+                )
+                + "\n"
+                for p in pairs
+            ),
+            encoding="utf-8",
+        )
     if not opts.dry_run:
         append_history(REPORTS / "history.json", summary)
     print(markdown)
@@ -438,6 +512,43 @@ def run(opts: Options) -> int:
     if opts.dry_run:  # the stub's canned replies can't pass the cases; did the pipeline work?
         return 0 if not errors else 1
     return 0 if summary["gate"] == "pass" else 1
+
+
+def judge_pairs(
+    grader: Grader, jobs: Sequence[PairJob], limit: int, concurrency: int
+) -> list[PairVerdict]:
+    """Each fairness pair under the equivalent_advice rubric, within the judge budget."""
+
+    def grade(job: PairJob) -> PairVerdict:
+        result = grader.grade(PAIR_RUBRIC, job.question, job.replies, "")
+        return PairVerdict(job.group, job.variant, job.rep, result, job.control)
+
+    with ThreadPoolExecutor(concurrency) as pool:
+        verdicts = list(pool.map(grade, jobs[:limit]))
+    return verdicts + [
+        PairVerdict(
+            j.group,
+            j.variant,
+            j.rep,
+            JudgeResult(PAIR_RUBRIC, None, "judge budget spent"),
+            j.control,
+        )
+        for j in jobs[limit:]
+    ]
+
+
+def group_record(g: GroupResult, agreed: Sequence[Agreement]) -> dict[str, Any]:
+    """A group's parity, target differences, and how the judge saw each variant."""
+    mine = [a for a in agreed if a.group == g.group]
+    return {
+        "group": g.group,
+        "status": g.status,
+        "parity_gap": g.parity_gap,
+        "differences": g.differences,
+        "control_agreement": mine[0].control if mine else None,
+        "agreement": {a.variant: a.rate for a in mine},
+        "equivalent": all(a.ok for a in mine) if mine else None,
+    }
 
 
 def _ask_everything(
@@ -525,6 +636,8 @@ def _write(
                 "shown": r.reply.text,
                 "remember": r.reply.remember,
                 "cut_off": CUT_OFF in r.reply.raw,
+                "ms": r.ms,
+                "first_byte_ms": r.first_byte_ms,
                 "passed": r.passed,
                 "rules": [asdict(c) for c in r.rules],
                 "judges": [asdict(j) for j in r.judges],
@@ -557,9 +670,9 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     p.add_argument("--only", nargs="*", default=[], help="case ids to run (default: all)")
     p.add_argument("--category", help="run one category only")
     p.add_argument("--reps", type=int, default=3, help="runs per case (default 3)")
-    p.add_argument("--max-trainer-calls", type=int, default=200)
-    p.add_argument("--max-judge-calls", type=int, default=100)
-    p.add_argument("--max-usd", type=float, default=3.0, help="refuse runs that could cost more")
+    p.add_argument("--max-trainer-calls", type=int, default=300)
+    p.add_argument("--max-judge-calls", type=int, default=300)
+    p.add_argument("--max-usd", type=float, default=6.0, help="refuse runs that could cost more")
     p.add_argument("--concurrency", type=int, default=4)
     p.add_argument(
         "--dry-run", action="store_true", help="the stub instead of Claude; costs nothing"

@@ -1,0 +1,169 @@
+# The production AI canary: a small, fixed set of the trainer evals' cases
+# through the REAL deployed trainer (fitlog-prod), as a dedicated monitor
+# account, every six hours and on demand (ai-evals/aievals/canary.py).
+#
+# Shift-right: the live tier proves the model behaves before a release; this
+# proves the deployed feature still does. It is a monitor, outside the release
+# gate: no deploy job depends on it and nothing here can block or slow one.
+#
+# What it touches in production: a sign-in and sign-out of the monitor account,
+# and POSTs to /api/trainer, which writes nothing. Hard limits: canary.py
+# refuses a run whose worst case could cost more than $0.25, caps its calls, and
+# the job times out at 10 minutes. The cost it reports is an estimate from
+# characters (production returns no token counts); the judge's cost is real.
+#
+# Alerts are GitHub issues labelled prod-ai-alert (ai-evals/aievals/alerts.py):
+# one per kind (infrastructure: the endpoint fails or is slow; quality: it
+# answers badly), opened once, commented on while the problem lasts, closed by
+# the first run that recovers. Every run is appended to data/prod-canary.json on
+# the gh-pages branch, which the quality dashboard charts.
+#
+# Repository secrets: PROD_VITE_SUPABASE_URL and PROD_VITE_SUPABASE_ANON_KEY
+# (the deploy already uses them), PROD_CANARY_EMAIL and PROD_CANARY_PASSWORD
+# (a user created in the production Supabase project for this and nothing
+# else). The judge (an input, off by default) also needs ANTHROPIC_API_KEY_EVALS.
+# The site defaults to https://fitlog-prod.pages.dev; a PROD_SITE_URL repository
+# variable overrides it. On the schedule, missing secrets skip the run with a
+# warning instead of failing every six hours; a manual run fails loudly.
+#
+# GitHub runs scheduled workflows from the default branch only, so the schedule
+# (and the "Run workflow" button) start once this file is on main.
+name: Production AI canary
+
+on:
+  schedule:
+    - cron: '23 */6 * * *' # 00:23, 06:23, 12:23 and 18:23 UTC
+  workflow_dispatch:
+    inputs:
+      judge:
+        description: Also run the LLM judge on the judged cases (needs ANTHROPIC_API_KEY_EVALS, about $0.05 more)
+        type: boolean
+        default: false
+      drill:
+        description: Break the run on purpose to prove the alerting works (the next real run closes the issue)
+        type: choice
+        options: [none, infrastructure, quality]
+        default: none
+
+concurrency:
+  group: prod-canary
+  cancel-in-progress: false
+
+permissions:
+  contents: write # append the run to data/prod-canary.json on the gh-pages branch
+  issues: write # open, comment on and close prod-ai-alert issues
+
+jobs:
+  canary:
+    name: Canary against production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check the secrets are configured
+        id: gate
+        env:
+          SUPABASE_URL: ${{ secrets.PROD_VITE_SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.PROD_VITE_SUPABASE_ANON_KEY }}
+          EMAIL: ${{ secrets.PROD_CANARY_EMAIL }}
+          PASSWORD: ${{ secrets.PROD_CANARY_PASSWORD }}
+          JUDGE: ${{ inputs.judge }}
+          JUDGE_KEY: ${{ secrets.ANTHROPIC_API_KEY_EVALS }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
+        run: |
+          missing=()
+          [ -n "$SUPABASE_URL" ] || missing+=(PROD_VITE_SUPABASE_URL)
+          [ -n "$ANON_KEY" ] || missing+=(PROD_VITE_SUPABASE_ANON_KEY)
+          [ -n "$EMAIL" ] || missing+=(PROD_CANARY_EMAIL)
+          [ -n "$PASSWORD" ] || missing+=(PROD_CANARY_PASSWORD)
+          if [ "$JUDGE" = "true" ] && [ -z "$JUDGE_KEY" ]; then missing+=(ANTHROPIC_API_KEY_EVALS); fi
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [ "$SCHEDULED" = "true" ]; then
+            echo "::warning::Canary skipped: add these repository secrets: ${missing[*]} (see the comment at the top of prod-canary.yml)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Add these repository secrets: ${missing[*]} (see the comment at the top of prod-canary.yml)."
+            exit 1
+          fi
+
+      - if: steps.gate.outputs.ready == 'true'
+        uses: actions/checkout@v4
+      - if: steps.gate.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - if: steps.gate.outputs.ready == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            ai-evals/requirements.txt
+            api-tests/requirements.txt
+      # Node and esbuild because replies are parsed by the app's own code
+      # (ai-evals/harness, src/lib/trainer.ts); Python for the canary itself.
+      - if: steps.gate.outputs.ready == 'true'
+        name: Install the evals
+        run: |
+          npm ci
+          pip install -r ai-evals/requirements.txt
+
+      # The dashboard data, checked out first: the alert step reads the earlier
+      # runs for its cost baseline, and the publish step appends to the file.
+      - if: steps.gate.outputs.ready == 'true'
+        name: Check out the dashboard branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: _site
+
+      # Inputs reach the shell only through env and are validated, never
+      # interpolated into the script.
+      - if: steps.gate.outputs.ready == 'true'
+        name: Run the canary
+        id: run
+        working-directory: ai-evals
+        env:
+          CANARY_SITE_URL: ${{ vars.PROD_SITE_URL }}
+          CANARY_SUPABASE_URL: ${{ secrets.PROD_VITE_SUPABASE_URL }}
+          CANARY_SUPABASE_ANON_KEY: ${{ secrets.PROD_VITE_SUPABASE_ANON_KEY }}
+          CANARY_EMAIL: ${{ secrets.PROD_CANARY_EMAIL }}
+          CANARY_PASSWORD: ${{ secrets.PROD_CANARY_PASSWORD }}
+          ANTHROPIC_API_KEY_EVALS: ${{ secrets.ANTHROPIC_API_KEY_EVALS }}
+          JUDGE: ${{ inputs.judge }}
+          DRILL: ${{ inputs.drill }}
+        run: |
+          args=()
+          if [ "$JUDGE" = "true" ]; then args+=(--judge); fi
+          case "$DRILL" in
+            infrastructure|quality) args+=(--drill "$DRILL") ;;
+            ''|none) ;;
+            *) echo "::error::bad drill: $DRILL"; exit 1 ;;
+          esac
+          python -m aievals.canary run "${args[@]}"
+
+      # Runs whether the canary passed or failed: a failed run is exactly when an
+      # issue must be opened, and a passing one is when an open issue gets closed.
+      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
+        name: Open, update or close the alert issues
+        working-directory: ai-evals
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          python -m aievals.canary alert ../reports/prod-canary/summary.json
+          --history ../_site/data/prod-canary.json
+          --out ../reports/prod-canary/alerts.json
+
+      # Every run is data, the failed ones most of all.
+      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
+        name: Upload the results
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-canary
+          path: reports/prod-canary
+          if-no-files-found: ignore
+          retention-days: 30
+      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
+        name: Publish to the dashboard
+        run: bash ai-evals/scripts/publish-canary.sh _site

@@ -8,3 +8,5 @@ __pycache__/
 harness/dist/
 # The live tier's Anthropic key for local runs. Never commit it.
 .env.live
+# The production canary's target and monitor-account credentials, for runs by hand.
+.env.canary

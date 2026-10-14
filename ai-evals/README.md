@@ -13,7 +13,7 @@ slow, down or broken. This suite tests all of that, in two tiers:
 | | Tier 1: deterministic | Tier 2: live |
 |---|---|---|
 | Claude | replaced by a scripted stub | the real API, through the real function |
-| Tests | **__T1__** pytest tests | **87** eval cases x 3 runs |
+| Tests | **264** pytest tests | **87** eval cases x 3 runs |
 | Runs | every push and PR (`ai-evals` CI job), part of the release gate | by hand only (`make eval-ai-live`, or the "AI evals (live)" workflow) |
 | Time, cost | about 50 s locally, $0 | about 3 minutes, about $0.80 |
 | Asks | does the function enforce its guardrails, whatever the model does? | does the model behave, given what the function sends it? |
@@ -271,6 +271,12 @@ dev rehearsal with about 3x headroom, to be tuned from the canary's history. In
 the live tier they are **reported, never gated**, because its answers go through
 a local proxy on whatever machine runs it. In the canary a category over its
 budget **opens an infrastructure alert**.
+
+Read the live tier's first-byte figure with care: the local Pages dev server
+buffers the stream, so in the first fairness run the first byte (p50 3.2 s)
+arrived with the whole answer (p50 3.2 s). The deployed site streams: the
+canary's dev rehearsal saw the first byte at p50 0.6 s against 1.8 s for the
+whole answer.
 
 ## Production canary (shift-right)
 

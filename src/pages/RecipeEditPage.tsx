@@ -262,6 +262,12 @@ export function RecipeEditPage() {
         <StartFromSourceSheet
           onClose={() => setSourceOpen(false)}
           newFoodPath={`/foods/new?addToRecipe=${id}`}
+          // A re-scanned ingredient already in the library: add that copy to
+          // the recipe instead of opening a food page that can't.
+          onUseExisting={(food) => {
+            setSourceOpen(false)
+            void pick(food)
+          }}
         />
       )}
     </div>

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Check, UtensilsCrossed, X } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { TimeInput } from '@/components/ui/time-input'
 import { cn } from '@/lib/utils'
 import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
 import { useDiary } from '@/features/diary/useDiary'
@@ -172,8 +173,7 @@ function FuelSheet({
           )}
           <label className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Ate at</span>
-            <input
-              type="time"
+            <TimeInput
               value={shown}
               onChange={(ev) => setTime(ev.target.value || null)}
               className={cn(

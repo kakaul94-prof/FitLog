@@ -18,13 +18,18 @@ export function daysBetweenISO(a: string, b: string): number {
   return Math.round((db.getTime() - da.getTime()) / 86_400_000)
 }
 
-/** Wall-clock time from an ISO timestamp, e.g. "3:45p" (24h locales: "15:45"). */
+/** Wall-clock time from an ISO timestamp, e.g. "3:45p". Always 12-hour, even
+ *  when the phone's locale defaults to 24-hour. */
 export function timeLabel(iso: string): string {
-  const s = new Date(iso).toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
-  return s.replace(/\s?([AP])M$/i, (_, m) => m.toLowerCase())
+  const d = new Date(iso)
+  const h = d.getHours()
+  return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}${h < 12 ? 'a' : 'p'}`
+}
+
+/** An `<input type="time">` value ("15:45") as "3:45 PM". */
+export function hhmmLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
 }
 
 export function dateLabel(iso: string): string {

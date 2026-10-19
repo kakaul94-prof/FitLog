@@ -4,6 +4,7 @@ import {
   computeStreak,
   dateLabel,
   daysBetweenISO,
+  hhmmLabel,
   timeLabel,
   todayISO,
 } from './date'
@@ -78,12 +79,21 @@ describe('dateLabel', () => {
 })
 
 describe('timeLabel', () => {
-  // Locale-agnostic: a 12h locale yields "3:45p", a 24h locale "15:45". Either
-  // way it has a colon and no upper-case meridiem after the transform.
-  it('keeps a colon and lower-cases any meridiem', () => {
-    const label = timeLabel('2026-06-26T15:45:00')
-    expect(label).toContain(':')
-    expect(label).not.toMatch(/[AP]M/)
+  // Always 12-hour, whatever the device locale.
+  it('formats afternoon, morning, noon and midnight as 12-hour', () => {
+    expect(timeLabel('2026-06-26T15:45:00')).toBe('3:45p')
+    expect(timeLabel('2026-06-26T09:05:00')).toBe('9:05a')
+    expect(timeLabel('2026-06-26T12:00:00')).toBe('12:00p')
+    expect(timeLabel('2026-06-26T00:30:00')).toBe('12:30a')
+  })
+})
+
+describe('hhmmLabel', () => {
+  it('turns a time-input value into 12-hour with AM/PM', () => {
+    expect(hhmmLabel('13:19')).toBe('1:19 PM')
+    expect(hhmmLabel('07:30')).toBe('7:30 AM')
+    expect(hhmmLabel('00:05')).toBe('12:05 AM')
+    expect(hhmmLabel('12:00')).toBe('12:00 PM')
   })
 })
 

@@ -170,6 +170,9 @@ export function SaveTemplateSheet({
       onClick={busy ? undefined : onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Save to template"
         className="mx-auto w-full max-w-md p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
         onClick={(ev) => ev.stopPropagation()}
       >

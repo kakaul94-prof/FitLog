@@ -1,6 +1,7 @@
 import { expect, type Locator } from '@playwright/test'
 import { BasePage } from './BasePage'
 import { CheckinSheet } from './CheckinSheet'
+import { SaveTemplateSheet } from './SaveTemplateSheet'
 
 /** Exercise tab (/strength) plus the live workout page it opens. */
 export class WorkoutPage extends BasePage {
@@ -10,19 +11,27 @@ export class WorkoutPage extends BasePage {
   readonly addExerciseButton = this.page.getByRole('button', { name: 'Add exercise' })
   readonly markDoneButton = this.page.getByRole('button', { name: 'Mark as done' })
   readonly checkin = new CheckinSheet(this.page)
+  readonly saveTemplate = new SaveTemplateSheet(this.page)
 
   /** The "Next up" card's template name (the card's only level-2 heading). */
   nextUp(templateName: string): Locator {
     return this.page.getByRole('heading', { level: 2, name: templateName, exact: true })
   }
 
-  /** Train the Next up template the way a user does: start it, log a set, mark it done. */
+  /**
+   * Train the Next up template the way a user does: start it, log a set, mark
+   * it done. One logged set against a template with more target sets is a
+   * change, so Done asks about the template first; finish without saving so
+   * the template stays as the test set it up.
+   */
   async trainNextUp(): Promise<void> {
     await this.page.getByRole('button', { name: 'Start workout', exact: true }).click()
     await this.checkin.startWorkout()
     await expect(this.page).toHaveURL(/\/workout\/[0-9a-f-]+$/)
     await this.logSet(1, 135, 5)
-    await this.markDone()
+    await this.markDoneButton.click()
+    await this.saveTemplate.finishWithoutSaving()
+    await expect(this.page).toHaveURL(/\/strength$/)
   }
 
   async startEmptyWorkout(): Promise<void> {

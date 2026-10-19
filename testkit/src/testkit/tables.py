@@ -55,7 +55,7 @@ TABLES: tuple[TableSpec, ...] = (
     TableSpec("exercise_notes", m.ExerciseNote, lambda c: {"exercise_key": f"custom:{c.token}", "notes": "Brace first"}, ("notes", "Elbows in")),
     TableSpec("meals", m.Meal, lambda c: {"name": f"Usual breakfast {c.token}"}, ("name", "Weekend breakfast")),
     TableSpec("meal_items", m.MealItem, lambda c: {"meal_id": c.parents["meal"], "food_name": "Greek yogurt", "nutrients": {"kcal": 100}}, ("servings", 1.5), {"meal": "meals"}),
-    TableSpec("form_videos", m.FormVideo, lambda c: {"exercise_key": "deadlift", "storage_path": f"clips/{c.token}.mp4", "duration_sec": 12}, ("duration_sec", 14)),
+    TableSpec("form_videos", m.FormVideo, lambda c: {"exercise_key": f"custom:{c.token}", "storage_path": f"clips/{c.token}.mp4", "duration_sec": 12}, ("duration_sec", 14)),
     TableSpec("strength_goals", m.StrengthGoal, lambda c: {"exercise_key": f"custom:{c.token}", "exercise_name": "Bench Press", "target_1rm_lb": 275, "target_weight_lb": 245, "target_reps": 3}, ("target_1rm_lb", 285)),
 )
 # fmt: on

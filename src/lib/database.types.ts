@@ -524,6 +524,9 @@ export interface Routine {
   user_id: string
   name: string
   position: number
+  // Rest timer seeded into every workout started from this template. Undefined
+  // on a DB that predates migration_routine_rest.sql — read as 90.
+  rest_seconds?: number | null
   created_at: string
   updated_at: string
 }

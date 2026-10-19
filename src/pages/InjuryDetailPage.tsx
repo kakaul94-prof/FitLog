@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Check, ChevronLeft, Plus, RotateCcw, Trash2, X } from 'lucide-react'
+import { Check, ChevronLeft, Minus, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { LineChartSvg } from '@/components/LineChartSvg'
 import { Card } from '@/components/ui/card'
@@ -12,7 +12,10 @@ import { usePainFlags } from '@/features/rehab/usePainFlags'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import { EXERCISES } from '@/data/exercises'
 import {
+  MAX_TARGET_PER_WEEK,
   checkinsFor,
+  clampTarget,
+  daysLabel,
   flagsForInjury,
   injuryDay,
   injuryLabel,
@@ -34,6 +37,7 @@ export function InjuryDetailPage() {
     addPlanItem,
     addPlanItems,
     removePlanItem,
+    updatePlanItem,
     logItem,
     unlogItem,
     checkIn,
@@ -47,6 +51,8 @@ export function InjuryDetailPage() {
   const [addingItem, setAddingItem] = useState(false)
   const [pickingLift, setPickingLift] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Plan row whose weekly-target stepper is open (one at a time).
+  const [editingTarget, setEditingTarget] = useState<string | null>(null)
 
   const inj = state.injuries.find((i) => i.id === id)
 
@@ -120,7 +126,7 @@ export function InjuryDetailPage() {
         title={injuryLabel(inj)}
         subtitle={
           resolved
-            ? `Closed ${inj.resolved ? dateLabel(inj.resolved) : ''} · ran ${injuryDay(inj, today)} days`
+            ? `Closed ${inj.resolved ? dateLabel(inj.resolved) : ''} · ran ${daysLabel(injuryDay(inj, today))}`
             : `Day ${injuryDay(inj, today)} · started ${dateLabel(inj.started)}`
         }
         left={
@@ -155,7 +161,7 @@ export function InjuryDetailPage() {
                       : 'text-muted-foreground',
                 )}
               >
-                {trend.first} → {trend.latest} over {trend.days} days
+                {trend.first} → {trend.latest} over {daysLabel(trend.days)}
               </span>
             )}
           </div>
@@ -199,6 +205,7 @@ export function InjuryDetailPage() {
                     onClick={() => checkIn(inj.id, n)}
                     disabled={isSaving}
                     aria-label={`Pain ${n} of 10`}
+                    aria-pressed={todayRating === n}
                     className={cn(
                       'h-9 flex-1 rounded-md text-xs tabular-nums',
                       todayRating === n
@@ -275,16 +282,38 @@ export function InjuryDetailPage() {
                         </span>
                       ) : null}
                     </span>
-                    <span
-                      className={cn(
-                        'shrink-0 text-xs tabular-nums',
-                        row.complete
-                          ? 'text-primary'
-                          : 'text-muted-foreground',
-                      )}
-                    >
-                      {row.done} / {row.target || '—'}
-                    </span>
+                    {resolved ? (
+                      <span
+                        className={cn(
+                          'shrink-0 text-xs tabular-nums',
+                          row.complete
+                            ? 'text-primary'
+                            : 'text-muted-foreground',
+                        )}
+                      >
+                        {row.done} / {row.target || '—'}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingTarget((t) =>
+                            t === row.item.id ? null : row.item.id,
+                          )
+                        }
+                        aria-expanded={editingTarget === row.item.id}
+                        aria-label={`Edit weekly target for ${row.item.name} (${row.done} of ${row.target || 'no target'} this week)`}
+                        className={cn(
+                          'flex shrink-0 items-center gap-1 rounded-full border border-dashed border-primary/40 px-2 py-0.5 text-xs tabular-nums',
+                          row.complete
+                            ? 'text-primary'
+                            : 'text-muted-foreground',
+                        )}
+                      >
+                        {row.done} / {row.target || '—'}
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                   <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-secondary">
                     <div
@@ -295,6 +324,42 @@ export function InjuryDetailPage() {
                       style={{ width: `${Math.round(row.progress * 100)}%` }}
                     />
                   </div>
+                  {!resolved && editingTarget === row.item.id && (
+                    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-7 w-7"
+                        disabled={isSaving || row.target <= 0}
+                        onClick={() =>
+                          updatePlanItem(inj.id, row.item.id, {
+                            targetPerWeek: clampTarget(row.target - 1),
+                          })
+                        }
+                        aria-label="Fewer sessions a week"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                      <span className="min-w-4 text-center text-sm font-medium tabular-nums text-foreground">
+                        {row.target}
+                      </span>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        className="h-7 w-7"
+                        disabled={isSaving || row.target >= MAX_TARGET_PER_WEEK}
+                        onClick={() =>
+                          updatePlanItem(inj.id, row.item.id, {
+                            targetPerWeek: clampTarget(row.target + 1),
+                          })
+                        }
+                        aria-label="More sessions a week"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                      <span>a week · 0 = just track it</span>
+                    </div>
+                  )}
                   {!resolved && (
                     <div className="mt-2 flex items-center gap-2">
                       <Button

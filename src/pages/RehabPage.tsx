@@ -11,6 +11,7 @@ import { useCoachEnabled } from '@/features/profile/useProfile'
 import {
   PAIN_SITES,
   activeInjuries,
+  daysLabel,
   injuryDay,
   injuryLabel,
   isPaired,
@@ -174,7 +175,7 @@ export function RehabPage() {
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     Closed {inj.resolved ? dateLabel(inj.resolved) : '—'} ·{' '}
-                    {injuryDay(inj, today)} days
+                    {daysLabel(injuryDay(inj, today))}
                   </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </button>
@@ -273,6 +274,7 @@ function NewInjuryForm({
           {PAIN_SITES.map((s) => (
             <button
               key={s}
+              aria-pressed={site === s}
               onClick={() => {
                 setSite(s)
                 if (!isPaired(s)) setSide(null)
@@ -298,6 +300,7 @@ function NewInjuryForm({
             {SIDES.map((s) => (
               <button
                 key={s}
+                aria-pressed={side === s}
                 onClick={() => setSide(s)}
                 className={cn(
                   'rounded-full px-3 py-1 text-xs capitalize',
@@ -314,10 +317,11 @@ function NewInjuryForm({
       )}
 
       <div>
-        <p className="mb-1.5 text-xs text-muted-foreground">
+        <label htmlFor="injury-note" className="mb-1.5 block text-xs text-muted-foreground">
           What it feels like (optional)
-        </p>
+        </label>
         <Input
+          id="injury-note"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Aches on overhead press"
@@ -325,8 +329,11 @@ function NewInjuryForm({
       </div>
 
       <div>
-        <p className="mb-1.5 text-xs text-muted-foreground">Started</p>
+        <label htmlFor="injury-started" className="mb-1.5 block text-xs text-muted-foreground">
+          Started
+        </label>
         <Input
+          id="injury-started"
           type="date"
           value={started}
           max={todayISO()}

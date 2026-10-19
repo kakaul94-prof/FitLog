@@ -13,6 +13,7 @@ import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import { EXERCISES } from '@/data/exercises'
 import {
   checkinsFor,
+  daysLabel,
   flagsForInjury,
   injuryDay,
   injuryLabel,
@@ -120,7 +121,7 @@ export function InjuryDetailPage() {
         title={injuryLabel(inj)}
         subtitle={
           resolved
-            ? `Closed ${inj.resolved ? dateLabel(inj.resolved) : ''} · ran ${injuryDay(inj, today)} days`
+            ? `Closed ${inj.resolved ? dateLabel(inj.resolved) : ''} · ran ${daysLabel(injuryDay(inj, today))}`
             : `Day ${injuryDay(inj, today)} · started ${dateLabel(inj.started)}`
         }
         left={
@@ -155,7 +156,7 @@ export function InjuryDetailPage() {
                       : 'text-muted-foreground',
                 )}
               >
-                {trend.first} → {trend.latest} over {trend.days} days
+                {trend.first} → {trend.latest} over {daysLabel(trend.days)}
               </span>
             )}
           </div>
@@ -199,6 +200,7 @@ export function InjuryDetailPage() {
                     onClick={() => checkIn(inj.id, n)}
                     disabled={isSaving}
                     aria-label={`Pain ${n} of 10`}
+                    aria-pressed={todayRating === n}
                     className={cn(
                       'h-9 flex-1 rounded-md text-xs tabular-nums',
                       todayRating === n

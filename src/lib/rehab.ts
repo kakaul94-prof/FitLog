@@ -78,6 +78,11 @@ export function injuryDay(inj: Injury, today: string): number {
   return Math.max(1, daysBetweenISO(inj.started, end) + 1)
 }
 
+/** "1 day" / "N days" for the Rehab pages' day counts. */
+export function daysLabel(n: number): string {
+  return `${n} ${n === 1 ? 'day' : 'days'}`
+}
+
 /** Does this pain flag belong to this injury? A side-less flag counts for an
  *  injury on either side — it's the same joint, we just don't know which one.
  *  'both' matches anything on that site. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   agoLabel,
+  answeredToday,
   isRecent,
   jointsLoaded,
   musclesWorked,
@@ -39,6 +40,13 @@ describe('timing', () => {
   it('fires at 9:00 the next day, across a month end', () => {
     const d = nextMorning9('2026-10-31')
     expect([d.getMonth(), d.getDate(), d.getHours()]).toEqual([10, 1, 9])
+  })
+  it('knows a 9:00 answer was given today (local date)', () => {
+    const at = (day: number, h: number) => new Date(2026, 9, day, h, 4).toISOString()
+    expect(answeredToday(answer({ at: at(19, 9) }), '2026-10-19')).toBe(true)
+    expect(answeredToday(answer({ at: at(19, 23) }), '2026-10-19')).toBe(true)
+    expect(answeredToday(answer({ at: at(18, 9) }), '2026-10-19')).toBe(false)
+    expect(answeredToday(undefined, '2026-10-19')).toBe(false)
   })
 })
 

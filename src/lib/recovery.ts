@@ -1,7 +1,7 @@
 import { REGION_IDS, REGION_LABEL, resolveContrib, type RegionId } from '@/data/bodyMap'
 import { PAIN_SITES, formatPain } from './rehab'
 import { loadsFor } from './checkin'
-import { daysBetweenISO } from './date'
+import { daysBetweenISO, todayISO } from './date'
 import type { RecoveryAnswer, WorkoutCheckin } from './database.types'
 
 // Next-day recovery: how a recent workout landed — the main muscles it worked
@@ -41,6 +41,11 @@ export const isRecent = (workoutDate: string, today: string) => {
   const d = daysBetweenISO(workoutDate, today)
   return d >= 0 && d < RECENT_DAYS
 }
+
+/** The 9:00 answer was given today (local) — the start sheet then skips the
+ *  last workout and asks only about the joints today loads. */
+export const answeredToday = (a: RecoveryAnswer | undefined, today: string) =>
+  !!a && todayISO(new Date(a.at)) === today
 
 /** "yesterday", "2 days ago" — the recovery sheet's subtitle. */
 export function agoLabel(workoutDate: string, today: string): string {

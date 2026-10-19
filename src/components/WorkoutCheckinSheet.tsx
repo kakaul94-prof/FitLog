@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, ArrowRight, Brain, Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,13 @@ import {
   type PlannedLift,
   type SwapAction,
 } from '@/lib/checkin'
-import { agoLabel, isRecent, musclesWorked, sorenessHeadsUp } from '@/lib/recovery'
+import {
+  agoLabel,
+  answeredToday,
+  isRecent,
+  musclesWorked,
+  sorenessHeadsUp,
+} from '@/lib/recovery'
 import { isLiftKey } from '@/lib/warmup'
 import type {
   BodySide,
@@ -190,6 +196,10 @@ function CheckinSheet({
   const prev =
     target && (saveMode || isRecent(target.workout.workout_date, today)) ? target : null
   const prefill = prev?.workout.checkin?.after?.morning
+  // Answered the 9:00 check-in today: don't ask about the last workout again —
+  // only the joints today's lifts load, pre-set from that answer.
+  const doneToday = !saveMode && answeredToday(prefill, today)
+  const askLast = !!prev && !doneToday
 
   const [muscleOv, setMuscleOv] = useState<Record<string, MuscleRow>>({})
   const [jointOv, setJointOv] = useState<Record<string, JointRow>>({})
@@ -216,14 +226,16 @@ function CheckinSheet({
   )
   const loading = (!!vars?.routineId && routineLoading) || targetLoading
 
+  const todayJoints = sitesWorked(lifts)
+  const fromMorning = (s: string) =>
+    doneToday && !todayJoints.includes(s) ? undefined : prefill?.joints[s]
   const muscle = (r: string): MuscleRow => muscleOv[r] ?? prefill?.muscles[r] ?? { feel: 'fine' }
-  const joint = (s: string): JointRow => jointOv[s] ?? prefill?.joints[s] ?? { feel: 'fine' }
+  const joint = (s: string): JointRow => jointOv[s] ?? fromMorning(s) ?? { feel: 'fine' }
 
   // Joints shown as rows: the last workout's plus the ones today loads. The
   // rest (and "other") sit behind "Something else hurts".
-  const todayJoints = sitesWorked(lifts)
   const baseJoints = PAIN_SITES.filter(
-    (s) => (prev?.joints ?? []).includes(s) || (!saveMode && todayJoints.includes(s)),
+    (s) => (askLast && prev.joints.includes(s)) || (!saveMode && todayJoints.includes(s)),
   )
   const extraJoints = PAIN_SITES.filter((s) => !baseJoints.includes(s))
   const showExtras =
@@ -285,7 +297,7 @@ function CheckinSheet({
           site: kind === 'j' ? id : 'other',
           side,
           note: kind === 'm' ? REGION_LABEL[id as RegionId] : null,
-          started: prev?.workout.workout_date ?? today,
+          started: askLast ? prev.workout.workout_date : today,
           status: 'active' as const,
           resolved: null,
           aggravates: [...new Set(liftsHitting(kind, id))],
@@ -309,7 +321,7 @@ function CheckinSheet({
     setSaving(true)
     try {
       if (record) {
-        if (prev)
+        if (askLast)
           await saveRecovery(prev.workout, saveMode ? 'morning' : 'pre', buildAnswer()).catch(
             () => {},
           )
@@ -341,6 +353,16 @@ function CheckinSheet({
     }
   }
 
+  // Answered this morning and today loads no tracked joint (a blank start, say):
+  // nothing left to ask, so start straight away.
+  const skipSheet = doneToday && !loading && todayJoints.length === 0
+  const skipped = useRef(false)
+  useEffect(() => {
+    if (!skipSheet || skipped.current) return
+    skipped.current = true
+    void submit({ record: false, withSwaps: false })
+  }, [skipSheet]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const nChanges = plan.suggestions.filter((s) => choiceFor(s.lift.id).action !== 'keep').length
   const affected = new Set([
     ...plan.suggestions.map((s) => s.lift.id),
@@ -367,10 +389,16 @@ function CheckinSheet({
     const key = `${kind}:${id}`
     const sided = kind === 'm' || isPaired(id)
     const tracked = inRehab(kind, id, sided ? row.side ?? null : null)
+    const carried = kind === 'j' && doneToday && !jointOv[id] && !!fromMorning(id)
     return (
       <div key={key} className="border-t py-2">
         <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
-          <span className="text-sm capitalize">{label}</span>
+          <span className="text-sm">
+            <span className="capitalize">{label}</span>
+            {carried && (
+              <span className="block text-xs text-muted-foreground">from this morning</span>
+            )}
+          </span>
           {kind === 'm' ? (
             <Pills value={row.feel as MuscleFeel} options={MUSCLE_OPTS} onChange={(feel) => setRow(kind, id, { feel })} />
           ) : (
@@ -435,6 +463,8 @@ function CheckinSheet({
       document.body,
     )
 
+  if (skipSheet) return null
+
   const weekday = prev
     ? new Date(`${prev.workout.workout_date}T12:00:00`).toLocaleDateString(undefined, {
         weekday: 'short',
@@ -456,17 +486,22 @@ function CheckinSheet({
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-lg font-semibold leading-snug">
-                    {prev
+                    {askLast
                       ? `How did ${prev.workout.name || 'your last workout'} land?`
                       : 'Before you lift'}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {prev
+                    {askLast
                       ? `${weekday} · ${agoLabel(prev.workout.workout_date, today)}. ${
                           prefill && !saveMode ? 'Pre-filled from this morning.' : 'Everything starts as Fine.'
                         }`
                       : `${vars?.name ?? ''}${lifts.length ? ` · ${lifts.length} exercises` : ''}`}
                   </p>
+                  {doneToday && (
+                    <p className="text-sm text-muted-foreground">
+                      {prev?.workout.name || 'Your last workout'} checked this morning.
+                    </p>
+                  )}
                 </div>
                 <Button variant="ghost" size="icon" onClick={onCancel} aria-label="Close">
                   <X className="h-5 w-5" />
@@ -477,7 +512,7 @@ function CheckinSheet({
                 <p className="py-4 text-center text-sm text-muted-foreground">Loading…</p>
               ) : (
                 <>
-                  {prev && prev.muscles.length > 0 && (
+                  {askLast && prev.muscles.length > 0 && (
                     <div>
                       <p className="pb-1 text-xs text-muted-foreground">Muscles</p>
                       {prev.muscles.map((r) => renderRow('m', r, REGION_LABEL[r]))}
@@ -485,7 +520,9 @@ function CheckinSheet({
                   )}
                   {allJoints.length > 0 && (
                     <div>
-                      <p className="pb-1 pt-1 text-xs text-muted-foreground">Joints</p>
+                      <p className="pb-1 pt-1 text-xs text-muted-foreground">
+                        {doneToday ? "Today's joints" : 'Joints'}
+                      </p>
                       {allJoints.map((s) => renderRow('j', s, s))}
                     </div>
                   )}

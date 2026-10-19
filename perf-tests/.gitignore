@@ -1,0 +1,2 @@
+node_modules
+# Run output lives in /reports/perf (gitignored at the repo root).

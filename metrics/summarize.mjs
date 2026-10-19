@@ -6,6 +6,7 @@
 // Markdown summary to $GITHUB_STEP_SUMMARY (or prints it when run locally).
 import fs from 'node:fs'
 import path from 'node:path'
+import { fromJUnit } from './adapters/junit.mjs'
 import { fromPlaywright } from './adapters/playwright.mjs'
 import { fromVitest } from './adapters/vitest.mjs'
 import { buildRun, parseJobResults, summaryMarkdown } from './lib.mjs'
@@ -13,8 +14,11 @@ import { buildRun, parseJobResults, summaryMarkdown } from './lib.mjs'
 // Every metric source the pipeline produces. To add one (axe, Lighthouse, k6…),
 // write an adapter that returns a source block and register it here; the
 // dashboard picks it up by its `kind`.
+// `adapt` gets the parsed JSON for .json reports and the raw text otherwise.
 const SOURCES = [
   { key: 'e2e', file: 'playwright.json', adapt: (r) => fromPlaywright(r) },
+  { key: 'api', file: 'api-junit.xml', adapt: (xml) => fromJUnit(xml) },
+  { key: 'ai', file: 'ai-evals-junit.xml', adapt: (xml) => fromJUnit(xml, { root: 'ai-evals' }) },
   { key: 'unit', file: 'vitest.json', adapt: (r) => fromVitest(r) },
 ]
 
@@ -27,7 +31,8 @@ for (const { key, file, adapt } of SOURCES) {
     continue
   }
   try {
-    sources[key] = adapt(JSON.parse(fs.readFileSync(p, 'utf8')))
+    const raw = fs.readFileSync(p, 'utf8')
+    sources[key] = adapt(file.endsWith('.json') ? JSON.parse(raw) : raw)
   } catch (err) {
     console.warn(`metrics: could not read ${p}: ${err.message}`)
   }

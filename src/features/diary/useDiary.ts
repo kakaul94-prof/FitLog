@@ -119,6 +119,27 @@ function newQuickRow(
 
 type InsertRow = ReturnType<typeof newDiaryRow> | ReturnType<typeof newQuickRow>
 
+/**
+ * Insert diary rows whose ids the app chose. The queue can send an insert
+ * again after it already reached the server (the app closed before it saved
+ * that the write was done), and the repeat is refused on our own primary key
+ * (23505). If every row is there, the write is done, not failed: failing it
+ * would roll the diary back to before the entry was added. Only the user's
+ * own rows are visible, so another user's row with the same id never counts.
+ * A multi-row insert is all-or-nothing, so a batch has landed whole or not at all.
+ */
+async function insertDiaryRows(rows: InsertRow[]): Promise<void> {
+  if (rows.length === 0) return
+  const { error } = await supabase.from('diary_entries').insert(rows)
+  if (!error) return
+  if (error.code === '23505') {
+    const ids = rows.map((r) => r.id)
+    const { data } = await supabase.from('diary_entries').select('id').in('id', ids)
+    if (data?.length === ids.length) return
+  }
+  throw error
+}
+
 /** Promote an insert row to a full DiaryEntry for the optimistic cache (the
  *  unknown user_id/position aren't rendered; the refetch on settle fills them). */
 function asCacheRow(row: InsertRow): DiaryEntry {
@@ -171,6 +192,14 @@ const KEYS = {
   updateEntry: ['diary', 'updateEntry'],
 } as const
 
+// Every queued diary write shares one scope, so TanStack sends them one at a
+// time in the order they were made, after a restart too. Unscoped, the queue
+// resumes them all at once on reconnect and the server can see them out of
+// order: an offline delete landing before the add it undoes (the entry comes
+// back), or an earlier edit overwriting a later one. Only the network call
+// waits its turn; the screen still updates at once in onMutate.
+const DIARY_SCOPE = { id: 'diary-writes' }
+
 // Logging anything for today defers tonight's streak nudge to tomorrow
 // (native app only; no-op on web). Runs in onMutate so it happens at log time
 // even for the picker → kill-the-app flow where DiaryPage never remounts.
@@ -187,11 +216,11 @@ function logFoodMutation(
 ): UseMutationOptions<void, Error, LogFoodVars, DiaryCtx> {
   return {
     mutationKey: KEYS.logFood,
+    scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const row =
         v._row ?? newDiaryRow(v.entry_date, v.meal, v.food, v.servings, v.unit, v.id)
-      const { error } = await supabase.from('diary_entries').insert(row)
-      if (error) throw error
+      await insertDiaryRows([row])
     },
     onMutate: async (v) => {
       // Forward the caller-chosen id: the picker's "added" tray edits the row
@@ -230,15 +259,14 @@ function logFoodsMutation(
 ): UseMutationOptions<void, Error, LogFoodsVars, DiaryCtx> {
   return {
     mutationKey: KEYS.logFoods,
+    scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const rows =
         v._rows ??
         v.items.map((it) =>
           newDiaryRow(v.entry_date, v.meal, it.food, it.servings, it.unit, it.id),
         )
-      if (rows.length === 0) return
-      const { error } = await supabase.from('diary_entries').insert(rows)
-      if (error) throw error
+      await insertDiaryRows(rows)
     },
     onMutate: async (v) => {
       const rows = (v._rows = v.items.map((it) =>
@@ -271,10 +299,10 @@ function quickAddMutation(
 ): UseMutationOptions<void, Error, QuickAddVars, DiaryCtx> {
   return {
     mutationKey: KEYS.quickAdd,
+    scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const row = v._row ?? newQuickRow(v.entry_date, v.meal, v.name, v.nutrients, v.id)
-      const { error } = await supabase.from('diary_entries').insert(row)
-      if (error) throw error
+      await insertDiaryRows([row])
     },
     onMutate: async (v) => {
       const row = (v._row = newQuickRow(v.entry_date, v.meal, v.name, v.nutrients, v.id))
@@ -315,15 +343,14 @@ function quickAddFoodsMutation(
 ): UseMutationOptions<void, Error, QuickAddFoodsVars, DiaryCtx> {
   return {
     mutationKey: KEYS.quickAddFoods,
+    scope: DIARY_SCOPE,
     mutationFn: async (v) => {
       const rows =
         v._rows ??
         v.items.map((it) =>
           newQuickRow(v.entry_date, v.meal, it.name, it.nutrients),
         )
-      if (rows.length === 0) return
-      const { error } = await supabase.from('diary_entries').insert(rows)
-      if (error) throw error
+      await insertDiaryRows(rows)
     },
     onMutate: async (v) => {
       const rows = (v._rows = v.items.map((it) =>
@@ -355,6 +382,7 @@ function updateServingsMutation(
 ): UseMutationOptions<void, Error, { id: string; servings: number }, DiaryCtx> {
   return {
     mutationKey: KEYS.updateServings,
+    scope: DIARY_SCOPE,
     mutationFn: async (e) => {
       const { error } = await supabase
         .from('diary_entries')
@@ -381,6 +409,7 @@ function deleteEntryMutation(
 ): UseMutationOptions<void, Error, string, DiaryCtx> {
   return {
     mutationKey: KEYS.deleteEntry,
+    scope: DIARY_SCOPE,
     mutationFn: async (id) => {
       const { error } = await supabase
         .from('diary_entries')
@@ -410,6 +439,7 @@ function deleteEntriesMutation(
 ): UseMutationOptions<void, Error, string[], DiaryCtx> {
   return {
     mutationKey: KEYS.deleteEntries,
+    scope: DIARY_SCOPE,
     mutationFn: async (ids) => {
       if (ids.length === 0) return
       const { error } = await supabase
@@ -441,6 +471,7 @@ function moveMutation(
 ): UseMutationOptions<void, Error, { ids: string[]; meal: Meal }, DiaryCtx> {
   return {
     mutationKey: KEYS.move,
+    scope: DIARY_SCOPE,
     mutationFn: async (e) => {
       if (e.ids.length === 0) return
       const { error } = await supabase
@@ -469,6 +500,7 @@ function updateEntryMutation(
 ): UseMutationOptions<void, Error, UpdateEntryVars, DiaryCtx> {
   return {
     mutationKey: KEYS.updateEntry,
+    scope: DIARY_SCOPE,
     mutationFn: async ({ id, ...patch }) => {
       const { error } = await supabase
         .from('diary_entries')
@@ -512,21 +544,51 @@ export function registerDiaryMutationDefaults(qc: QueryClient) {
   qc.setMutationDefaults(KEYS.updateEntry, updateEntryMutation(qc))
 }
 
-/** Copy all entries of one meal from another day into a target day/meal.
+/** A slim diary row for searching past meals — calories only, no full panel. */
+export interface PastMealRow {
+  id: string
+  entry_date: string
+  meal: Meal
+  food_name: string
+  servings: number
+  kcal: number | null
+}
+
+/** The last 60 days of diary rows, newest day first — feeds "search past
+ *  meals" in the copy sheet. Pulls only `kcal` out of the nutrients jsonb. */
+export function useMealHistory() {
+  return useQuery({
+    queryKey: ['mealHistory'],
+    queryFn: async (): Promise<PastMealRow[]> => {
+      const { data, error } = await supabase
+        .from('diary_entries')
+        .select('id, entry_date, meal, food_name, servings, kcal:nutrients->kcal')
+        .gte('entry_date', addDaysISO(todayISO(), -60))
+        .order('entry_date', { ascending: false })
+        .order('created_at')
+        .limit(3000)
+      if (error) throw error
+      return (data ?? []) as PastMealRow[]
+    },
+  })
+}
+
+/** Copy the given diary entries (by id) into a target day/meal — the source
+ *  meal slot doesn't matter, so a past Lunch can land in today's Dinner.
  *  Left non-optimistic (a remote read + insert); queues but may stall offline. */
 export function useCopyMeal() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (e: {
-      from: string
+      ids: string[]
       to: string
       meal: Meal
     }): Promise<number> => {
+      if (e.ids.length === 0) return 0
       const { data, error } = await supabase
         .from('diary_entries')
         .select('*')
-        .eq('entry_date', e.from)
-        .eq('meal', e.meal)
+        .in('id', e.ids)
         .order('created_at')
       if (error) throw error
       const src = (data ?? []) as DiaryEntry[]
@@ -552,6 +614,7 @@ export function useCopyMeal() {
       qc.invalidateQueries({ queryKey: ['diary', v.to] })
       qc.invalidateQueries({ queryKey: ['streak'] })
       qc.invalidateQueries({ queryKey: ['foodHistory'] })
+      qc.invalidateQueries({ queryKey: ['mealHistory'] })
     },
   })
 }

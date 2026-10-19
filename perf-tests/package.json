@@ -1,0 +1,19 @@
+{
+  "name": "fitlog-perf-tests",
+  "private": true,
+  "description": "k6 load, stress, spike and soak tests for FitLog's backend, against the local Supabase stack only",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "smoke": "bash run.sh smoke",
+    "load": "bash run.sh load",
+    "stress": "bash run.sh stress",
+    "spike": "bash run.sh spike",
+    "soak": "bash run.sh soak",
+    "cleanup": "bash run.sh cleanup"
+  },
+  "devDependencies": {
+    "@types/k6": "2.3.0",
+    "typescript": "~6.0.2"
+  }
+}

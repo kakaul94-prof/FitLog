@@ -1,0 +1,53 @@
+[project]
+name = "fitlog-ai-evals"
+version = "1.0.0"
+description = "Safety and quality evals for FitLog's Ask-a-trainer chat (Claude)"
+requires-python = ">=3.12"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["aievals"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+xfail_strict = true
+junit_family = "xunit2"
+junit_suite_name = "ai-evals"
+markers = [
+  "functions: needs the local Pages Functions server (api-tests/scripts/start-functions.sh)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# README snippets are illustrative fragments, not modules to format.
+extend-exclude = [".venv", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "ANN", "PT", "N", "S", "RUF"]
+ignore = [
+  "S101",  # assert is how pytest checks things
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aievals", "testkit"]
+
+[tool.ruff.lint.per-file-ignores]
+# Throwaway passwords for users created and deleted inside a test run.
+"tests/**" = ["S105", "S106"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["aievals", "tests"]
+explicit_package_bases = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["allure", "allure_commons.*"]
+ignore_missing_imports = true

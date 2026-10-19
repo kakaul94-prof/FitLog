@@ -218,10 +218,18 @@ export function MacroPie({ nutrients }: { nutrients: Nutrients }) {
   )
 }
 
-export function NutrientBreakdown({ nutrients }: { nutrients: Nutrients }) {
+export function NutrientBreakdown({
+  nutrients,
+  afterPie,
+}: {
+  nutrients: Nutrients
+  /** Rendered between the macro pie and the full nutrient table. */
+  afterPie?: ReactNode
+}) {
   return (
     <div className="space-y-4">
       <MacroPie nutrients={nutrients} />
+      {afterPie}
       {SECTIONS.map((sec, si) => (
         <div key={si}>
           {sec.title && (

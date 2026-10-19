@@ -1,0 +1,58 @@
+# API, database and security tests for FitLog's Supabase backend and Pages
+# Functions. Not a package: the clients and helpers live in the shared testkit
+# (../testkit), which requirements.txt installs.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+# importlib: test files in different folders may share a name (no __init__.py needed).
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+xfail_strict = true
+junit_family = "xunit2"
+junit_suite_name = "api"
+bdd_features_base_dir = "tests/bdd/features"
+markers = [
+  "functions: needs the local Pages Functions server (scripts/start-functions.sh)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# README snippets are illustrative fragments, not modules to format.
+extend-exclude = [".venv", "*.md"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F",  # pycodestyle + pyflakes
+  "I",            # import order
+  "B",            # bugbear
+  "UP",           # modern syntax
+  "SIM",          # simplifications
+  "ANN",          # type hints on every function
+  "PT",           # pytest style
+  "N",            # naming
+  "S",            # bandit security checks
+  "RUF",
+]
+ignore = [
+  "S101",  # assert is how pytest checks things
+]
+
+[tool.ruff.lint.isort]
+# The testkit is installed, but it's this repository's own code: keep it grouped last.
+known-first-party = ["testkit"]
+
+[tool.ruff.lint.per-file-ignores]
+# Throwaway passwords for users created and deleted inside a test run.
+"tests/**" = ["S105", "S106"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["tests"]  # the testkit is type-checked in its own package
+explicit_package_bases = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["allure", "allure_commons.*"]
+ignore_missing_imports = true

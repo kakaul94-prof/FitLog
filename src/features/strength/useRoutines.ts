@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { isCardioKey } from '@/lib/cardio'
-import type { Routine, RoutineExercise } from '@/lib/database.types'
+import { isLiftKey } from '@/lib/warmup'
+import type { Routine, RoutineExercise, WorkoutCheckin } from '@/lib/database.types'
 
 export function useRoutines() {
   return useQuery({
@@ -164,17 +165,39 @@ export function useStartFromRoutine() {
       name,
       date,
       plan,
+      swaps,
+      skip,
+      checkin,
     }: {
       routineId: string
       name: string
       date: string
       plan?: Record<string, number>
+      /** Pre-workout check-in: routine_exercise id → the lift to do instead. */
+      swaps?: Record<string, { key: string; name: string }>
+      /** Pre-workout check-in: routine_exercise ids to leave out today. */
+      skip?: string[]
+      checkin?: WorkoutCheckin | null
     }): Promise<string> => {
-      const { data: w, error: we } = await supabase
+      const row: Record<string, unknown> = {
+        workout_date: date,
+        name,
+        source_routine_id: routineId,
+      }
+      let { data: w, error: we } = await supabase
         .from('workouts')
-        .insert({ workout_date: date, name, source_routine_id: routineId })
+        .insert(checkin ? { ...row, checkin } : { ...row })
         .select('*')
         .single()
+      // Before migration_workout_checkin.sql the column doesn't exist — the
+      // swaps still apply, only the record of them is lost. Never block a start.
+      if (we && checkin) {
+        ;({ data: w, error: we } = await supabase
+          .from('workouts')
+          .insert(row)
+          .select('*')
+          .single())
+      }
       if (we) throw we
       const workoutId = (w as { id: string }).id
       const { data: rex } = await supabase
@@ -186,9 +209,16 @@ export function useStartFromRoutine() {
       // them as a checklist from the source routine; logging one writes a
       // normal exercise_entries row.
       const exs = ((rex ?? []) as RoutineExercise[]).filter(
-        (re) => !isCardioKey(re.exercise_key) && (!plan || (plan[re.id] ?? 0) > 0),
+        (re) =>
+          isLiftKey(re.exercise_key) &&
+          (!plan || (plan[re.id] ?? 0) > 0) &&
+          !skip?.includes(re.id),
       )
-      for (const re of exs) {
+      for (const orig of exs) {
+        const sw = swaps?.[orig.id]
+        const re = sw
+          ? { ...orig, exercise_key: sw.key, exercise_name: sw.name }
+          : orig
         const { data: we2 } = await supabase
           .from('workout_exercises')
           .insert({

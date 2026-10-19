@@ -26,6 +26,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { StartFromSourceSheet } from '@/components/StartFromSourceSheet'
+import { CopyMealSheet } from '@/components/CopyMealSheet'
+import { RecipeIngredientsCard } from '@/components/RecipeIngredientsCard'
 import {
   useFoods,
   useDeleteFood,
@@ -34,10 +36,8 @@ import {
   type LastServing,
 } from '@/features/foods/useFoods'
 import {
-  useDiary,
   useLogFood,
   useLogFoods,
-  useCopyMeal,
   useQuickAddFood,
   useUpdateDiaryServings,
   useDeleteDiaryEntry,
@@ -50,7 +50,7 @@ import {
   isUsdaConfigured,
   type UsdaSearchItem,
 } from '@/lib/usda'
-import { todayISO, addDaysISO } from '@/lib/date'
+import { todayISO } from '@/lib/date'
 import {
   ingredientUnits,
   matchServingUnit,
@@ -91,14 +91,11 @@ export function FoodPickerPage() {
   const logOne = useLogFood()
   const del = useDeleteFood()
   const { data: history } = useFoodHistory()
-  const copyMeal = useCopyMeal()
   const { data: meals } = useMeals()
   const logMeal = useLogMeal()
   const [mealToLog, setMealToLog] = useState<MealWithItems | null>(null)
   const [tab, setTab] = useState<'all' | 'recent' | 'frequent' | 'meals'>('all')
   const [copyOpen, setCopyOpen] = useState(false)
-  const [copyDate, setCopyDate] = useState(() => addDaysISO(date, -1))
-  const { data: copySrc } = useDiary(copyDate)
   const saveFood = useSaveFood()
   const [usdaResults, setUsdaResults] = useState<UsdaSearchItem[]>([])
   const [usdaFor, setUsdaFor] = useState<string | null>(null)
@@ -110,6 +107,10 @@ export function FoodPickerPage() {
   const [quickOpen, setQuickOpen] = useState(false)
   const [sourceOpen, setSourceOpen] = useState(false)
   const quickAdd = useQuickAddFood()
+  // Lock an Add button only while its last save is actually being sent. A
+  // save waiting in the offline queue counts as pending too, but it shouldn't
+  // stop you logging the next food: the queue sends them all on reconnect.
+  const sending = (m: { isPending: boolean; isPaused: boolean }) => m.isPending && !m.isPaused
   // Items (2)+(9): stay in the picker after adding, with a toast. The tally
   // footer expands into a tray of this session's entries (they're already in
   // the diary — edits/removals write straight through to those rows).
@@ -254,7 +255,6 @@ export function FoodPickerPage() {
       : tab === 'recent'
         ? byName(history?.recent ?? [])
         : byName(history?.frequent ?? [])
-  const copyItems = (copySrc ?? []).filter((e) => e.meal === meal)
   const mealList = (meals ?? []).filter(
     (m) => !q || m.name.toLowerCase().includes(q),
   )
@@ -374,7 +374,7 @@ export function FoodPickerPage() {
             <Camera className="h-4 w-4" /> Snap meal
           </Button>
           <Button variant="outline" onClick={() => setCopyOpen(true)}>
-            <Copy className="h-4 w-4" /> Copy day
+            <Copy className="h-4 w-4" /> Copy meal
           </Button>
         </div>
         <Card className="divide-y divide-border overflow-hidden">
@@ -477,9 +477,9 @@ export function FoodPickerPage() {
           <Button
             className="w-full"
             onClick={addMany}
-            disabled={logMany.isPending}
+            disabled={sending(logMany)}
           >
-            {logMany.isPending ? 'Adding…' : `Add ${picks.length} to ${meal}`}
+            {sending(logMany) ? 'Adding…' : `Add ${picks.length} to ${meal}`}
           </Button>
         </div>
       )}
@@ -534,77 +534,14 @@ export function FoodPickerPage() {
         </div>
       )}
 
-      {copyOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
-            onClick={() => setCopyOpen(false)}
-          >
-            <div
-              className="mx-auto w-full max-w-md p-3"
-              onClick={(ev) => ev.stopPropagation()}
-            >
-              <Card className="overflow-hidden">
-                <div className="border-b border-border p-3 text-center text-sm font-medium">
-                  Copy {meal} from another day
-                </div>
-                <div className="space-y-3 p-4">
-                  <input
-                    type="date"
-                    value={copyDate}
-                    max={addDaysISO(date, -1)}
-                    onChange={(e) => setCopyDate(e.target.value)}
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                  />
-                  {copyItems.length > 0 ? (
-                    <ul className="max-h-48 space-y-1 overflow-auto text-sm">
-                      {copyItems.map((e) => (
-                        <li
-                          key={e.id}
-                          className="flex justify-between gap-2 text-muted-foreground"
-                        >
-                          <span className="truncate">{e.food_name}</span>
-                          <span className="shrink-0">
-                            {Math.round((e.nutrients.kcal ?? 0) * e.servings)} calories
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="py-2 text-center text-sm text-muted-foreground">
-                      Nothing logged to {meal} on this day.
-                    </p>
-                  )}
-                  <Button
-                    className="w-full"
-                    disabled={copyItems.length === 0 || copyMeal.isPending}
-                    onClick={async () => {
-                      const n = await copyMeal.mutateAsync({
-                        from: copyDate,
-                        to: date,
-                        meal,
-                      })
-                      if (n > 0) nav(`/?date=${date}`, { replace: true })
-                    }}
-                  >
-                    {copyMeal.isPending
-                      ? 'Copying…'
-                      : `Copy ${copyItems.length} ${
-                          copyItems.length === 1 ? 'item' : 'items'
-                        }`}
-                  </Button>
-                </div>
-              </Card>
-              <button
-                onClick={() => setCopyOpen(false)}
-                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>,
-          document.body,
-        )}
+      {copyOpen && (
+        <CopyMealSheet
+          date={date}
+          meal={meal}
+          onClose={() => setCopyOpen(false)}
+          onCopied={() => nav(`/?date=${date}`, { replace: true })}
+        />
+      )}
 
       {mealToLog &&
         createPortal(
@@ -718,7 +655,7 @@ export function FoodPickerPage() {
         <ServingSheet
           food={servingFood}
           meal={meal}
-          pending={logOne.isPending}
+          pending={sending(logOne)}
           last={history?.lastServings.get(servingFood.id)}
           onClose={() => setServingFood(null)}
           onAdd={async (s, unit) => {
@@ -753,7 +690,7 @@ export function FoodPickerPage() {
       {quickOpen && (
         <QuickAddSheet
           meal={meal}
-          pending={quickAdd.isPending}
+          pending={sending(quickAdd)}
           onClose={() => setQuickOpen(false)}
           onAdd={async ({ name, nutrients }) => {
             const id = crypto.randomUUID()
@@ -1040,6 +977,18 @@ function ServingSheet({
                 <span>Fat {Math.round(scaled.fat ?? 0)}g</span>
               </div>
             </div>
+            {food.source === 'recipe' && (
+              // Same measure the Add button snapshots onto the diary entry.
+              <RecipeIngredientsCard
+                foodId={food.id}
+                servings={s}
+                servingUnit={
+                  selected.unit === 'base'
+                    ? { qty: food.serving_qty, label: food.serving_unit }
+                    : { qty: 1, label: selected.label }
+                }
+              />
+            )}
             <Button
               className="w-full"
               disabled={s <= 0 || pending}

@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { TimeInput } from '@/components/ui/time-input'
 import { todayISO } from '@/lib/date'
 import { isNativeApp } from '@/lib/restTimerNative'
 import {
@@ -107,15 +108,14 @@ export function RemindersPage() {
                 <span className="flex-1 text-sm font-medium">
                   {MEAL_LABELS[slot]}
                 </span>
-                <input
-                  type="time"
+                <TimeInput
                   value={s.time}
                   disabled={!enabled || !s.on}
                   onChange={(e) => {
                     if (e.target.value)
                       apply(setMeal(slot, { time: e.target.value }))
                   }}
-                  className="rounded-md border border-input bg-card px-2 py-1 text-sm text-foreground disabled:opacity-50"
+                  className="rounded-md border border-input bg-card px-2 py-1 text-sm text-foreground"
                 />
                 <Switch
                   checked={s.on}
@@ -140,8 +140,7 @@ export function RemindersPage() {
                 Rings only on days you haven’t logged any food yet
               </p>
             </div>
-            <input
-              type="time"
+            <TimeInput
               value={settings.streak.time}
               disabled={!enabled || !settings.streak.on}
               onChange={(e) => {
@@ -151,7 +150,7 @@ export function RemindersPage() {
                     streak: { ...settings.streak, time: e.target.value },
                   })
               }}
-              className="rounded-md border border-input bg-card px-2 py-1 text-sm text-foreground disabled:opacity-50"
+              className="rounded-md border border-input bg-card px-2 py-1 text-sm text-foreground"
             />
             <Switch
               checked={settings.streak.on}

@@ -144,8 +144,42 @@ export interface Profile {
   // Facts the Ask-a-trainer chat remembers between sessions (see TrainerFact).
   // Empty = the trainer sees only your live training stats.
   trainer_memory: TrainerFact[]
+  // Pre-workout fuel timing: the personal offset learned from post-workout
+  // feedback + the last meal timed (see FuelTimingState). null = never used.
+  fuel_timing: FuelTimingState | null
   created_at: string
   updated_at: string
+}
+
+// How the stomach felt during a workout after a timed meal. 'flat' = hungry /
+// low energy (ate too long before); 'heavy' = still full (too soon).
+export type FuelFeel = 'heavy' | 'fine' | 'flat'
+
+export interface FuelFeedback {
+  date: string
+  feel: FuelFeel
+  /** Minutes between eating and starting the workout. */
+  gapMin: number
+  kcal: number
+}
+
+export interface FuelMeal {
+  ateAt: string
+  /** Diary entries picked, so the card can redraw the window + reasons. */
+  entryIds: string[]
+  kcal: number
+  earliestMin: number
+  latestMin: number
+}
+
+// Window math lives in lib/fuel.ts.
+export interface FuelTimingState {
+  /** Personal shift applied to every window, minutes; clamped ±60. */
+  offsetMin: number
+  /** Last meal timed on the card, asked about after the next workout. */
+  last: FuelMeal | null
+  /** Recent feedback, newest last; pruned to 30. */
+  log: FuelFeedback[]
 }
 
 // Weekly cardio goal, in one of two granularities. 'simple' targets light
@@ -195,6 +229,8 @@ export interface MobilityStretch {
   /** Per-sitting hold length in seconds: the timer counts down from here and
    *  chimes at zero. null/absent = open-ended count-up (e.g. dead hangs). */
   holdSec?: number | null
+  /** The item template warm-ups bank into (lib/warmup.ts), auto-created. */
+  warmup?: boolean
 }
 
 // One banking of time against a stretch. Seconds, not minutes, so a 1:24 hold
@@ -205,6 +241,9 @@ export interface MobilityLogEntry {
   /** 'YYYY-MM-DD' the time was banked on. */
   date: string
   seconds: number
+  /** Set on a ticked warm-up drill: the workout + drill key it came from. */
+  workoutId?: string
+  drill?: string
 }
 
 export interface MobilityState {
@@ -527,6 +566,49 @@ export interface Workout {
   rest_seconds: number
   completed: boolean
   created_at: string
+  /** Pre-workout check-in. Null when skipped/"all good", or when started some
+   *  other way; absent until migration_workout_checkin.sql has been run. */
+  checkin?: WorkoutCheckin | null
+}
+
+/** How a flagged spot feels before lifting: sore → swap, sharp → skip. */
+export type PainLevel = 'sore' | 'sharp'
+
+export interface CheckinFlag {
+  /** A PAIN_SITES value ('low back', 'knee'…). */
+  site: string
+  side: BodySide
+  level: PainLevel
+}
+
+export interface CheckinSwap {
+  fromKey: string
+  fromName: string
+  toKey: string
+  toName: string
+}
+
+/** `workouts.checkin` jsonb — what hurt going in, and what that changed. */
+export interface WorkoutCheckin {
+  flags: CheckinFlag[]
+  swaps: CheckinSwap[]
+  /** Names of planned lifts left out because of the check-in. */
+  skipped: string[]
+  /** Next-day recovery for THIS workout: the 9:00 notification's answer and
+   *  the one given at the next start. Both kept. */
+  after?: { morning?: RecoveryAnswer; pre?: RecoveryAnswer }
+}
+
+export type MuscleFeel = 'fine' | 'sore' | 'very_sore' | 'sharp'
+export type JointFeel = 'fine' | 'achy' | 'sharp'
+
+export interface RecoveryAnswer {
+  /** ISO timestamp it was answered. */
+  at: string
+  /** Heatmap RegionId → feel, for the main muscles the workout worked. */
+  muscles: Record<string, { feel: MuscleFeel; side?: BodySide }>
+  /** PAIN_SITES value → feel, for the joints it loaded. */
+  joints: Record<string, { feel: JointFeel; side?: BodySide }>
 }
 
 export interface WorkoutExercise {

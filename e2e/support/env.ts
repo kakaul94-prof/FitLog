@@ -71,12 +71,24 @@ export const USERS = {
     email: 'heidi@e2e.test',
     password: 'heidi-password',
   },
+  // Profile: goals and settings, and sign-out (which ends every session of the account).
+  ivan: {
+    id: '99999999-0000-4000-8000-000000000009',
+    email: 'ivan@e2e.test',
+    password: 'ivan-password',
+  },
+  // Resilience: the offline queue, duplicate and lost requests, stale caches.
+  judy: {
+    id: 'a0a0a0a0-0000-4000-8000-000000000010',
+    email: 'judy@e2e.test',
+    password: 'judy-password',
+  },
 } as const
 
 export type TestUser = (typeof USERS)[keyof typeof USERS]
 
-export type SessionUser = 'alice' | 'carol' | 'dave' | 'erin' | 'frank' | 'grace' | 'heidi'
-export const SESSION_USERS: SessionUser[] = ['alice', 'carol', 'dave', 'erin', 'frank', 'grace', 'heidi']
+export type SessionUser = 'alice' | 'carol' | 'dave' | 'erin' | 'frank' | 'grace' | 'heidi' | 'ivan' | 'judy'
+export const SESSION_USERS: SessionUser[] = ['alice', 'carol', 'dave', 'erin', 'frank', 'grace', 'heidi', 'ivan', 'judy']
 
 /** Saved browser session for a user who signs in during setup (auth.setup.ts). */
 export const authFile = (user: SessionUser) => `e2e/.auth/${user}.json`

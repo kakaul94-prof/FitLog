@@ -23,6 +23,8 @@ export const EXERCISES: BuiltinExercise[] = [
   { key: 'db_bench_press', name: 'Dumbbell Bench Press', muscle: 'Chest', equipment: 'Dumbbell', kind: 'weighted' },
   { key: 'chest_fly', name: 'Chest Fly', muscle: 'Chest', equipment: 'Cable', kind: 'weighted' },
   { key: 'push_up', name: 'Push-Up', muscle: 'Chest', equipment: 'Bodyweight', kind: 'bodyweight' },
+  { key: 'machine_chest_press', name: 'Machine Chest Press', muscle: 'Chest', equipment: 'Machine', kind: 'weighted' },
+  { key: 'db_floor_press', name: 'Dumbbell Floor Press', muscle: 'Chest', equipment: 'Dumbbell', kind: 'weighted' },
   // Back
   { key: 'deadlift', name: 'Deadlift', muscle: 'Back', equipment: 'Barbell', kind: 'weighted' },
   { key: 'pull_up', name: 'Pull-Up', muscle: 'Back', equipment: 'Bodyweight', kind: 'bodyweight' },
@@ -31,10 +33,14 @@ export const EXERCISES: BuiltinExercise[] = [
   { key: 'barbell_row', name: 'Barbell Row', muscle: 'Back', equipment: 'Barbell', kind: 'weighted' },
   { key: 'db_row', name: 'Dumbbell Row', muscle: 'Back', equipment: 'Dumbbell', kind: 'weighted' },
   { key: 'seated_cable_row', name: 'Seated Cable Row', muscle: 'Back', equipment: 'Cable', kind: 'weighted' },
+  { key: 'chest_supported_row', name: 'Chest-Supported Row', muscle: 'Back', equipment: 'Machine', kind: 'weighted' },
   { key: 'face_pull', name: 'Face Pull', muscle: 'Rear Delts', equipment: 'Cable', kind: 'weighted' },
   // Legs
   { key: 'back_squat', name: 'Back Squat', muscle: 'Legs', equipment: 'Barbell', kind: 'weighted' },
   { key: 'front_squat', name: 'Front Squat', muscle: 'Legs', equipment: 'Barbell', kind: 'weighted' },
+  { key: 'safety_bar_squat', name: 'Safety Bar Squat', muscle: 'Legs', equipment: 'Barbell', kind: 'weighted' },
+  { key: 'belt_squat', name: 'Belt Squat', muscle: 'Legs', equipment: 'Machine', kind: 'weighted' },
+  { key: 'goblet_squat', name: 'Goblet Squat', muscle: 'Legs', equipment: 'Dumbbell', kind: 'weighted' },
   { key: 'leg_press', name: 'Leg Press', muscle: 'Legs', equipment: 'Machine', kind: 'weighted' },
   { key: 'lunge', name: 'Lunge', muscle: 'Legs', equipment: 'Dumbbell', kind: 'weighted' },
   { key: 'romanian_deadlift', name: 'Romanian Deadlift', muscle: 'Hamstrings', equipment: 'Barbell', kind: 'weighted' },
@@ -42,9 +48,11 @@ export const EXERCISES: BuiltinExercise[] = [
   { key: 'leg_extension', name: 'Leg Extension', muscle: 'Quads', equipment: 'Machine', kind: 'weighted' },
   { key: 'calf_raise', name: 'Calf Raise', muscle: 'Calves', equipment: 'Machine', kind: 'weighted' },
   { key: 'hip_thrust', name: 'Hip Thrust', muscle: 'Glutes', equipment: 'Barbell', kind: 'weighted' },
+  { key: 'cable_pull_through', name: 'Cable Pull-Through', muscle: 'Glutes', equipment: 'Cable', kind: 'weighted' },
   // Shoulders
   { key: 'overhead_press', name: 'Overhead Press', muscle: 'Shoulders', equipment: 'Barbell', kind: 'weighted' },
   { key: 'db_shoulder_press', name: 'Dumbbell Shoulder Press', muscle: 'Shoulders', equipment: 'Dumbbell', kind: 'weighted' },
+  { key: 'landmine_press', name: 'Landmine Press', muscle: 'Shoulders', equipment: 'Barbell', kind: 'weighted' },
   { key: 'lateral_raise', name: 'Lateral Raise', muscle: 'Shoulders', equipment: 'Dumbbell', kind: 'weighted' },
   // Arms
   { key: 'barbell_curl', name: 'Barbell Curl', muscle: 'Biceps', equipment: 'Barbell', kind: 'weighted' },

@@ -51,6 +51,16 @@ export function useRehab() {
       }).then(() => id)
     },
 
+    /** Several at once — sequential addInjury calls would each write over
+     *  the last, since every save spreads the same render's state. */
+    addInjuries: (list: Omit<Injury, 'id'>[]) =>
+      list.length
+        ? save({
+            ...state,
+            injuries: [...state.injuries, ...list.map((inj) => ({ ...inj, id: uid() }))],
+          })
+        : Promise.resolve(),
+
     updateInjury: patchInjury,
 
     resolveInjury: (id: string) =>

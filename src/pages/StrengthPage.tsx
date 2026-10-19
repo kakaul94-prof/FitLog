@@ -1,28 +1,31 @@
+import { RecoverySheet, useWorkoutCheckin } from '@/components/WorkoutCheckinSheet'
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Plus,
   Brain,
   Dumbbell,
   Play,
   Pencil,
-  CalendarDays,
+  CalendarClock,
   PersonStanding,
   ClipboardList,
   List,
   Target,
   HeartPulse,
+  type LucideIcon,
 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { PreWorkoutFuelTile } from '@/components/PreWorkoutFuel'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import {
   useWorkouts,
   useWorkout,
-  useCreateWorkout,
 } from '@/features/strength/useStrength'
-import { useRoutines, useStartFromRoutine } from '@/features/strength/useRoutines'
+import { useRoutines } from '@/features/strength/useRoutines'
 import { useRoutineMeta } from '@/features/strength/useRoutineMeta'
 import { useRehab } from '@/features/rehab/useRehab'
 import { activeInjuries } from '@/lib/rehab'
@@ -44,19 +47,51 @@ function lastDoneLabel(iso: string): string {
   )
 }
 
+const TILE =
+  'relative flex h-16 flex-col items-center justify-center gap-1 rounded-xl bg-card text-xs text-muted-foreground active:bg-accent disabled:opacity-50'
+
+function NavTile({
+  icon: Icon,
+  label,
+  aria = label,
+  alert = 0,
+  onClick,
+}: {
+  icon: LucideIcon
+  label: string
+  aria?: string
+  alert?: number
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={alert > 0 ? `${aria} — ${alert} open` : aria}
+      className={TILE}
+    >
+      <Icon className="h-5 w-5 text-foreground" />
+      {label}
+      {alert > 0 && (
+        <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive" />
+      )}
+    </button>
+  )
+}
+
 export function StrengthPage() {
   const nav = useNavigate()
   const { data: workouts } = useWorkouts()
   const { data: routines } = useRoutines()
   const { data: profile } = useProfile()
-  const create = useCreateWorkout()
-  const startFrom = useStartFromRoutine()
+  // ?recovery=<workoutId> — the 9:00 "how's your body?" notification lands here.
+  const [params, setParams] = useSearchParams()
+  const recoveryId = params.get('recovery')
+  const checkin = useWorkoutCheckin()
   const [menuOpen, setMenuOpen] = useState(false)
-  // Rehab lives in the Tools sheet; the header only grows an icon while
-  // something is actually open, so it's a live signal rather than chrome.
+  // The Rehab tile grows a red dot while an injury is open.
   const { state: rehab } = useRehab()
   const openInjuries = activeInjuries(rehab)
-  const [toolsOpen, setToolsOpen] = useState(false)
 
   // Next template in the rotation: the one after your most recently trained
   // template (wraps around, skipping rest). Uses your Program if you've set one
@@ -113,70 +148,55 @@ export function StrengthPage() {
   }, [meta])
 
   const startEmpty = async () => {
-    const w = await create.mutateAsync({ workout_date: todayISO(), name: 'Workout' })
-    nav(`/workout/${w.id}`)
+    const id = await checkin.start({ name: 'Workout', date: todayISO() })
+    if (id) nav(`/workout/${id}`)
   }
   const startNext = async () => {
     if (!nextRoutine) return
-    const id = await startFrom.mutateAsync({
+    const id = await checkin.start({
       routineId: nextRoutine.id,
       name: nextRoutine.name,
       date: todayISO(),
     })
-    nav(`/workout/${id}`)
+    if (id) nav(`/workout/${id}`)
   }
 
   return (
     <div className="flex min-h-[calc(100svh-4.25rem-env(safe-area-inset-bottom))] flex-col">
+      {checkin.sheet}
+      {recoveryId && (
+        <RecoverySheet
+          workoutId={recoveryId}
+          onClose={() => setParams({}, { replace: true })}
+        />
+      )}
       <PageHeader
         title="Exercise"
         action={
-          <div className="flex items-center gap-1">
-            {openInjuries.length > 0 && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => nav('/rehab')}
-                aria-label={`Rehab — ${openInjuries.length} open`}
-                className="text-destructive"
-              >
-                <HeartPulse className="h-5 w-5" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => nav('/lift/trainer')}
-              aria-label="Ask a trainer"
-            >
-              <Brain className="h-5 w-5" />
-            </Button>
-            <Button size="icon" onClick={() => setMenuOpen(true)} aria-label="Add">
-              <Plus className="h-5 w-5" />
-            </Button>
-          </div>
+          <Button size="icon" onClick={() => setMenuOpen(true)} aria-label="Add">
+            <Plus className="h-5 w-5" />
+          </Button>
         }
       />
-      <div className="flex flex-1 flex-col px-4 pb-2">
-        <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
+      <div className="space-y-3 px-4 pb-4 pt-2">
+        <Card className="min-h-36 p-4">
           {inProgress ? (
             <>
-              <span className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
+              <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-primary">
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
                 </span>
                 In progress
               </span>
-              <h2 className="max-w-full truncate px-2 text-3xl font-bold">
+              <h2 className="mt-1 truncate text-2xl font-bold">
                 {inProgress.name || 'Workout'}
               </h2>
-              <p className="mt-2 min-h-5 text-sm text-muted-foreground">
+              <p className="min-h-5 text-sm text-muted-foreground">
                 {progressLine}
               </p>
               <Button
-                size="lg"
-                className="mt-8 w-full max-w-xs"
+                className="mt-3 w-full"
                 onClick={() => nav(`/workout/${inProgress.id}`)}
               >
                 <Play className="h-4 w-4" /> Continue workout
@@ -188,84 +208,74 @@ export function StrengthPage() {
                 type="button"
                 onClick={() => nav('/program')}
                 aria-label="Edit program"
-                className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary"
+                className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary"
               >
                 Next up
                 <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
-              <h2 className="max-w-full truncate px-2 text-3xl font-bold">
+              <h2 className="mt-1 truncate text-2xl font-bold">
                 {nextRoutine.name}
               </h2>
-              <p className="mt-2 min-h-5 text-sm text-muted-foreground">
+              <p className="min-h-5 text-sm text-muted-foreground">
                 {metaLine}
               </p>
-              <Button
-                size="lg"
-                className="mt-8 w-full max-w-xs"
-                onClick={startNext}
-                disabled={startFrom.isPending}
-              >
-                <Play className="h-4 w-4" />
-                {startFrom.isPending ? 'Starting…' : 'Start workout'}
-              </Button>
-              {/* Full session stays one tap; the budget screen is opt-in. */}
-              <button
-                type="button"
-                className="mt-3 text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
-                onClick={() => nav(`/routines/${nextRoutine.id}/start`)}
-              >
-                Short on time?
-              </button>
+              <div className="mt-3 flex items-center gap-3">
+                <Button
+                  className="flex-1"
+                  onClick={startNext}
+                  disabled={checkin.isPending}
+                >
+                  <Play className="h-4 w-4" />
+                  {checkin.isPending ? 'Starting…' : 'Start workout'}
+                </Button>
+                {/* Full session stays one tap; the budget screen is opt-in. */}
+                <button
+                  type="button"
+                  className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
+                  onClick={() => nav(`/routines/${nextRoutine.id}/start`)}
+                >
+                  Short on time?
+                </button>
+              </div>
             </>
           ) : (
             <>
               <h2 className="text-2xl font-bold">No rotation yet</h2>
-              <p className="mt-2 max-w-[16rem] text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Create a workout template and your next session will queue up
                 here.
               </p>
-              <Button
-                size="lg"
-                className="mt-8 w-full max-w-xs"
-                onClick={() => nav('/routines/new')}
-              >
-                <ClipboardList className="h-4 w-4" /> New template
-              </Button>
-              <Button
-                variant="ghost"
-                className="mt-3 text-primary"
-                onClick={startEmpty}
-                disabled={create.isPending}
-              >
-                <Dumbbell className="h-4 w-4" />
-                {create.isPending ? 'Starting…' : 'Start empty workout'}
-              </Button>
+              <div className="mt-3 flex items-center gap-2">
+                <Button className="flex-1" onClick={() => nav('/routines/new')}>
+                  <ClipboardList className="h-4 w-4" /> New template
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="text-primary"
+                  onClick={startEmpty}
+                  disabled={checkin.isPending}
+                >
+                  <Dumbbell className="h-4 w-4" />
+                  {checkin.isPending ? 'Starting…' : 'Start empty workout'}
+                </Button>
+              </div>
             </>
           )}
-        </div>
+        </Card>
 
-        <div className="flex items-center justify-center gap-8 pb-3">
-          <button
-            type="button"
-            onClick={() => nav('/lift/templates')}
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground active:text-foreground"
-          >
-            Templates
-          </button>
-          <button
-            type="button"
-            onClick={() => nav('/lift/history')}
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground active:text-foreground"
-          >
-            History
-          </button>
-          <button
-            type="button"
-            onClick={() => setToolsOpen(true)}
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground active:text-foreground"
-          >
-            Tools
-          </button>
+        <div className="grid grid-cols-4 gap-2">
+          <PreWorkoutFuelTile className={cn(TILE, 'col-span-2')} />
+          <NavTile icon={Brain} label="Trainer" aria="Ask a trainer" onClick={() => nav('/lift/trainer')} />
+          <NavTile icon={ClipboardList} label="Templates" onClick={() => nav('/lift/templates')} />
+          <NavTile icon={CalendarClock} label="History" onClick={() => nav('/lift/history')} />
+          <NavTile icon={Target} label="Goals" onClick={() => nav('/lift/goals')} />
+          <NavTile icon={PersonStanding} label="Muscles" onClick={() => nav('/lift/volume')} />
+          <NavTile
+            icon={HeartPulse}
+            label="Rehab"
+            alert={openInjuries.length}
+            onClick={() => nav('/rehab')}
+          />
         </div>
       </div>
 
@@ -288,7 +298,7 @@ export function StrengthPage() {
                     setMenuOpen(false)
                     startEmpty()
                   }}
-                  disabled={create.isPending}
+                  disabled={checkin.isPending}
                   className="flex w-full items-center gap-3 p-4 text-left active:bg-accent disabled:opacity-50"
                 >
                   <Dumbbell className="h-4 w-4 text-muted-foreground" />
@@ -320,77 +330,6 @@ export function StrengthPage() {
               </Card>
               <button
                 onClick={() => setMenuOpen(false)}
-                className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>,
-          document.body,
-        )}
-
-      {toolsOpen &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40"
-            onClick={() => setToolsOpen(false)}
-          >
-            <div
-              className="mx-auto w-full max-w-md p-3"
-              onClick={(ev) => ev.stopPropagation()}
-            >
-              <Card className="overflow-hidden">
-                <div className="border-b border-border p-3 text-center text-xs text-muted-foreground">
-                  Tools
-                </div>
-                <button
-                  onClick={() => {
-                    setToolsOpen(false)
-                    nav('/lift/goals')
-                  }}
-                  className="flex w-full items-center gap-3 p-4 text-left active:bg-accent"
-                >
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Goals</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setToolsOpen(false)
-                    nav('/lift/volume')
-                  }}
-                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left active:bg-accent"
-                >
-                  <PersonStanding className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Muscle map</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setToolsOpen(false)
-                    nav('/lift/calendar')
-                  }}
-                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left active:bg-accent"
-                >
-                  <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Calendar</span>
-                </button>
-                <button
-                  onClick={() => {
-                    setToolsOpen(false)
-                    nav('/rehab')
-                  }}
-                  className="flex w-full items-center gap-3 border-t border-border p-4 text-left active:bg-accent"
-                >
-                  <HeartPulse className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Rehab</span>
-                  {openInjuries.length > 0 && (
-                    <span className="ml-auto rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive tabular-nums">
-                      {openInjuries.length}
-                    </span>
-                  )}
-                </button>
-              </Card>
-              <button
-                onClick={() => setToolsOpen(false)}
                 className="mt-2 w-full rounded-xl bg-card p-4 text-sm font-medium active:bg-accent"
               >
                 Cancel

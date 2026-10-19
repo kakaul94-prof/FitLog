@@ -138,6 +138,10 @@ test('Stop cancels a slow answer, and you can ask again', async ({ trainer, trai
 
   await chat.ask('Take your time')
   await expect(chat.thinking).toBeVisible()
+  // Stop only once the question is out: the app first gathers your log for
+  // context, and a Stop before that never sends it, so the next question
+  // would be the one to get the scripted "hang".
+  await expect.poll(() => trainer.requests.length).toBe(1)
   await chat.stopButton.click()
   await expect(chat.thinking).toBeHidden()
   await expect(chat.bubble('Take your time')).toBeVisible()

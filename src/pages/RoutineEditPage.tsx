@@ -18,7 +18,18 @@ import {
   Search,
   Save,
   GripVertical,
+  Flame,
+  Sparkles,
 } from 'lucide-react'
+import { WARMUP_DRILLS, findWarmupDrill } from '@/data/warmupDrills'
+import {
+  WARMUP_PREFIX,
+  isLiftKey,
+  isWarmupKey,
+  suggestWarmup,
+  warmupDrillKey,
+  warmupEstSec,
+} from '@/lib/warmup'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -66,9 +77,10 @@ type DraftEx = {
 const uid = () => Math.random().toString(36).slice(2)
 // Stable signature of the editable state, used to detect unsaved changes
 // (localId is a render-only key, so it's excluded).
-const serialize = (name: string, d: DraftEx[]) =>
+const serialize = (name: string, d: DraftEx[], warmup: string[]) =>
   JSON.stringify({
     name: name.trim(),
+    warmup,
     ex: d.map((e) => ({
       exercise_key: e.exercise_key,
       exercise_name: e.exercise_name,
@@ -119,6 +131,11 @@ export function RoutineEditPage() {
 
   const [name, setName] = useState('')
   const [draft, setDraft] = useState<DraftEx[]>([])
+  // Warm-up drill keys, in order. Kept apart from `draft` (no supersets, no
+  // targets, no drag) and saved as leading 'warmup:<key>' rows.
+  const [warmup, setWarmup] = useState<string[]>([])
+  const [pickingDrill, setPickingDrill] = useState(false)
+  const [warmupNote, setWarmupNote] = useState<string | null>(null)
   const [original, setOriginal] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [addingCardio, setAddingCardio] = useState(false)
@@ -142,10 +159,13 @@ export function RoutineEditPage() {
       loadedRef.current = true
       setName('New template')
       setDraft([])
-      setOriginal(serialize('New template', []))
+      setOriginal(serialize('New template', [], []))
     } else if (data?.routine) {
       loadedRef.current = true
-      const d: DraftEx[] = data.exercises.map((e) => ({
+      const w = data.exercises
+        .filter((e) => isWarmupKey(e.exercise_key))
+        .map((e) => warmupDrillKey(e.exercise_key))
+      const d: DraftEx[] = data.exercises.filter((e) => !isWarmupKey(e.exercise_key)).map((e) => ({
         localId: uid(),
         exercise_key: e.exercise_key,
         exercise_name: e.exercise_name,
@@ -162,11 +182,12 @@ export function RoutineEditPage() {
       }))
       setName(data.routine.name)
       setDraft(d)
-      setOriginal(serialize(data.routine.name, d))
+      setWarmup(w)
+      setOriginal(serialize(data.routine.name, d, w))
     }
   }, [isNew, data])
 
-  const dirty = original != null && serialize(name, draft) !== original
+  const dirty = original != null && serialize(name, draft, warmup) !== original
   const saving = saveRoutine.isPending || createRoutine.isPending
 
   // Prompt before leaving with unsaved edits (back arrow / Android gesture).
@@ -180,11 +201,27 @@ export function RoutineEditPage() {
 
   const persist = async () => {
     const clean = name.trim() || 'New template'
+    const exercises: DraftEx[] = [
+      ...warmup.map((k) => ({
+        localId: k,
+        exercise_key: WARMUP_PREFIX + k,
+        exercise_name: findWarmupDrill(k)?.name ?? k,
+        target_sets: null,
+        target_reps: null,
+        superset_group: null,
+        target_duration_min: null,
+        target_distance_mi: null,
+        target_zone: null,
+        intervals: null,
+        is_optional: false,
+      })),
+      ...draft,
+    ]
     if (isNew) {
       const r = await createRoutine.mutateAsync(clean)
-      await saveRoutine.mutateAsync({ id: r.id, name: clean, exercises: draft })
+      await saveRoutine.mutateAsync({ id: r.id, name: clean, exercises })
     } else {
-      await saveRoutine.mutateAsync({ id: id!, name: clean, exercises: draft })
+      await saveRoutine.mutateAsync({ id: id!, name: clean, exercises })
     }
   }
   const save = async () => {
@@ -203,6 +240,32 @@ export function RoutineEditPage() {
   }
 
   const blocks = toBlocks(draft)
+
+  // Warm-up suggestions are picked for the lifts currently in the draft.
+  const liftMuscle = (key: string) =>
+    key.startsWith('custom:')
+      ? custom?.find((c) => `custom:${c.id}` === key)?.muscle
+      : EXERCISES.find((e) => e.key === key)?.muscle
+  const suggest = () => {
+    const lifts = draft
+      .filter((e) => isLiftKey(e.exercise_key))
+      .map((e) => ({ name: e.exercise_name, muscle: liftMuscle(e.exercise_key) }))
+    const picks = suggestWarmup(lifts)
+    if (picks.length === 0) {
+      setWarmupNote(
+        lifts.length
+          ? "These lifts don't match any drills yet. Add drills by hand."
+          : 'Add your lifts first. Drills are picked for them.',
+      )
+      return
+    }
+    if (warmup.length && !confirm('Replace your warm-up with new suggestions?')) return
+    setWarmup(picks)
+    const names = [...new Set(lifts.map((l) => l.name))]
+    setWarmupNote(
+      `Picked for ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3} more` : ''}`,
+    )
+  }
 
   const openAdd = (ssWith?: string) => {
     setSupersetWith(ssWith)
@@ -596,6 +659,78 @@ export function RoutineEditPage() {
             placeholder="e.g. Push Day"
           />
         </div>
+
+        <Card className="space-y-2 border-dashed border-primary/40 p-3">
+          <div className="flex items-center gap-1.5 text-sm font-semibold">
+            <Flame className="h-4 w-4 text-primary" />
+            <span className="flex-1">Warm-up</span>
+            {warmup.length > 0 && (
+              <span className="text-xs font-normal text-muted-foreground">
+                ~{Math.max(1, Math.round(warmupEstSec(warmup) / 60))} min
+              </span>
+            )}
+          </div>
+          <Button variant="outline" className="w-full text-primary" onClick={suggest}>
+            <Sparkles className="h-4 w-4" /> Suggest from my lifts
+          </Button>
+          {warmupNote && <p className="text-xs text-muted-foreground">{warmupNote}</p>}
+          {warmup.length > 0 && (
+            <div className="divide-y divide-border">
+              {warmup.map((k) => {
+                const d = findWarmupDrill(k)
+                return (
+                  <div key={k} className="flex items-center gap-2 py-1">
+                    <div className="min-w-0 flex-1 text-sm">
+                      {d?.name ?? k}
+                      {d && (
+                        <div className="text-xs text-muted-foreground">
+                          {d.dose}
+                          {!d.holdSec && ` · ~${Math.max(1, Math.round(d.estSec / 60))} min`}
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Remove ${d?.name ?? k}`}
+                      onClick={() => setWarmup((w) => w.filter((x) => x !== k))}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {pickingDrill ? (
+            <div className="rounded-md border border-border">
+              <div className="max-h-56 divide-y divide-border overflow-y-auto">
+                {WARMUP_DRILLS.filter((d) => !warmup.includes(d.key)).map((d) => (
+                  <button
+                    key={d.key}
+                    onClick={() => {
+                      setWarmup((w) => [...w, d.key])
+                      setPickingDrill(false)
+                    }}
+                    className="block w-full p-2 text-left text-sm active:bg-accent"
+                  >
+                    {d.name} <span className="text-xs text-muted-foreground">· {d.dose}</span>
+                  </button>
+                ))}
+              </div>
+              <Button variant="ghost" className="w-full" onClick={() => setPickingDrill(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setPickingDrill(true)}
+              className="flex items-center gap-1.5 py-1 text-sm font-medium text-primary"
+            >
+              <Plus className="h-4 w-4" /> Add drill
+            </button>
+          )}
+        </Card>
 
         <div ref={containerRef} className="space-y-4 empty:hidden">
           {blocks.map((b) => {

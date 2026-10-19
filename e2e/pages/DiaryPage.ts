@@ -43,6 +43,23 @@ export class DiaryPage extends BasePage {
     return this.page.getByRole('button', { name, exact: true })
   }
 
+  /** Press and hold the first entry → Select multiple, then tap the rest. */
+  async selectEntries(first: Locator, ...rest: Locator[]): Promise<void> {
+    await this.openMenu(first)
+    await this.menuAction('Select multiple').click()
+    for (const row of rest) await row.click()
+  }
+
+  /** The bottom bar in selection mode. */
+  selectionAction(name: 'Move' | 'Save as meal' | 'Copy to day' | 'Delete'): Locator {
+    return this.page.getByRole('button', { name, exact: true })
+  }
+
+  /** The calorie ring's label: "N calories remaining" (goal + exercise − food). */
+  remaining(kcal: number): Locator {
+    return this.page.getByLabel(`${kcal} calories remaining`, { exact: true })
+  }
+
   /** A logged entry row; its accessible name is "{food name} {kcal}". */
   entryRow(foodName: string, kcal: number): Locator {
     return this.page.getByRole('button', { name: `${foodName} ${kcal}`, exact: true })

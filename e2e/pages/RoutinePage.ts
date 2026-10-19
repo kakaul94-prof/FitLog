@@ -1,6 +1,7 @@
 import { expect, type Locator } from '@playwright/test'
 import { escapeRegExp, startsWith } from '../support/text'
 import { BasePage } from './BasePage'
+import { CheckinSheet } from './CheckinSheet'
 
 /**
  * Workout templates: the list (/lift/templates) and the editor (/routines/:id).
@@ -15,6 +16,7 @@ export class RoutinePage extends BasePage {
   readonly saveButton = this.page.getByRole('button', { name: 'Save template' })
   // exact: names match as substrings by default, and "Back" would also match "Back Squat".
   readonly backButton = this.page.getByRole('button', { name: 'Back', exact: true })
+  readonly checkin = new CheckinSheet(this.page)
 
   /** A template in the list; the link opens the editor. */
   templateLink(name: string): Locator {
@@ -24,6 +26,7 @@ export class RoutinePage extends BasePage {
   /** Start a workout straight from the list; resolves to the new workout's id. */
   async start(name: string): Promise<string> {
     await this.templateLink(name).locator('..').getByRole('button', { name: 'Start' }).click()
+    await this.checkin.startWorkout()
     await expect(this.page).toHaveURL(/\/workout\/[0-9a-f-]{36}$/)
     return this.page.url().split('/').at(-1)!
   }

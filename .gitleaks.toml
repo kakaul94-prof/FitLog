@@ -1,0 +1,25 @@
+# gitleaks configuration (scripts/security-scan.sh, CI "Security scans" job).
+# Default rules, plus narrow, documented exceptions. Anything else that looks
+# like a secret is reported.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The Supabase CLI's local-development keys: public, identical on every machine"
+# JWTs whose issuer is "supabase-demo" (the e2e and API suites use them to
+# reach the disposable local stack; Supabase publishes them in its docs).
+regexes = ['''^eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vI''']
+
+[[allowlists]]
+description = "Fake secrets in tests that prove a leak check catches them, or that keys stay hidden"
+paths = [
+  '''(^|/)api-tests/tests/security/test_leak_scanner\.py$''',
+  '''(^|/)ai-evals/tests/test_checks\.py$''',  # the eval checks' secret detector
+  '''(^|/)testkit/tests/test_(leaks|config)\.py$''',  # find_leaks; keys kept out of repr()
+]
+
+[[allowlists]]
+description = "Installed dependencies and build output: never committed (see .gitignore)"
+# Only a local working-tree scan sees these; CI scans the git history.
+paths = ['''(^|/)(node_modules|\.venv|dist|reports|\.wrangler)/''']

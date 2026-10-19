@@ -1,3 +1,4 @@
+import { isWarmupKey } from '@/lib/warmup'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import {
@@ -48,7 +49,7 @@ export function useProgramPlannedVolume(routineIds: string[]) {
         .select('routine_id,exercise_key,exercise_name,target_sets')
         .in('routine_id', uniq)
       if (error) throw error
-      const rex = (rexData ?? []) as RoutineExRow[]
+      const rex = ((rexData ?? []) as RoutineExRow[]).filter((r) => !isWarmupKey(r.exercise_key))
 
       const { data: customs } = await supabase
         .from('custom_exercises')

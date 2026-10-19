@@ -71,6 +71,8 @@ alter table public.profiles add column if not exists step_goal integer;
 alter table public.profiles add column if not exists coach_enabled boolean not null default false;
 -- Trainer chat memory (see migration_trainer_memory.sql). [] = nothing saved.
 alter table public.profiles add column if not exists trainer_memory jsonb not null default '[]'::jsonb;
+-- Pre-workout fuel timing (see migration_fuel_timing.sql). null = never used.
+alter table public.profiles add column if not exists fuel_timing jsonb;
 -- Rehab centre: injuries, their plans, the rehab log and pain check-ins
 -- (see migration_rehab.sql). {} = nothing set up yet.
 alter table public.profiles add column if not exists rehab jsonb not null default '{}'::jsonb;
@@ -567,3 +569,237 @@ create trigger strength_goals_updated_at before update on public.strength_goals
 -- ============================================================
 -- Done. All tables have RLS enabled with owner-only access.
 -- ============================================================
+
+-- Pre-workout check-in (migration_workout_checkin.sql)
+alter table public.workouts
+  add column if not exists checkin jsonb;
+
+-- ============================================================
+-- Owner-scoped links: a row may only point at rows its own user owns.
+-- RLS checks the owner of the row being written, but Postgres checks a
+-- foreign key WITHOUT applying RLS, so the plain `references <table>(id)`
+-- links above let one user attach rows to another user's food, meal,
+-- routine or workout. This replaces each of them with a link that includes
+-- user_id, so both rows must share an owner. Same SQL as
+-- migration_owner_scoped_links.sql (which has a pre-flight check for hosted
+-- databases). Guarded by api-tests/tests/validation/test_cross_user_references.py.
+-- ============================================================
+-- 1. Every table that is linked to gets an (id, user_id) key to point at.
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['foods', 'meals', 'routines', 'workouts', 'workout_exercises'] loop
+    if not exists (
+      select 1 from pg_constraint
+      where conrelid = format('public.%I', t)::regclass and conname = t || '_id_user_id_key'
+    ) then
+      execute format('alter table public.%I add constraint %I unique (id, user_id)',
+                     t, t || '_id_user_id_key');
+    end if;
+  end loop;
+end $$;
+
+-- 2. Replace each one-column link with one that includes user_id. ON DELETE
+--    behaviour is unchanged; "set null (col)" clears only the link, never user_id.
+do $$
+declare
+  link record;
+  old_fk text;
+begin
+  for link in
+    select * from (values
+      ('recipe_ingredients', 'recipe_food_id',      'foods',             'cascade'),
+      ('recipe_ingredients', 'ingredient_food_id',  'foods',             'restrict'),
+      ('diary_entries',      'food_id',             'foods',             'set null (food_id)'),
+      ('meal_items',         'meal_id',             'meals',             'cascade'),
+      ('meal_items',         'food_id',             'foods',             'set null (food_id)'),
+      ('routine_exercises',  'routine_id',          'routines',          'cascade'),
+      ('workouts',           'source_routine_id',   'routines',          'set null (source_routine_id)'),
+      ('workout_exercises',  'workout_id',          'workouts',          'cascade'),
+      ('workout_sets',       'workout_id',          'workouts',          'cascade'),
+      ('workout_sets',       'workout_exercise_id', 'workout_exercises', 'cascade')
+    ) as l(child, col, parent, on_delete)
+  loop
+    -- The old key, whatever it was named: a one-column foreign key on `col`.
+    for old_fk in
+      select c.conname
+      from pg_constraint c
+      join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+      where c.contype = 'f'
+        and c.conrelid = format('public.%I', link.child)::regclass
+        and cardinality(c.conkey) = 1
+        and a.attname = link.col
+    loop
+      execute format('alter table public.%I drop constraint %I', link.child, old_fk);
+    end loop;
+
+    if not exists (
+      select 1 from pg_constraint
+      where conrelid = format('public.%I', link.child)::regclass
+        and conname = link.child || '_' || link.col || '_owner_fkey'
+    ) then
+      execute format(
+        'alter table public.%I add constraint %I foreign key (%I, user_id) '
+        'references public.%I (id, user_id) on delete %s',
+        link.child, link.child || '_' || link.col || '_owner_fkey', link.col,
+        link.parent, link.on_delete);
+    end if;
+  end loop;
+end $$;
+
+-- ============================================================
+-- Size limits on every free-text column (a 100 KB food name used to come
+-- back as a 500 with Postgres internals; notes stored whatever arrived).
+-- Same SQL as migration_text_limits.sql, which also explains the limits.
+-- Guarded by api-tests/tests/validation/test_payload_limits.py.
+-- ============================================================
+do $$
+declare
+  lim record;
+  over bigint;
+  problems text := '';
+begin
+  create temp table text_limits (tbl text, col text, max_chars int) on commit drop;
+  insert into text_limits values
+    -- Food names come from USDA / Open Food Facts too, so they get the most room.
+    ('foods', 'name', 300), ('diary_entries', 'food_name', 300), ('meal_items', 'food_name', 300),
+    -- Other names and labels a person types.
+    ('foods', 'brand', 200), ('diary_entries', 'brand', 200), ('meal_items', 'brand', 200),
+    ('meals', 'name', 200), ('routines', 'name', 200), ('workouts', 'name', 200),
+    ('custom_exercises', 'name', 200), ('custom_activities', 'name', 200),
+    ('exercise_entries', 'name', 200), ('workout_sets', 'pain', 200),
+    ('routine_exercises', 'exercise_name', 200), ('workout_exercises', 'exercise_name', 200),
+    ('workout_sets', 'exercise_name', 200), ('strength_goals', 'exercise_name', 200),
+    -- Free-form notes.
+    ('workouts', 'notes', 10000), ('workout_exercises', 'notes', 10000),
+    ('exercise_notes', 'notes', 10000),
+    -- Keys, units and codes the app writes.
+    ('routine_exercises', 'exercise_key', 200), ('workout_exercises', 'exercise_key', 200),
+    ('workout_sets', 'exercise_key', 200), ('strength_goals', 'exercise_key', 200),
+    ('exercise_notes', 'exercise_key', 200), ('form_videos', 'exercise_key', 200),
+    ('form_videos', 'storage_path', 500), ('foods', 'source_id', 100),
+    ('foods', 'serving_unit', 100), ('diary_entries', 'serving_unit', 100),
+    ('meal_items', 'serving_unit', 100), ('recipe_ingredients', 'unit', 100),
+    ('custom_exercises', 'muscle', 100), ('custom_exercises', 'equipment', 100),
+    ('measurements', 'type', 50), ('measurements', 'unit', 20), ('measurements', 'source', 50),
+    ('profiles', 'weight_unit', 20), ('profiles', 'distance_unit', 20);
+
+  -- 1. Pre-flight: nothing already stored may break a new limit.
+  for lim in select * from text_limits loop
+    execute format('select count(*) from public.%I where char_length(%I) > %s',
+                   lim.tbl, lim.col, lim.max_chars) into over;
+    if over > 0 then
+      problems := problems || format(E'\n  %s.%s: %s row(s) longer than %s characters',
+                                     lim.tbl, lim.col, over, lim.max_chars);
+    end if;
+  end loop;
+  if problems <> '' then
+    raise exception 'Not applied. Shorten these first (or raise the limit):%', problems;
+  end if;
+
+  -- 2. Add each limit once.
+  for lim in select * from text_limits loop
+    if not exists (
+      select 1 from pg_constraint
+      where conrelid = format('public.%I', lim.tbl)::regclass
+        and conname = lim.tbl || '_' || lim.col || '_length'
+    ) then
+      execute format('alter table public.%I add constraint %I check (char_length(%I) <= %s)',
+                     lim.tbl, lim.tbl || '_' || lim.col || '_length', lim.col, lim.max_chars);
+    end if;
+  end loop;
+end $$;
+
+-- ============================================================
+-- Backup restore in one transaction: all of it, or none of it
+-- (migration_restore_backup.sql). SECURITY INVOKER, so row-level security
+-- applies and every restored row is stamped with the caller's id; only the
+-- backup tables listed inside are ever touched.
+-- ============================================================
+create or replace function public.restore_backup(backup jsonb)
+returns void
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  uid uuid := auth.uid();
+  -- Parents first: the order the app exports them in (exportData.ts TABLES).
+  tables constant text[] := array[
+    'profiles', 'foods', 'recipe_ingredients', 'diary_entries', 'meals', 'meal_items',
+    'custom_activities', 'exercise_entries', 'custom_exercises', 'exercise_notes',
+    'strength_goals', 'routines', 'routine_exercises', 'workouts', 'workout_exercises',
+    'workout_sets', 'measurements'
+  ];
+  t text;
+  tbl_rows jsonb;
+  cols text;
+begin
+  if uid is null then
+    raise exception 'restore_backup: sign in first' using errcode = '42501';
+  end if;
+  if jsonb_typeof(backup) is distinct from 'object' then
+    raise exception 'restore_backup: a backup is an object of table rows' using errcode = '22023';
+  end if;
+
+  -- 1. Wipe, children first, each table the backup has. An older backup
+  --    without a table leaves that table as it is. The profile (tables[1]) is
+  --    kept and updated in place below.
+  for i in reverse array_length(tables, 1) .. 2 loop
+    t := tables[i];
+    if jsonb_typeof(backup -> t) = 'array' then
+      execute format('delete from public.%I where user_id = $1', t) using uid;
+    end if;
+  end loop;
+
+  -- 2. Re-insert, parents first, keeping the backup's ids so links hold. Only
+  --    columns the table has and the backup sets are written (the rest keep
+  --    their defaults), and every row is stamped with the caller's id.
+  foreach t in array tables loop
+    tbl_rows := backup -> t;
+    continue when jsonb_typeof(tbl_rows) is distinct from 'array'
+               or jsonb_array_length(tbl_rows) = 0;
+
+    if t = 'profiles' then
+      select string_agg(format('%1$I = r.%1$I', a.attname), ', ')
+        into cols
+        from pg_attribute a
+       where a.attrelid = 'public.profiles'::regclass
+         and a.attnum > 0 and not a.attisdropped
+         and a.attname <> 'id'
+         and jsonb_typeof(tbl_rows -> 0) = 'object'
+         and (tbl_rows -> 0) ? a.attname;
+      if cols is not null then
+        execute format(
+          'update public.profiles p set %s '
+          'from jsonb_populate_record(null::public.profiles, $1) r where p.id = $2', cols)
+        using tbl_rows -> 0, uid;
+      end if;
+      continue;
+    end if;
+
+    -- A row that isn't an object makes jsonb_populate_recordset fail, which
+    -- (like any other refused row) undoes the whole restore.
+    tbl_rows := (select jsonb_agg(r || jsonb_build_object('user_id', uid))
+                   from jsonb_array_elements(tbl_rows) r);
+    select string_agg(quote_ident(a.attname), ', ' order by a.attnum)
+      into cols
+      from pg_attribute a
+     where a.attrelid = format('public.%I', t)::regclass
+       and a.attnum > 0 and not a.attisdropped
+       and exists (select 1 from jsonb_array_elements(tbl_rows) r where r ? a.attname);
+    execute format(
+      'insert into public.%1$I (%2$s) select %2$s from jsonb_populate_recordset(null::public.%1$I, $1)',
+      t, cols)
+    using tbl_rows;
+  end loop;
+end;
+$$;
+
+comment on function public.restore_backup(jsonb) is
+  'Replace the caller''s data with a FitLog backup in one transaction (all or nothing).';
+
+revoke all on function public.restore_backup(jsonb) from public, anon;
+grant execute on function public.restore_backup(jsonb) to authenticated;
+

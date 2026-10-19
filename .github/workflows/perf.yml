@@ -1,0 +1,137 @@
+name: Performance
+
+# Load, stress, spike and soak tests (perf-tests/, k6) against a disposable
+# local Supabase stack on the runner. Nightly: the load scenario and a
+# 10-minute soak on dev; by hand: any scenario, for as long as you like, on any
+# branch. Results go to the quality dashboard (README → Quality metrics) and
+# never into a release gate; the smoke scenario that gates PRs is in ci.yml.
+on:
+  schedule:
+    - cron: '0 7 * * *' # 07:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Scenario (nightly = load + a 10-minute soak)
+        type: choice
+        options: [load, soak, stress, spike, nightly]
+        default: load
+      soak_duration:
+        description: 'Soak hold, e.g. 10m, 60m, 4h (soak only; the job limit is 6 h)'
+        default: '60m'
+      vus:
+        description: Peak virtual users (blank = the scenario's default)
+        default: ''
+
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Which scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      scenarios: ${{ steps.plan.outputs.scenarios }}
+      soak_duration: ${{ steps.plan.outputs.soak_duration }}
+    steps:
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          SCENARIO: ${{ inputs.scenario }}
+          SOAK: ${{ inputs.soak_duration }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] && [ "$SCENARIO" != nightly ]; then
+            echo "scenarios=[\"$SCENARIO\"]" >> "$GITHUB_OUTPUT"
+            echo "soak_duration=${SOAK:-60m}" >> "$GITHUB_OUTPUT"
+          else
+            echo 'scenarios=["load","soak"]' >> "$GITHUB_OUTPUT"
+            echo 'soak_duration=10m' >> "$GITHUB_OUTPUT"
+          fi
+
+  perf:
+    name: ${{ matrix.scenario }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 330 # a long soak plus setup; GitHub's ceiling is 6 h
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJSON(needs.plan.outputs.scenarios) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The nightly run measures dev; a manual run measures the branch it was started from.
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install wrangler (runs the Pages Functions), the suite's types and the Claude stub
+        run: |
+          npm ci
+          npm ci --prefix perf-tests
+          pip install -e ./testkit
+      - name: Type-check the suite
+        run: npm run typecheck --prefix perf-tests
+      - uses: grafana/setup-k6-action@v1.2.2
+        with:
+          k6-version: '2.3.0'
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Start test database
+        run: supabase start
+      - name: Point the suite at the local stack
+        run: bash api-tests/scripts/local-env.sh
+
+      - name: Run ${{ matrix.scenario }}
+        run: bash perf-tests/run.sh ${{ matrix.scenario }}
+        env:
+          SOAK_DURATION: ${{ needs.plan.outputs.soak_duration }}
+          VUS: ${{ inputs.vus }}
+
+      - name: Functions server log
+        if: failure()
+        run: tail -n 60 reports/perf/functions/wrangler.log reports/perf/functions/stub.log || true
+      - name: Upload the reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-${{ matrix.scenario }}
+          path: reports/perf/${{ matrix.scenario }}/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # One history record per workflow run, with every scenario it ran, appended
+  # to data/perf.json on gh-pages (the dashboard's Performance section).
+  publish:
+    name: Publish to the dashboard
+    needs: perf
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # the metrics scripts have no dependencies
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: perf-*
+          path: reports/perf
+      - name: Summarize this run
+        run: node metrics/perf-summary.mjs
+      - name: Check out the dashboard branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: _site
+      - name: Publish
+        run: bash metrics/publish-perf.sh _site

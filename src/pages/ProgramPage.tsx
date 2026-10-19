@@ -1,3 +1,4 @@
+import { useWorkoutCheckin } from '@/components/WorkoutCheckinSheet'
 import {
   useEffect,
   useLayoutEffect,
@@ -38,7 +39,6 @@ import { useProfile, useUpdateProfile } from '@/features/profile/useProfile'
 import {
   useRoutine,
   useRoutines,
-  useStartFromRoutine,
 } from '@/features/strength/useRoutines'
 import { useRoutineMeta, useRoutineCardioMap } from '@/features/strength/useRoutineMeta'
 import { useWorkouts } from '@/features/strength/useStrength'
@@ -62,6 +62,7 @@ import {
 } from '@/lib/program'
 import { programById } from '@/data/programs'
 import { isCardioKey } from '@/lib/cardio'
+import { isWarmupKey } from '@/lib/warmup'
 import type { DeloadState, NextOverride, ProgramItem } from '@/lib/database.types'
 import { cn } from '@/lib/utils'
 
@@ -103,7 +104,7 @@ export function ProgramPage() {
   const { data: routines } = useRoutines()
   const { data: workouts } = useWorkouts()
   const update = useUpdateProfile()
-  const startFrom = useStartFromRoutine()
+  const checkin = useWorkoutCheckin()
 
   const [seq, setSeq] = useState<ProgramItem[]>([])
   const [override, setOverride] = useState<NextOverride | string | null>(null)
@@ -229,12 +230,12 @@ export function ProgramPage() {
   }
   const startNext = async () => {
     if (!nextId) return
-    const id = await startFrom.mutateAsync({
+    const id = await checkin.start({
       routineId: nextId,
       name: routineName(nextId),
       date: todayISO(),
     })
-    nav(`/workout/${id}`)
+    if (id) nav(`/workout/${id}`)
   }
   const startDeload = () =>
     commit(seq, override, {
@@ -500,6 +501,7 @@ export function ProgramPage() {
 
   return (
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
+      {checkin.sheet}
       <PageHeader
         title="Program"
         left={
@@ -596,10 +598,10 @@ export function ProgramPage() {
               <Button
                 className="flex-1"
                 onClick={startNext}
-                disabled={startFrom.isPending}
+                disabled={checkin.isPending}
               >
                 <Play className="h-4 w-4" />
-                {startFrom.isPending ? 'Starting…' : 'Start workout'}
+                {checkin.isPending ? 'Starting…' : 'Start workout'}
               </Button>
               <Button variant="outline" onClick={skipNext}>
                 Skip
@@ -990,7 +992,7 @@ function targetLabel(e: {
 function DayExercises({ routineId }: { routineId: string }) {
   const nav = useNavigate()
   const { data, isLoading } = useRoutine(routineId)
-  const exercises = data?.exercises ?? []
+  const exercises = (data?.exercises ?? []).filter((e) => !isWarmupKey(e.exercise_key))
 
   return (
     <div

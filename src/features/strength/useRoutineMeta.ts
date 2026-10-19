@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { workoutDurationMin, estimateRoutineMinutes } from '@/lib/progression'
 import { isCardioKey } from '@/lib/cardio'
+import { isLiftKey } from '@/lib/warmup'
 import { bucketForZone } from '@/lib/cardioGoal'
 import { resolveContrib, REGION_LABEL, type RegionId } from '@/data/bodyMap'
 
@@ -43,7 +44,7 @@ export function useRoutineMeta(routineId: string | undefined) {
         target_duration_min?: number | null
       }[]
       const cardioRows = allRows.filter((r) => isCardioKey(r.exercise_key))
-      const rows = allRows.filter((r) => !isCardioKey(r.exercise_key))
+      const rows = allRows.filter((r) => isLiftKey(r.exercise_key))
       const { data: ws, error: we } = await supabase
         .from('workouts')
         .select('created_at, workout_date, workout_sets(created_at)')
@@ -147,7 +148,7 @@ export function useRoutineCardioMap() {
           info.cardioMinutes += min
           if (bucketForZone(r.target_zone) === 'heavy') info.heavyMinutes += min
           else info.lightMinutes += min
-        } else info.lifts++
+        } else if (isLiftKey(r.exercise_key)) info.lifts++
         map.set(r.routine_id, info)
       }
       return map

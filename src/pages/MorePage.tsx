@@ -179,7 +179,7 @@ export function MorePage() {
     setRestoring(true)
     setRestoreErr(null)
     try {
-      await restoreBackup(pending, user.id)
+      await restoreBackup(pending)
       window.location.reload() // reload so every cache + the profile re-read
     } catch (err) {
       setRestoreErr(err instanceof Error ? err.message : 'Restore failed.')

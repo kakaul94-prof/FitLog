@@ -50,6 +50,7 @@ Four layers, each where it is cheapest to prove what it proves:
 |---|---|--:|---|
 | Unit | [Vitest](https://vitest.dev) | 533 tests, ~10 s | The pure logic: calorie goals, macros, 1RM, progression, dates, nutrients |
 | API, database and security | pytest + pytest-bdd ([`api-tests/`](api-tests/README.md)) | 646 tests, ~1 min | Every table is private to its owner (through the API and in Postgres itself), forged tokens are refused everywhere, responses match strict contracts, bad input is refused cleanly, nothing leaks, and the AI functions send and handle exactly what they should |
+| Contracts (frontend ↔ API) | Vitest ([`contracts/`](#contract-tests)) | 24 interactions, 61 checks, ~10 s + the local stack | The requests the app really sends and the fields it really reads, recorded from the app's own code and replayed against the Pages Functions in-process and against PostgREST + Auth live: a renamed field, a changed type or a removed endpoint the frontend depends on fails by name |
 | AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 264 tests, ~2 min; live tier on demand; production canary every 6 h | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); the real model's behaviour on 87 cases x 3 runs, including fairness (counterfactual name, age and sex pairs scored for equivalence, and stated dietary and religious constraints), judged where rules can't decide (by hand, capped at a few dollars); and a canary of ten cases through the deployed production trainer every six hours, with a latency budget and GitHub-issue alerts |
 | End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
 | Performance | k6 ([`perf-tests/`](perf-tests/README.md)) | smoke on every PR (~2 min); load + soak nightly; stress and spike by hand | The backend holds its latency and error budgets under realistic user journeys at expected load, degrades predictably past it, and doesn't drift over a long run |
@@ -64,6 +65,7 @@ make test          # or, without make: bash scripts/test-all.sh test
 |---|---|
 | `make stack-up` / `make stack-down` | The local Supabase stack in Docker (shared by the API and E2E suites) |
 | `make test-unit` | Vitest (`npm test`; `npm run test:watch` while iterating) |
+| `make test-contracts` | Contract tests: consumer + Pages Functions offline (`npm run test:contracts`), then PostgREST + Auth against the local stack (`npm run test:contracts:supabase`) |
 | `make test-api` | The API suite, with JUnit XML and Allure results in `reports/` |
 | `make test-ai` | The AI trainer evals, tier 1 (deterministic, no API key) |
 | `make eval-ai-live` | The AI trainer evals, tier 2: the real Claude API, capped (needs a key; see `ai-evals/README.md`) |
@@ -74,6 +76,26 @@ make test          # or, without make: bash scripts/test-all.sh test
 | `make perf-smoke` / `perf-load` / `perf-stress` / `perf-soak` | The k6 scenarios against the local stack (see Performance tests); `make perf-clean` removes a stopped run's users |
 
 A `tsc + vite` build check is run before every commit to keep the tree type-safe. Security issues the suites and scans have found, and how each was fixed, are tracked in [`SECURITY-FINDINGS.md`](SECURITY-FINDINGS.md); what the AI trainer evals found is in [`AI-SAFETY-FINDINGS.md`](AI-SAFETY-FINDINGS.md).
+
+### Contract tests
+
+The frontend talks to two providers it does not deploy with: Supabase (PostgREST and Auth, called straight from the browser with supabase-js) and four Cloudflare Pages Functions under `/api/*`. The unit tests can't see that boundary and the E2E suite only sees it through the screen, so [`contracts/`](contracts) holds **consumer-driven contract tests** that pin it down from the app's side.
+
+**How it works.** The consumer tests (`contracts/consumer/`) run the app's own code — `signInWithPassword`, the diary's TanStack mutations, `fetchDiaryDay`, `askTrainer`, `scanPlate` — against a recording stand-in for the provider. Each test states the request the app must make and an example answer, then checks the app sent exactly that and read the example correctly. The recorded interactions are written to two reviewable files, `contracts/fitlog-web--supabase.json` and `contracts/fitlog-web--pages-functions.json`: the request as sent (secrets as `{{placeholders}}`), the status, the response fields the app reads as a JSON Schema, and the provider states each needs. The provider verifications then replay those files:
+
+- `contracts/provider/functions.verify.test.ts` calls the real handlers in `functions/api/` in-process, with the sign-in check and the Claude API scripted from the provider states (no wrangler, no network, milliseconds).
+- `contracts/provider/supabase.verify.test.ts` reads PostgREST's OpenAPI description of the live local database and checks every column the app reads or writes still exists with a compatible type and nullability, then sends each recorded request for real as a user created for the run and validates the answer. It refuses any URL that isn't the local stack.
+
+**What's covered** (24 interactions): sign-in and the 400 the login page shows; the current user; logging a food (and the 409 duplicate case the offline queue relies on); reading a day; editing servings, editing an entry, deleting one and several; the three reads behind the daily summary (entries, cardio calories, profile) and the profile update; the Ask-a-trainer stream with its 400/401/502/503; the meal-photo scan with its 400/401/422/503.
+
+```bash
+npm run test:contracts            # consumer tests + Pages Functions verification, offline, ~10 s
+npm run db:start                  # once; then point the Supabase half at it:
+source api-tests/scripts/local-env.sh && npm run test:contracts:supabase
+make test-contracts               # both halves
+```
+
+**When it fails.** The message names the interaction, the route and the field. A *provider* verification failure means the API or the database no longer gives the frontend what it reads: fix the provider (or the schema), or, if the change is intended, change the frontend and its consumer test together. A *consumer* test failure saying the contract file is out of date means the app's needs changed: review the diff with `npm run contracts:update`, commit the new file, and run both provider verifications against it. Never edit the `.json` files by hand; they are generated.
 
 ### End-to-end tests in Docker
 
@@ -128,11 +150,13 @@ flowchart LR
   PUSH --> E2E[E2E: supabase start, then Playwright container]
   PUSH --> SEC[Security scans: gitleaks, npm audit, pip-audit, ZAP]
   PUSH --> PERF[Perf smoke: supabase start, functions + stub, k6]
+  PUSH --> CONTRACTS[Contracts: consumer + functions offline, then supabase start + replay]
   API --> ALLURE[Allure report artifact]
   E2E -- on failure --> ART[Report uploaded as artifact]
   UNIT --> GATE{All three passed and branch is main?}
   API --> GATE
   E2E --> GATE
+  CONTRACTS --> GATE
   GATE -- yes --> DEPLOY[wrangler pages deploy to fitlog-prod]
   UNIT -. results .-> METRICS[Quality metrics: job summary + dashboard]
   API -. JUnit XML .-> METRICS
@@ -144,7 +168,7 @@ flowchart LR
   CANARY -. results .-> METRICS
 ```
 
-Production is only deployed from `main`, and only after the unit, API and E2E jobs all pass. The API job runs in parallel with E2E on its own runner, so it adds no time to a release. The security scans and the metrics job report on every run but are deliberately outside the release gate: findings are reviewed and fixed as their own changes, not by blocking a deploy. The performance smoke job fails a PR's checks but is not a `deploy-prod` dependency. The `dev` site still auto-deploys through Cloudflare's Git integration.
+Production is only deployed from `main`, and only after the unit, API, E2E and contract jobs all pass. The API job runs in parallel with E2E on its own runner, so it adds no time to a release. The security scans and the metrics job report on every run but are deliberately outside the release gate: findings are reviewed and fixed as their own changes, not by blocking a deploy. The performance smoke job fails a PR's checks but is not a `deploy-prod` dependency. The `dev` site still auto-deploys through Cloudflare's Git integration.
 
 A second workflow, [`perf.yml`](.github/workflows/perf.yml), runs the load scenario and a 10-minute soak against `dev` every night and publishes their headline numbers to the dashboard; by hand it runs any scenario (stress, spike, a long soak) on any branch.
 

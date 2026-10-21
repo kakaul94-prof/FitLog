@@ -7,6 +7,13 @@ Notable changes to `fitlog-testkit`. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `models.Routine` gains `rest_seconds: int`, the template's rest timer
+  (`migration_routine_rest.sql`, default 90). A suite pinned to 0.2.0 fails its
+  `routines` contract tests against a database with the column, since the
+  models forbid unknown fields; update the testkit alongside the migration.
+
 ## [0.2.0] - 2026-10-14
 
 ### Added

@@ -23,6 +23,7 @@ import {
   Sparkles,
   Brain,
   ArrowLeftRight,
+  LayoutTemplate,
 } from 'lucide-react'
 import { useUndoSwap } from '@/features/strength/useCheckin'
 import { flagsLabel } from '@/lib/checkin'
@@ -56,7 +57,17 @@ import {
   useStrengthGoalMap,
   type SessionPlan,
 } from '@/features/strength/useStrengthGoals'
-import { useRoutine } from '@/features/strength/useRoutines'
+import {
+  useRoutine,
+  useCreateRoutineFromWorkout,
+  useUpdateRoutineFromWorkout,
+} from '@/features/strength/useRoutines'
+import { SaveTemplateSheet } from '@/components/strength/SaveTemplateSheet'
+import {
+  DEFAULT_REST_SECONDS,
+  diffTemplate,
+  liftsFromWorkout,
+} from '@/lib/templateDiff'
 import { WarmupChecklist } from '@/components/strength/WarmupChecklist'
 import { isWarmupKey, warmupDrillKey } from '@/lib/warmup'
 import { useCoachEnabled, useUpdateProfile } from '@/features/profile/useProfile'
@@ -217,6 +228,32 @@ export function WorkoutPage() {
     return m
   }, [routineData])
 
+  // "Save changes to <template>?" on Done: this workout's lifts as template
+  // rows, diffed against the source template (its warm-up and cardio rows
+  // don't take part — they never become workout exercises).
+  const workoutLifts = useMemo(
+    () => liftsFromWorkout(exercises, sets),
+    [exercises, sets],
+  )
+  const sourceRoutine = routineData?.routine ?? null
+  const templateDiff = useMemo(
+    () =>
+      sourceRoutine
+        ? diffTemplate(
+            routineData?.exercises ?? [],
+            workoutLifts,
+            sourceRoutine.rest_seconds ?? DEFAULT_REST_SECONDS,
+            workout?.rest_seconds ?? DEFAULT_REST_SECONDS,
+          )
+        : null,
+    [sourceRoutine, routineData, workoutLifts, workout?.rest_seconds],
+  )
+  // 'update' = the Done sheet for a drifted template workout; 'new' = the
+  // "Save as template" button on an ad-hoc workout.
+  const [tplSheet, setTplSheet] = useState<'update' | 'new' | null>(null)
+  const updateTemplate = useUpdateRoutineFromWorkout()
+  const createTemplate = useCreateRoutineFromWorkout()
+
   // PR celebration queue: exercise cards report hits up here; we show one banner
   // at a time and auto-dismiss it after a few seconds (tap dismisses early).
   const [prs, setPrs] = useState<PRHit[]>([])
@@ -340,10 +377,16 @@ export function WorkoutPage() {
   }
   // Save the workout as done, then leave. leavingRef guarantees we exit even
   // before the cache reflects completed=true (so the blocker can't re-fire).
-  const finish = async () => {
+  const completeAndLeave = async () => {
     leavingRef.current = true
+    if (workoutId && !workout?.completed)
+      await updateWorkout.mutateAsync({ id: workoutId, completed: true })
+    nav('/strength')
+  }
+  const finish = async () => {
     // Nothing logged → discard rather than save a completed empty workout.
     if (discardBlank) {
+      leavingRef.current = true
       try {
         await del.mutateAsync(id!)
       } catch {
@@ -352,9 +395,50 @@ export function WorkoutPage() {
       nav('/strength')
       return
     }
-    if (workoutId && !workout?.completed)
-      await updateWorkout.mutateAsync({ id: workoutId, completed: true })
-    nav('/strength')
+    // A template workout that drifted from its template asks once before it
+    // closes: update the template, save a new one, or just finish.
+    if (!workout?.completed && sourceRoutine && templateDiff?.changed) {
+      setTplSheet('update')
+      return
+    }
+    await completeAndLeave()
+  }
+  const workoutRest = workout?.rest_seconds ?? DEFAULT_REST_SECONDS
+  const updateTemplateAndFinish = async () => {
+    if (!sourceRoutine) return
+    try {
+      await updateTemplate.mutateAsync({
+        routineId: sourceRoutine.id,
+        name: sourceRoutine.name,
+        lifts: workoutLifts,
+        rest_seconds: workoutRest,
+      })
+    } catch {
+      alert('Could not update the template — check your connection and try again.')
+      return
+    }
+    setTplSheet(null)
+    await completeAndLeave()
+  }
+  const saveNewTemplate = async (name: string) => {
+    const fromDone = tplSheet === 'update'
+    try {
+      const r = await createTemplate.mutateAsync({
+        name,
+        lifts: workoutLifts,
+        rest_seconds: workoutRest,
+      })
+      // An ad-hoc workout now belongs to its new template. A template workout
+      // keeps pointing at the one it was started from — the program rotation
+      // counts it as that day.
+      if (workoutId && !workout?.source_routine_id)
+        await updateWorkout.mutateAsync({ id: workoutId, source_routine_id: r.id })
+    } catch {
+      alert('Could not save the template — check your connection and try again.')
+      return
+    }
+    setTplSheet(null)
+    if (fromDone) await completeAndLeave()
   }
   const blocks: { group: number | null; exercises: WorkoutExercise[] }[] = []
   const seen = new Set<number>()
@@ -505,6 +589,15 @@ export function WorkoutPage() {
         >
           <Plus className="h-4 w-4" /> Add exercise
         </Button>
+        {workout && !workout.source_routine_id && exercises.length > 0 && (
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => setTplSheet('new')}
+          >
+            <LayoutTemplate className="h-4 w-4" /> Save as template
+          </Button>
+        )}
         <Button className="w-full" onClick={finish}>
           {workout?.completed ? (
             <>
@@ -515,6 +608,31 @@ export function WorkoutPage() {
           )}
         </Button>
       </div>
+      {tplSheet && workout && (
+        <SaveTemplateSheet
+          routineName={tplSheet === 'update' ? (sourceRoutine?.name ?? null) : null}
+          diff={tplSheet === 'update' ? templateDiff : null}
+          lifts={workoutLifts}
+          restSeconds={workoutRest}
+          defaultName={workout.name || 'New template'}
+          busy={
+            updateTemplate.isPending ||
+            createTemplate.isPending ||
+            updateWorkout.isPending
+          }
+          onUpdate={updateTemplateAndFinish}
+          onSaveNew={saveNewTemplate}
+          onSkip={
+            tplSheet === 'update'
+              ? () => {
+                  setTplSheet(null)
+                  void completeAndLeave()
+                }
+              : undefined
+          }
+          onClose={() => setTplSheet(null)}
+        />
+      )}
       {askOpen &&
         createPortal(
           <div className="fixed inset-0 z-50 mx-auto flex w-full max-w-md flex-col bg-background">

@@ -254,9 +254,11 @@ create table if not exists public.routines (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   name text not null,
   position integer not null default 0,
+  rest_seconds integer not null default 90,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.routines add column if not exists rest_seconds integer not null default 90;
 alter table public.routines enable row level security;
 drop policy if exists routines_rw_own on public.routines;
 create policy routines_rw_own on public.routines

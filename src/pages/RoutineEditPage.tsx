@@ -20,8 +20,11 @@ import {
   GripVertical,
   Flame,
   Sparkles,
+  Minus,
+  Timer,
 } from 'lucide-react'
 import { WARMUP_DRILLS, findWarmupDrill } from '@/data/warmupDrills'
+import { DEFAULT_REST_SECONDS, fmtRest } from '@/lib/templateDiff'
 import {
   WARMUP_PREFIX,
   isLiftKey,
@@ -75,12 +78,17 @@ type DraftEx = {
 }
 
 const uid = () => Math.random().toString(36).slice(2)
+// Rest-between-sets stepper bounds (seconds).
+const REST_STEP = 15
+const REST_MIN = 15
+const REST_MAX = 600
 // Stable signature of the editable state, used to detect unsaved changes
 // (localId is a render-only key, so it's excluded).
-const serialize = (name: string, d: DraftEx[], warmup: string[]) =>
+const serialize = (name: string, d: DraftEx[], warmup: string[], rest: number) =>
   JSON.stringify({
     name: name.trim(),
     warmup,
+    rest,
     ex: d.map((e) => ({
       exercise_key: e.exercise_key,
       exercise_name: e.exercise_name,
@@ -134,6 +142,8 @@ export function RoutineEditPage() {
   // Warm-up drill keys, in order. Kept apart from `draft` (no supersets, no
   // targets, no drag) and saved as leading 'warmup:<key>' rows.
   const [warmup, setWarmup] = useState<string[]>([])
+  // Rest timer seeded into every workout started from this template.
+  const [rest, setRest] = useState(DEFAULT_REST_SECONDS)
   const [pickingDrill, setPickingDrill] = useState(false)
   const [warmupNote, setWarmupNote] = useState<string | null>(null)
   const [original, setOriginal] = useState<string | null>(null)
@@ -159,7 +169,7 @@ export function RoutineEditPage() {
       loadedRef.current = true
       setName('New template')
       setDraft([])
-      setOriginal(serialize('New template', [], []))
+      setOriginal(serialize('New template', [], [], DEFAULT_REST_SECONDS))
     } else if (data?.routine) {
       loadedRef.current = true
       const w = data.exercises
@@ -180,14 +190,16 @@ export function RoutineEditPage() {
         intervals: e.intervals ?? null,
         is_optional: !!e.is_optional,
       }))
+      const r = data.routine.rest_seconds ?? DEFAULT_REST_SECONDS
       setName(data.routine.name)
       setDraft(d)
       setWarmup(w)
-      setOriginal(serialize(data.routine.name, d, w))
+      setRest(r)
+      setOriginal(serialize(data.routine.name, d, w, r))
     }
   }, [isNew, data])
 
-  const dirty = original != null && serialize(name, draft, warmup) !== original
+  const dirty = original != null && serialize(name, draft, warmup, rest) !== original
   const saving = saveRoutine.isPending || createRoutine.isPending
 
   // Prompt before leaving with unsaved edits (back arrow / Android gesture).
@@ -219,9 +231,9 @@ export function RoutineEditPage() {
     ]
     if (isNew) {
       const r = await createRoutine.mutateAsync(clean)
-      await saveRoutine.mutateAsync({ id: r.id, name: clean, exercises })
+      await saveRoutine.mutateAsync({ id: r.id, name: clean, exercises, rest_seconds: rest })
     } else {
-      await saveRoutine.mutateAsync({ id: id!, name: clean, exercises })
+      await saveRoutine.mutateAsync({ id: id!, name: clean, exercises, rest_seconds: rest })
     }
   }
   const save = async () => {
@@ -659,6 +671,39 @@ export function RoutineEditPage() {
             placeholder="e.g. Push Day"
           />
         </div>
+
+        <Card className="space-y-1.5 p-3">
+          <div className="flex items-center gap-2">
+            <Timer className="h-4 w-4 text-primary" />
+            <span className="flex-1 text-sm font-semibold">Rest between sets</span>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Less rest"
+              disabled={rest <= REST_MIN}
+              onClick={() => setRest((r) => Math.max(REST_MIN, r - REST_STEP))}
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+            <span className="min-w-[3.25rem] text-center text-base font-semibold tabular-nums">
+              {fmtRest(rest)}
+            </span>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="More rest"
+              disabled={rest >= REST_MAX}
+              onClick={() => setRest((r) => Math.min(REST_MAX, r + REST_STEP))}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Each workout from this template starts its timer here. Changing it
+            mid-workout only affects that workout, unless you update the template
+            when you finish.
+          </p>
+        </Card>
 
         <Card className="space-y-2 border-dashed border-primary/40 p-3">
           <div className="flex items-center gap-1.5 text-sm font-semibold">

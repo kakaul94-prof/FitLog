@@ -2,7 +2,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { isCardioKey } from '@/lib/cardio'
 import { isLiftKey } from '@/lib/warmup'
-import type { Routine, RoutineExercise, WorkoutCheckin } from '@/lib/database.types'
+import { mergeTemplateRows, type TemplateRow } from '@/lib/templateDiff'
+import type {
+  IntervalsTarget,
+  Routine,
+  RoutineExercise,
+  WorkoutCheckin,
+} from '@/lib/database.types'
 
 export function useRoutines() {
   return useQuery({
@@ -74,78 +80,175 @@ export function useDeleteRoutine() {
  *  exercise list (delete-all + re-insert in order). The editor stages edits in
  *  local state so the user can Save (this) or Discard — nothing is written on
  *  blur. Templates are tiny, so a replace is simpler/safer than diffing. */
+export type RoutineRowInput = Pick<
+  RoutineExercise,
+  | 'exercise_key'
+  | 'exercise_name'
+  | 'target_sets'
+  | 'target_reps'
+  | 'superset_group'
+  | 'target_duration_min'
+  | 'target_distance_mi'
+  | 'target_zone'
+  | 'intervals'
+  | 'is_optional'
+>
+
+/** The write behind the editor's Save and the workout page's "Update
+ *  template": rename, set the rest timer, replace every exercise row in order. */
+export async function saveRoutineRows({
+  id,
+  name,
+  exercises,
+  rest_seconds,
+}: {
+  id: string
+  name: string
+  exercises: RoutineRowInput[]
+  rest_seconds?: number
+}) {
+  // The rest column arrives with migration_routine_rest.sql — on a DB that
+  // predates it, retry the rename alone rather than block the save.
+  let { error: ue } = await supabase
+    .from('routines')
+    .update(rest_seconds != null ? { name, rest_seconds } : { name })
+    .eq('id', id)
+  if (ue && rest_seconds != null)
+    ({ error: ue } = await supabase.from('routines').update({ name }).eq('id', id))
+  if (ue) throw ue
+  const { error: de } = await supabase
+    .from('routine_exercises')
+    .delete()
+    .eq('routine_id', id)
+  if (de) throw de
+  if (exercises.length) {
+    // Cardio columns are only sent when the template actually has a cardio
+    // item, so lift-only templates keep saving on a DB that predates
+    // migration_routine_cardio.sql (unknown columns error even when null).
+    const hasCardio = exercises.some((e) => isCardioKey(e.exercise_key))
+    // Same guard for the time-budget column: only sent once something is
+    // actually flagged, so templates still save on a DB that predates
+    // migration_routine_time_budget.sql.
+    const hasOptional = exercises.some((e) => e.is_optional)
+    const rows = exercises.map((e, i) => ({
+      routine_id: id,
+      exercise_key: e.exercise_key,
+      exercise_name: e.exercise_name,
+      position: i,
+      target_sets: e.target_sets,
+      target_reps: e.target_reps,
+      superset_group: e.superset_group,
+      ...(hasOptional ? { is_optional: !!e.is_optional } : {}),
+      ...(hasCardio
+        ? {
+            target_duration_min: e.target_duration_min ?? null,
+            target_distance_mi: e.target_distance_mi ?? null,
+            target_zone: e.target_zone ?? null,
+            intervals: e.intervals ?? null,
+          }
+        : {}),
+    }))
+    const { error: ie } = await supabase.from('routine_exercises').insert(rows)
+    if (ie) throw ie
+  }
+  return { id }
+}
+
 export function useSaveRoutine() {
   const qc = useQueryClient()
   return useMutation({
+    mutationFn: saveRoutineRows,
+    onSuccess: (d) => {
+      qc.invalidateQueries({ queryKey: ['routines'] })
+      qc.invalidateQueries({ queryKey: ['routine', d.id] })
+    },
+  })
+}
+
+// Template rows built from a workout carry only the lift fields; fill the
+// cardio columns so the shared save can send a complete row.
+const toRowInput = (r: TemplateRow): RoutineRowInput => ({
+  exercise_key: r.exercise_key,
+  exercise_name: r.exercise_name,
+  target_sets: r.target_sets,
+  target_reps: r.target_reps,
+  superset_group: r.superset_group,
+  is_optional: r.is_optional ?? false,
+  target_duration_min: r.target_duration_min ?? null,
+  target_distance_mi: r.target_distance_mi ?? null,
+  target_zone: r.target_zone ?? null,
+  intervals: (r.intervals ?? null) as IntervalsTarget | null,
+})
+
+/** "Update <template>" on the workout Done sheet: the workout's lifts replace
+ *  the template's lift rows (its warm-up and cardio rows stay put) and the
+ *  workout's rest timer becomes the template's. */
+export function useUpdateRoutineFromWorkout() {
+  const qc = useQueryClient()
+  return useMutation({
     mutationFn: async ({
-      id,
+      routineId,
       name,
-      exercises,
+      lifts,
+      rest_seconds,
     }: {
-      id: string
+      routineId: string
       name: string
-      exercises: Pick<
-        RoutineExercise,
-        | 'exercise_key'
-        | 'exercise_name'
-        | 'target_sets'
-        | 'target_reps'
-        | 'superset_group'
-        | 'target_duration_min'
-        | 'target_distance_mi'
-        | 'target_zone'
-        | 'intervals'
-        | 'is_optional'
-      >[]
+      lifts: TemplateRow[]
+      rest_seconds: number
     }) => {
-      const { error: ue } = await supabase
-        .from('routines')
-        .update({ name })
-        .eq('id', id)
-      if (ue) throw ue
-      const { error: de } = await supabase
+      const { data: rex, error } = await supabase
         .from('routine_exercises')
-        .delete()
-        .eq('routine_id', id)
-      if (de) throw de
-      if (exercises.length) {
-        // Cardio columns are only sent when the template actually has a cardio
-        // item, so lift-only templates keep saving on a DB that predates
-        // migration_routine_cardio.sql (unknown columns error even when null).
-        const hasCardio = exercises.some((e) => isCardioKey(e.exercise_key))
-        // Same guard for the time-budget column: only sent once something is
-        // actually flagged, so templates still save on a DB that predates
-        // migration_routine_time_budget.sql.
-        const hasOptional = exercises.some((e) => e.is_optional)
-        const rows = exercises.map((e, i) => ({
-          routine_id: id,
-          exercise_key: e.exercise_key,
-          exercise_name: e.exercise_name,
-          position: i,
-          target_sets: e.target_sets,
-          target_reps: e.target_reps,
-          superset_group: e.superset_group,
-          ...(hasOptional ? { is_optional: !!e.is_optional } : {}),
-          ...(hasCardio
-            ? {
-                target_duration_min: e.target_duration_min ?? null,
-                target_distance_mi: e.target_distance_mi ?? null,
-                target_zone: e.target_zone ?? null,
-                intervals: e.intervals ?? null,
-              }
-            : {}),
-        }))
-        const { error: ie } = await supabase
-          .from('routine_exercises')
-          .insert(rows)
-        if (ie) throw ie
-      }
-      return { id }
+        .select('*')
+        .eq('routine_id', routineId)
+        .order('position')
+      if (error) throw error
+      const rows = mergeTemplateRows((rex ?? []) as RoutineExercise[], lifts)
+      await saveRoutineRows({
+        id: routineId,
+        name,
+        exercises: rows.map(toRowInput),
+        rest_seconds,
+      })
+      return { id: routineId }
     },
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ['routines'] })
       qc.invalidateQueries({ queryKey: ['routine', d.id] })
     },
+  })
+}
+
+/** "Save as new template" from a workout: a fresh routine holding the
+ *  workout's lifts and rest timer. Resolves to the new routine. */
+export function useCreateRoutineFromWorkout() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      name,
+      lifts,
+      rest_seconds,
+    }: {
+      name: string
+      lifts: TemplateRow[]
+      rest_seconds: number
+    }): Promise<Routine> => {
+      const { data, error } = await supabase
+        .from('routines')
+        .insert({ name })
+        .select('*')
+        .single()
+      if (error) throw error
+      const r = data as Routine
+      await saveRoutineRows({
+        id: r.id,
+        name,
+        exercises: lifts.map(toRowInput),
+        rest_seconds,
+      })
+      return r
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['routines'] }),
   })
 }
 
@@ -184,6 +287,15 @@ export function useStartFromRoutine() {
         name,
         source_routine_id: routineId,
       }
+      // Seed the rest timer from the template (migration_routine_rest.sql).
+      // A DB without the column errors here → the workout keeps its default.
+      const { data: rt } = await supabase
+        .from('routines')
+        .select('rest_seconds')
+        .eq('id', routineId)
+        .maybeSingle()
+      const tplRest = (rt as { rest_seconds?: number } | null)?.rest_seconds
+      if (typeof tplRest === 'number') row.rest_seconds = tplRest
       let { data: w, error: we } = await supabase
         .from('workouts')
         .insert(checkin ? { ...row, checkin } : { ...row })

@@ -170,6 +170,41 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # Consumer-driven contract tests (contracts/, also `make test-contracts`):
+  # the frontend's real API calls, recorded into contracts/*.json, replayed
+  # against the Pages Functions in-process and against the local Supabase
+  # stack's PostgREST + Auth. A renamed field, a changed type or a removed
+  # endpoint the app depends on fails here, by name, in under two minutes.
+  # No wrangler, no Python, and nothing leaves the runner but the local stack.
+  contracts:
+    name: Contract tests (frontend <-> API)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # The offline half first: the consumer tests must reproduce the committed
+      # contract files, then the Pages Functions are verified in-process.
+      - name: Consumer contracts and Pages Functions verification
+        run: npm run test:contracts
+        env:
+          CI: 'true' # an outdated or missing contract file fails instead of being rewritten
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Start test database
+        run: supabase start
+      - name: Point the verification at the local stack
+        run: bash api-tests/scripts/local-env.sh
+      - name: Supabase verification (PostgREST schema + live replay)
+        run: npm run test:contracts:supabase
+
   # Tier 1 of the AI trainer evals (ai-evals/, also `make test-ai`): the
   # function's own guardrails against prompt injection, information exposure,
   # unintended actions and a failing Claude, with Claude replaced by a scripted
@@ -404,7 +439,7 @@ jobs:
 
   deploy-prod:
     name: Deploy to production
-    needs: [unit, e2e, api, ai-evals] # the quality gate: only runs if every test job passed
+    needs: [unit, e2e, api, ai-evals, contracts] # the quality gate: only runs if every test job passed
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -6,6 +6,7 @@
 #
 #   stack-up       start the local Supabase stack (Docker)
 #   test-unit      Vitest unit tests
+#   test-contracts consumer-driven contract tests: frontend <-> Pages Functions + Supabase
 #   test-api       API / database / security suite (pytest + pytest-bdd)
 #   test-ai        AI trainer evals, tier 1: deterministic, Claude replaced by a stub
 #   eval-ai-live   AI trainer evals, tier 2: real Claude (key in ai-evals/.env.live), capped
@@ -62,6 +63,16 @@ stack_up() {
 test_unit() {
   need npm "install Node 22+"
   npm test
+}
+
+test_contracts() {
+  need npm "install Node 22+"
+  # The offline half (consumer + Pages Functions) runs first and needs nothing.
+  npm run test:contracts
+  stack_running || die "the local Supabase stack isn't running (needed to verify PostgREST + Auth): make stack-up"
+  # shellcheck source=/dev/null
+  source api-tests/scripts/local-env.sh >/dev/null
+  npm run test:contracts:supabase
 }
 
 test_api() {
@@ -149,13 +160,14 @@ shift || true
 case "$command" in
   stack-up) stack_up ;;
   test-unit) test_unit ;;
+  test-contracts) test_contracts ;;
   test-api) test_api "$@" ;;
   test-ai) test_ai "$@" ;;
   eval-ai-live) eval_ai_live "$@" ;;
   canary-prod) canary_prod "$@" ;;
   test-e2e) test_e2e ;;
   test-security) test_security ;;
-  test) stack_up && test_unit && test_api && test_ai && test_e2e ;;
+  test) stack_up && test_unit && test_contracts && test_api && test_ai && test_e2e ;;
   report) report ;;
   perf-smoke) perf smoke "$@" ;;
   perf-load) perf load "$@" ;;

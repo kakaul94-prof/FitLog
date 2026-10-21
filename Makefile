@@ -9,7 +9,7 @@
 SHELL := bash
 RUN := bash scripts/test-all.sh
 
-.PHONY: help stack-up test-unit test-api test-ai eval-ai-live canary-prod test-e2e test-security test report stack-down \
+.PHONY: help stack-up test-unit test-contracts test-api test-ai eval-ai-live canary-prod test-e2e test-security test report stack-down \
 	perf-smoke perf-load perf-stress perf-soak perf-clean
 
 help: ## List the targets
@@ -20,6 +20,9 @@ stack-up: ## Start the local Supabase stack (Docker)
 
 test-unit: ## Vitest unit tests
 	@$(RUN) test-unit
+
+test-contracts: ## Contract tests: the frontend's recorded API calls vs the Pages Functions (in-process) and the local Supabase stack
+	@$(RUN) test-contracts
 
 test-api: ## API, database and security tests (pytest + pytest-bdd), JUnit + Allure output
 	@$(RUN) test-api

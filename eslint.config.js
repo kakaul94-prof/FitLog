@@ -22,7 +22,7 @@ export default defineConfig([
   {
     // Playwright fixtures call `use()` (not a React hook) and take `{}` when
     // they need no other fixtures; both are the documented Playwright idiom.
-    files: ['e2e/**/*.ts'],
+    files: ['e2e/**/*.ts', 'contracts/**/*.ts'],
     languageOptions: { globals: globals.node },
     rules: {
       'react-hooks/rules-of-hooks': 'off',

@@ -17,7 +17,10 @@
     "test:e2e:docker": "supabase start && docker compose run --rm --build e2e",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
-    "db:reset": "supabase db reset"
+    "db:reset": "supabase db reset",
+    "test:contracts": "tsc -p tsconfig.contracts.json && vitest run --config vitest.contracts.config.ts --project consumer && vitest run --config vitest.contracts.config.ts --project provider-functions",
+    "test:contracts:supabase": "vitest run --config vitest.contracts.config.ts --project provider-supabase",
+    "contracts:update": "vitest run --config vitest.contracts.config.ts --project consumer --update"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
@@ -51,6 +54,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "ajv": "^8.20.0",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

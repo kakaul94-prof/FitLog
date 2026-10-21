@@ -11,18 +11,22 @@ import { todayISO, addDaysISO, computeStreak } from '@/lib/date'
 import { syncStreakNudge } from '@/lib/reminders'
 import type { DiaryEntry, Food, Meal, Nutrients } from '@/lib/database.types'
 
+/** One day's diary rows, oldest first: the read behind useDiary, and the call
+ *  the contract tests make (contracts/consumer/supabase.consumer.test.ts). */
+export async function fetchDiaryDay(date: string): Promise<DiaryEntry[]> {
+  const { data, error } = await supabase
+    .from('diary_entries')
+    .select('*')
+    .eq('entry_date', date)
+    .order('created_at')
+  if (error) throw error
+  return (data ?? []) as DiaryEntry[]
+}
+
 export function useDiary(date: string) {
   return useQuery({
     queryKey: ['diary', date],
-    queryFn: async (): Promise<DiaryEntry[]> => {
-      const { data, error } = await supabase
-        .from('diary_entries')
-        .select('*')
-        .eq('entry_date', date)
-        .order('created_at')
-      if (error) throw error
-      return (data ?? []) as DiaryEntry[]
-    },
+    queryFn: () => fetchDiaryDay(date),
   })
 }
 

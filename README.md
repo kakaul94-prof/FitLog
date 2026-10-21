@@ -2,6 +2,8 @@
 
 A phone-first Progressive Web App for tracking nutrition, cardio, strength, and body weight — a personal, modern take on the classic MyFitnessPal, built end-to-end with React 19, TypeScript, and Supabase.
 
+**How it is tested:** [TEST-STRATEGY.md](TEST-STRATEGY.md), the test strategy in brief: risks, layers, release gates and known gaps.
+
 **Live app:** [fitlog-9wl.pages.dev](https://fitlog-9wl.pages.dev)
 
 <!-- Add a screenshot or two here — a phone-sized capture of the Diary and Progress views goes a long way. -->

@@ -65,7 +65,7 @@ fi
 # wrangler serves dist/ with public/_headers and _redirects applied, like Pages.
 export WRANGLER_SEND_METRICS=false
 start_bg "$OUT/app-server.log" npx --no-install wrangler pages dev dist \
-  --ip 127.0.0.1 --port "$APP_PORT" --compatibility-date 2025-01-01
+  --ip 127.0.0.1 --port "$APP_PORT" --compatibility-date 2025-01-01 --compatibility-flags nodejs_als
 server=$BG_PID
 trap 'stop_tree $server' EXIT
 for _ in $(seq 1 60); do curl -sf "http://127.0.0.1:$APP_PORT/" >/dev/null && break; sleep 1; done

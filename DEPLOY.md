@@ -77,5 +77,5 @@ full-screen with its own icon, like a native app.
 - **Updating:** push to a branch and the matching site rebuilds — `dev` → dev site, `main` → prod site.
 - **Auth emails (prod):** the default Supabase mailer is rate-limited and lands in spam, so real-user signup-confirmation / password-reset emails are unreliable until you set **custom SMTP** (Authentication → Emails/SMTP). Meanwhile, confirm users manually in **Authentication → Users**, or temporarily disable "Confirm email".
 - **NordVPN:** its Threat Protection DNS filter blocks `supabase.co`. If the app can't load data with the VPN on, allowlist `*.supabase.co` in NordVPN → Settings → Threat Protection, or disable Threat Protection.
-- **Label scanning:** lives in a Pages Function (`functions/api/scan-label.ts`) that only runs on Cloudflare. Plain `npm run dev` won't serve it — test scanning on a deployed site, or run `npx wrangler pages dev dist --ai AI` after a build.
+- **Label scanning:** lives in a Pages Function (`functions/api/scan-label.ts`) that only runs on Cloudflare. Plain `npm run dev` won't serve it — test scanning on a deployed site, or run `npx wrangler pages dev dist --ai AI --compatibility-flags nodejs_als` after a build (the flag is what the Functions' Sentry SDK needs).
 - **Your data:** More → "Export my data (JSON)" downloads a full backup anytime.

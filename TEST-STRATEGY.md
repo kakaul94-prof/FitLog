@@ -1,14 +1,14 @@
 # FitLog test strategy
 
-FitLog is a phone-first food, cardio and strength tracker (React + Supabase) with an AI trainer chat, used in production by one person. This is how it is tested: the risks, the layer that catches each, the release gates, and the gaps. Counts are from `dev` on 2026-10-21.
+FitLog is a phone-first food, cardio and strength tracker (React + Supabase) with an AI trainer chat, used in production by one person. This is how it is tested: the risks, the layer that catches each, the release gates, and the gaps. Counts are from `dev` on 2026-10-22.
 
 **At a glance**
 
-- **1,674 tests gate every deploy**: 598 unit, 680 API and database, 264 AI guardrail, 132 end-to-end, in four parallel CI jobs on every pull request and push.
+- **1,761 tests gate every deploy**: 685 unit, 680 API and database, 264 AI guardrail, 132 end-to-end, in four parallel CI jobs on every pull request and push.
 - **Production deploys only from `main` after all four pass.** k6 smoke, security scans and quality metrics run alongside without blocking.
 - **My own database is never stubbed**: a throwaway Supabase stack in Docker per CI run, built from the production schema and RLS policies. Third-party and AI services always are.
 - **Flakiness is measured, not retried away**: 6 flaky E2E results in 3,009 over 35 pushes, all one app bug, none since its fix; 0 in 34,354 unit, API and AI results.
-- **Biggest gaps**: the production canary is built but not live, and the phone's native features (camera, GPS, Bluetooth) are tested by hand only.
+- **Biggest gaps**: the production canaries are built and wired but not yet live (they wait on a monitor account, §6), and the phone's native features (camera, GPS, Bluetooth) are tested by hand only.
 
 ## 1. Goals and risks
 
@@ -36,9 +36,11 @@ Goals: none of these reaches production; a failure names the risk and the screen
 | Trainer unusable when Claude fails | **AI evals tier 1**: [`test_dependency_failures.py`](ai-evals/tests/test_dependency_failures.py) | 18 simulated upstream failures (429, 529, bad key, cut stream, stall, token limit…) | 78 |
 | Slow under load, drifting over an hour | **k6**: [`perf-tests/`](perf-tests/README.md) | Replays the app's own request mix on users seeded with 90 days of history; a budget per endpoint group | 5 scenarios |
 | Secrets, vulnerable dependencies, missing headers | **Security scans**: [`security-scan.sh`](scripts/security-scan.sh) | gitleaks, npm audit, pip-audit, OWASP ZAP; report-only, tracked in [SECURITY-FINDINGS.md](SECURITY-FINDINGS.md) | 4 scans per PR |
-| Production answering worse after a deploy | **Canary**: [`prod-canary.yml`](.github/workflows/prod-canary.yml) | Shift-right: 10 eval cases through the deployed trainer every 6 h | built, not live (§6) |
+| Production broken for a user after a deploy | **App canary**: [`canary/`](canary/README.md), [`app-canary.yml`](.github/workflows/app-canary.yml) | Shift-right: the user journey (sign in, diary, log and delete a food, ask the trainer) through the live app every 30 min and after every deploy; a GitHub issue per outage | built, not live (§6) |
+| Production answering worse after a deploy | **AI canary**: [`prod-canary.yml`](.github/workflows/prod-canary.yml) | Shift-right: 10 eval cases through the deployed trainer twice a day | built, not live (§6) |
+| An error real use hits that no test did | **Error tracking**: Sentry ([`monitoring.ts`](src/lib/monitoring.ts), [`_middleware.ts`](functions/api/_middleware.ts)) | Browser and Pages Functions errors with the commit and a readable stack; everything personal scrubbed first ([`scrub.test.ts`](shared/scrub.test.ts)) | built, live on the next release (§6) |
 
-Every CI run executes the 1,674 tests of the four gating layers (unit, API, AI tier 1, E2E) plus 105 self-tests of the shared [`testkit/`](testkit/README.md).
+Every CI run executes the 1,761 tests of the four gating layers (unit, API, AI tier 1, E2E) plus 105 self-tests of the shared [`testkit/`](testkit/README.md).
 
 ## 3. Verification and validation
 
@@ -72,7 +74,8 @@ The rule: **a bug gets a failing test before it gets a fix**, as two commits, so
 - **Nightly** ([`perf.yml`](.github/workflows/perf.yml)): k6 load (30 users, 5 min) and a 10-minute soak with drift check; 3 runs, all within budget.
 - **By hand, spend-capped (~$0.80):** the live AI tier before a prompt change ships; the 2026-10-13 run met every bar on 58 cases.
 - **Flake rate is tracked, not hidden.** A retried E2E test is recorded as *flaky*, never as passed, on the [quality dashboard](https://kakaul94-prof.github.io/FitLog/) ([`metrics/`](metrics)); unit, API and AI tests get no retries. The one flaky test was an app bug, fixed in PR #8; the 29 real E2E failures were all on `dev`. A manual [flake hunt](.github/workflows/flake-hunt.yml) workflow exists.
-- **Production canary: built, not live.** Every 6 hours [`prod-canary.yml`](.github/workflows/prod-canary.yml) is meant to send 10 eval cases through the deployed trainer and open or close a GitHub issue per failure kind; runner, alerts and cost cap are tested against fakes ([`test_canary.py`](ai-evals/tests/test_canary.py), [`test_alerts.py`](ai-evals/tests/test_alerts.py)). **Every scheduled run so far has stopped at the secrets check**: the monitor account and its two secrets are not set up, so no canary has run against production.
+- **Production canaries: built, not live.** Two monitors, outside the gate, sharing one monitor account. The **app canary** ([`canary/`](canary/README.md), [`app-canary.yml`](.github/workflows/app-canary.yml)) drives the live site in a phone-sized Chromium every 30 minutes and after every production deploy: sign in, load today's diary, log a 1 kcal food and read it back from Postgres, delete it and read that back, and on the hour ask the trainer one question. The **AI canary** ([`prod-canary.yml`](.github/workflows/prod-canary.yml)) sends 10 eval cases through the deployed trainer twice a day. Each opens one GitHub issue per outage (`prod-app-canary`; `prod-ai-alert` per failure kind), comments on it while the problem lasts, and closes it on the first recovery; the app canary's issue names the failing step and links the run whose artifact holds the Playwright trace. Every run lands on the [quality dashboard](https://kakaul94-prof.github.io/FitLog/) as uptime and per-step latency. Runner, summariser, alerts and history are tested against fakes ([`canary/*.test.mjs`](canary), [`test_canary.py`](ai-evals/tests/test_canary.py), [`test_alerts.py`](ai-evals/tests/test_alerts.py)). **Why not live yet:** the first `prod-canary.yml` turned a missing secret into a warning on scheduled runs, so twelve runs between 2026-10-20 and 2026-10-22 showed green while skipping every step; both workflows now **fail** on a missing secret on every trigger, [`workflows.test.mjs`](canary/workflows.test.mjs) pins that, and what remains is the monitor account and its two secrets. This line changes to *live* only once both have run green on schedule for 24 hours.
+- **Error tracking in production: Sentry, from the next release.** The browser build ([`monitoring.ts`](src/lib/monitoring.ts): the error boundaries and uncaught errors) and the Pages Functions ([`_middleware.ts`](functions/api/_middleware.ts): every `/api` route) report to one Sentry project, tagged with the environment and the commit, with the production deploy uploading source maps so a stack trace reads as source. Errors only, every one, no tracing or replay (inside the free tier), capped at 20 events a page load. Privacy first, because this is health data: [`shared/scrub.ts`](shared/scrub.ts) drops bodies, query strings, cookies, auth headers and the user object and redacts emails, tokens and food or body quantities from the rest, proven by [`scrub.test.ts`](shared/scrub.test.ts) on events shaped like the SDKs build them. Off in `npm run dev`, in every test run and in CI builds, which have no DSN and are not production builds. Alerting is Sentry's new-issue email; a deliberate test error per runtime (`window.__fitlog.testError()`, `GET /api/sentry-test` behind the sign-in gate) proves the pipeline on a deployed build.
 
 ## 7. Reviewing AI-generated tests
 
@@ -91,7 +94,7 @@ Findings, on the separate [fitlog-e2e](https://github.com/kakaul94-prof/fitlog-e
 
 ## 8. What's next
 
-- **The canary is not live**: it needs a production monitor account and two secrets.
+- **The canaries are not live**: they need a production monitor account and two secrets, then 24 hours green on schedule before §6 says *live*. Sentry needs its DSN and the `nodejs_als` flag on the Pages projects, then a release.
 - **AI evals**: three fairness fixes await a live re-run; one finding may be variance; AI-06 still shows in 1 of 3 runs.
 - **Native features are tested by hand only** (rest timer, Health Connect, biometric lock, Bluetooth strap, camera); CI compiles the Android app but runs nothing on a device.
 - **Offline is only partly retry-safe**: diary, weigh-ins and cardio survive a restart; other offline writes drop if the app closes first.
@@ -99,4 +102,4 @@ Findings, on the separate [fitlog-e2e](https://github.com/kakaul94-prof/fitlog-e
 - **Coverage**: the fitlog-e2e cross-browser suite is auto-disabled for inactivity (repair open in [fitlog-e2e #2](https://github.com/kakaul94-prof/fitlog-e2e/pull/2)); no visual regression or accessibility checks here.
 - **Docs lag the code**: the api-tests and ai-evals READMEs say 646 tests and 17 failure modes (680 and 18 today); QUALITY-IMPACT.md is a 2026-10-13 snapshot.
 
-**Re-checking the numbers:** `npx vitest run` · `npx playwright test --list` · `pytest --collect-only -q` in `api-tests/`, `ai-evals/`, `testkit/` · `git show origin/gh-pages:data/history.json` · `gh run list --workflow prod-canary.yml`.
+**Re-checking the numbers:** `npx vitest run` · `npx playwright test --list` · `pytest --collect-only -q` in `api-tests/`, `ai-evals/`, `testkit/` · `git show origin/gh-pages:data/history.json` · `gh run list --workflow app-canary.yml` · `gh run list --workflow prod-canary.yml`.

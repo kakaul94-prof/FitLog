@@ -90,6 +90,7 @@ export WRANGLER_SEND_METRICS=false
 start_bg "$RUN_DIR/wrangler.log" npx --no-install wrangler pages dev "$ASSETS" \
   --ip "${FUNCTIONS_IP:-127.0.0.1}" --port "$FUNCTIONS_PORT" \
   --compatibility-date 2025-01-01 \
+  --compatibility-flags nodejs_als \
   --binding "VITE_SUPABASE_URL=$SUPABASE_URL" \
   --binding "VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" \
   --binding "ANTHROPIC_API_KEY=$FAKE_ANTHROPIC_KEY" \

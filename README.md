@@ -50,11 +50,12 @@ Four layers, each where it is cheapest to prove what it proves:
 
 | Layer | Tool | Size | What it proves |
 |---|---|--:|---|
-| Unit | [Vitest](https://vitest.dev) | 533 tests, ~10 s | The pure logic: calorie goals, macros, 1RM, progression, dates, nutrients |
+| Unit | [Vitest](https://vitest.dev) | 685 tests, ~10 s | The pure logic: calorie goals, macros, 1RM, progression, dates, nutrients; the canary's summariser, alerts and history; the Sentry scrubber |
 | API, database and security | pytest + pytest-bdd ([`api-tests/`](api-tests/README.md)) | 646 tests, ~1 min | Every table is private to its owner (through the API and in Postgres itself), forged tokens are refused everywhere, responses match strict contracts, bad input is refused cleanly, nothing leaks, and the AI functions send and handle exactly what they should |
 | Contracts (frontend ↔ API) | Vitest ([`contracts/`](#contract-tests)) | 24 interactions, 61 checks, ~10 s + the local stack | The requests the app really sends and the fields it really reads, recorded from the app's own code and replayed against the Pages Functions in-process and against PostgREST + Auth live: a renamed field, a changed type or a removed endpoint the frontend depends on fails by name |
-| AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 264 tests, ~2 min; live tier on demand; production canary every 6 h | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); the real model's behaviour on 87 cases x 3 runs, including fairness (counterfactual name, age and sex pairs scored for equivalence, and stated dietary and religious constraints), judged where rules can't decide (by hand, capped at a few dollars); and a canary of ten cases through the deployed production trainer every six hours, with a latency budget and GitHub-issue alerts |
+| AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 264 tests, ~2 min; live tier on demand; production canary twice a day | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); the real model's behaviour on 87 cases x 3 runs, including fairness (counterfactual name, age and sex pairs scored for equivalence, and stated dietary and religious constraints), judged where rules can't decide (by hand, capped at a few dollars); and a canary of ten cases through the deployed production trainer twice a day, with a latency budget and GitHub-issue alerts |
 | End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
+| Production monitoring | Playwright canary ([`canary/`](canary/README.md)) + Sentry | one journey every 30 min, ~2 min; errors as they happen | The deployed app still works for a user, from the outside (sign in, diary, log and delete a food, ask the trainer), with a GitHub issue per outage; and the errors real use hits, with the release and a readable stack, scrubbed of anything personal (see [Production monitoring](#production-monitoring)) |
 | Performance | k6 ([`perf-tests/`](perf-tests/README.md)) | smoke on every PR (~2 min); load + soak nightly; stress and spike by hand | The backend holds its latency and error budgets under realistic user journeys at expected load, degrades predictably past it, and doesn't drift over a long run |
 
 One command runs them all, bottom of the pyramid first, stopping at the first failing layer:
@@ -72,6 +73,7 @@ make test          # or, without make: bash scripts/test-all.sh test
 | `make test-ai` | The AI trainer evals, tier 1 (deterministic, no API key) |
 | `make eval-ai-live` | The AI trainer evals, tier 2: the real Claude API, capped (needs a key; see `ai-evals/README.md`) |
 | `make canary-prod` | The production AI canary once, by hand: ten cases through the deployed trainer, capped at $0.25 (needs `ai-evals/.env.canary`; see `ai-evals/README.md`) |
+| `npm run canary` | The production app canary once, by hand: the user journey through the live site as the monitor account (same `ai-evals/.env.canary`; see [`canary/README.md`](canary/README.md)) |
 | `make test-e2e` | Playwright, in its container |
 | `make test-security` | Security scans: gitleaks, npm audit, pip-audit and an OWASP ZAP baseline scan (report only) |
 | `make report` | Builds and opens the Allure report of the last API and AI-eval runs |
@@ -165,16 +167,20 @@ flowchart LR
   E2E -. results .-> METRICS
   SEC -. report only .-> SUMMARY[Job summary + artifact]
   PERF -. fails the PR, not the deploy .-> SUMMARY
-  DEPLOY -. every 6 h, after release .-> CANARY[Production AI canary: 10 cases through the live trainer]
+  DEPLOY -. after every deploy, then every 30 min .-> APPCANARY[Production app canary: the user journey through the live app]
+  DEPLOY -. twice a day .-> CANARY[Production AI canary: 10 cases through the live trainer]
+  APPCANARY -. on failure .-> APPALERT[GitHub issue labelled prod-app-canary]
   CANARY -. on failure .-> ALERT[GitHub issue labelled prod-ai-alert]
+  APPCANARY -. results .-> METRICS
   CANARY -. results .-> METRICS
+  DEPLOY -. errors in real use .-> SENTRY[Sentry: browser + Pages Functions, scrubbed, tagged with the commit]
 ```
 
 Production is only deployed from `main`, and only after the unit, API, E2E and contract jobs all pass. The API job runs in parallel with E2E on its own runner, so it adds no time to a release. The security scans and the metrics job report on every run but are deliberately outside the release gate: findings are reviewed and fixed as their own changes, not by blocking a deploy. The performance smoke job fails a PR's checks but is not a `deploy-prod` dependency. The `dev` site still auto-deploys through Cloudflare's Git integration.
 
 A second workflow, [`perf.yml`](.github/workflows/perf.yml), runs the load scenario and a 10-minute soak against `dev` every night and publishes their headline numbers to the dashboard; by hand it runs any scenario (stress, spike, a long soak) on any branch.
 
-After a release the [production AI canary](.github/workflows/prod-canary.yml) keeps watching: every six hours it sends ten of the trainer evals' cases through the live production trainer as a dedicated monitor account, and opens a GitHub issue labelled `prod-ai-alert` (one for the endpoint erroring or slowing past its p95 budget, another for answers below the quality bar) that it closes itself when a later run recovers. It is a monitor, not a gate: it cannot block a deploy, writes nothing in production, and refuses to run if a run could cost more than $0.25. Details and set-up in [`ai-evals/README.md`](ai-evals/README.md#production-canary-shift-right).
+After a release, two canaries and Sentry keep watching; what they check, how often, where alerts go and how to pause them is in [Production monitoring](#production-monitoring). They are monitors, not gates: none can block or slow a deploy.
 
 ### Quality metrics dashboard
 
@@ -190,7 +196,8 @@ Every CI run records its results so quality can be tracked over time, not just p
 | Suite duration + slowest 10 tests | Wall-clock time per suite; each slow test against its own 10-run average |
 | Last run status | Result, branch, commit link and per-job outcome, including infrastructure failures with no test results |
 | AI evals, live tier | Rule-check pass rate per category, cost, p50/p95 latency per run and per category against its budget (informative), and the fairness groups' parity |
-| Production canary | Pass rate, calls answered, p50/p95 latency and estimated cost per run through the live production trainer, every six hours, with the open-alert status read live from GitHub |
+| Production app canary | Uptime over 24 h, 7 and 30 days, journey p50/p95, p50/p95 and failures per step, and every run with its trigger and alert, from the user journey through the live app every 30 minutes; the open-alert status read live from GitHub |
+| Production AI canary | Pass rate, calls answered, p50/p95 latency and estimated cost per run through the live production trainer, twice a day, with the open-alert status read live from GitHub |
 
 **How flaky detection works.** In CI Playwright retries a failing test up to twice. Playwright then marks a test that failed and later passed as `flaky`, and the metrics keep that status rather than counting it as a pass. Retries keep a release from being blocked by a one-off timing problem without hiding it, and the dashboard shows which tests rely on them. Unit tests run with no retries on purpose, because they should be deterministic. For flakes rare enough to slip past retries, the manual [Flake hunt](.github/workflows/flake-hunt.yml) workflow runs every E2E test N times with retries off and ranks tests by failure rate.
 
@@ -201,6 +208,22 @@ Every CI run records its results so quality can be tracked over time, not just p
 3. On pushes to `main` and `dev`, the record is appended to `data/history.json` on the `gh-pages` branch (capped at 200 runs, ~0.6 MB), which GitHub Pages serves with a static Chart.js page. Git acts as the database, so there is no server and no paid service, and history is versioned. The alternative was deploying the page as a build artifact and re-downloading the previous history each time. That avoids bot commits, but one failed download would wipe the history.
 
 The `metrics` job is outside the release gate: `deploy-prod` depends only on the three test jobs, the metrics job has `continue-on-error`, and it runs alongside the deploy. A metrics failure can't block or slow a release. Records contain test names, statuses, durations and public run links only; no error text, logs or environment values are published.
+
+## Production monitoring
+
+Shift-right: the suites prove a release before it ships; these watch what shipped.
+
+| What | Checks | How often | Alerts |
+|---|---|---|---|
+| **App canary** ([`canary/`](canary/README.md), [`app-canary.yml`](.github/workflows/app-canary.yml)) | A phone-sized Chromium signs in to the live site as a dedicated monitor account, loads today's diary, logs a 1 kcal food and reads it back from the database, deletes it and reads that back, and asks the trainer one question | Every 30 minutes (the trainer on the hour only), after every production deploy, and on demand; about 2 minutes a run | A GitHub issue labelled `prod-app-canary`: one per outage, opened by the first failing run with the step, the error and the Playwright trace, commented on while it lasts, closed by the first run that recovers |
+| **AI canary** ([`ai-evals/README.md`](ai-evals/README.md#production-canary-shift-right), [`prod-canary.yml`](.github/workflows/prod-canary.yml)) | Ten of the trainer evals' cases through the live trainer, scored by the evals' own rule checks, with a latency budget | Twice a day; capped at $0.25 a run (about $0.05) | A GitHub issue labelled `prod-ai-alert`, one for the endpoint failing or slow, one for answers below the quality bar |
+| **Error tracking** (Sentry: [`src/lib/monitoring.ts`](src/lib/monitoring.ts), [`functions/api/_middleware.ts`](functions/api/_middleware.ts)) | Uncaught errors in the browser (the error boundaries included) and in the Pages Functions, tagged with the environment and the commit (`release`), with source maps uploaded by the production deploy so stack traces read as source | As they happen; errors only, no tracing, no session replay | Sentry's own new-issue email |
+
+Both canaries use one monitor account that holds nothing else; everything the app canary writes is named `Canary check …`, deleted in the same run, and swept at the start of the next, and every table is RLS owner-only, so it cannot touch a real user's data. A missing secret **fails** a canary run on every trigger, the schedule included; [`canary/workflows.test.mjs`](canary/workflows.test.mjs) keeps it that way. Every run is appended to the [quality dashboard](https://kakaul94-prof.github.io/FitLog/), which shows uptime and per-step latency.
+
+Sentry is privacy-first because this is health data: [`shared/scrub.ts`](shared/scrub.ts) drops request bodies, query strings, cookies, auth headers and the user object, redacts emails, tokens and food or body quantities everywhere else, and is proven by [`shared/scrub.test.ts`](shared/scrub.test.ts). It is off in `npm run dev`, in every test run and in CI builds (no DSN, not a production build), and capped at 20 events per page load.
+
+**Pause the canaries:** `gh workflow disable "Production app canary"` (and `"Production AI canary"`); `gh workflow enable` resumes. Open alert issues stay open until a run recovers. **Set-up** (once): a monitor user in the production Supabase project and the `PROD_CANARY_EMAIL` / `PROD_CANARY_PASSWORD` repository secrets for the canaries; for Sentry, `PROD_VITE_SENTRY_DSN`, `SENTRY_AUTH_TOKEN` (secrets) and `SENTRY_ORG`, `SENTRY_PROJECT` (variables) for the deploy, plus `SENTRY_DSN`, `SENTRY_ENVIRONMENT` and the `nodejs_als` compatibility flag on the Pages project (see Deployment).
 
 ## Getting Started
 
@@ -248,6 +271,7 @@ npm run dev       # http://localhost:5173
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run test:e2e:docker` | Start the local test DB and run the E2E suite in Docker |
 | `npm run test:e2e` | Run the E2E suite on the host (needs `npm run db:start`) |
+| `npm run canary` | Run the production app canary once against the live site (see Production monitoring) |
 | `npm run db:start` / `db:stop` / `db:reset` | Manage the local Supabase test stack |
 | `make test` / `test-api` / `test-ai` / `test-security` / `report` | Every test layer, the API suite, the AI evals, the security scans, the Allure report (see Testing) |
 | `make perf-smoke` / `perf-load` / `perf-stress` / `perf-soak` / `perf-clean` | The k6 performance scenarios (see Performance tests) |
@@ -263,8 +287,12 @@ The deploy job reads these GitHub repository secrets and skips itself until `CLO
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token with the *Cloudflare Pages: Edit* permission |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
 | `PROD_VITE_SUPABASE_URL` / `PROD_VITE_SUPABASE_ANON_KEY` / `PROD_VITE_USDA_API_KEY` | The production build variables (the same values set in the `fitlog-prod` Pages project) |
+| `PROD_VITE_SENTRY_DSN`, `SENTRY_AUTH_TOKEN` (secrets); `SENTRY_ORG`, `SENTRY_PROJECT` (variables) | Optional. The Sentry DSN baked into the production bundle, and what uploads the build's source maps under the commit SHA |
+| `PROD_CANARY_EMAIL` / `PROD_CANARY_PASSWORD` | The production monitor account the canaries sign in as (not used by the deploy) |
 
 Once the secrets are set, turn off automatic production deployments for `fitlog-prod` in Cloudflare (Settings → Build → Branch control), so the gated CI job is the only way to production.
+
+The Pages Functions read `SENTRY_DSN` and `SENTRY_ENVIRONMENT` from the Pages project's variables at runtime and need the **`nodejs_als` compatibility flag** (Settings → Functions → Compatibility flags) for Sentry's SDK; the deploy job checks the flag on `fitlog-prod` and refuses to deploy without it, since every `/api` route would fail. The dev project (`fitlog`) wants the same flag, plus `VITE_SENTRY_DSN` and `VITE_SENTRY_ENV=dev` as build variables if dev errors should reach Sentry too.
 
 ## Project Structure
 
@@ -284,6 +312,8 @@ e2e/
 ├── pages/         # Page Objects
 ├── tests/         # user-journey specs + RLS spec
 └── support/       # local-only env guard, Supabase API client
+canary/            # production app canary: the journey through the live site, alerts, publish, their tests
+shared/            # code the browser AND the Pages Functions use: Sentry scrubbing, the release tag
 testkit/           # shared Python package (fitlog-testkit): clients, token forger, factories, contracts, Claude stub
 api-tests/
 ├── tests/         # auth, authz, contracts, validation, security, functions, bdd
@@ -300,7 +330,7 @@ perf-tests/
 ├── journeys/      # viewDiary, logMeal, logWorkout, logWeight, askTrainer + the weighted mix
 ├── scenarios/     # smoke, load, stress, spike, soak (a few lines each)
 └── run.sh         # stack guard → functions + stub → k6 (native or Docker) → verdict → clean-up
-metrics/           # CI quality metrics, performance history + security-scan summary
+metrics/           # CI quality metrics, performance, canary + security-scan history and the dashboard
 scripts/           # test-all.sh (behind the Makefile), security-scan.sh
 compose.yaml       # `e2e` service (docker compose run e2e)
 Makefile           # make test, test-api, test-ai, eval-ai-live, canary-prod, test-security, report, perf-* ...

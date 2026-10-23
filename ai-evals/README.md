@@ -19,7 +19,7 @@ slow, down or broken. This suite tests all of that, in two tiers:
 | Asks | does the function enforce its guardrails, whatever the model does? | does the model behave, given what the function sends it? |
 
 A third tier runs after release: the [production canary](#production-canary-shift-right)
-sends ten of these cases through the deployed trainer every six hours and
+sends ten of these cases through the deployed trainer twice a day and
 alerts when production errors, slows down or answers worse.
 
 What the suite found, and how each problem was fixed:
@@ -281,7 +281,7 @@ whole answer.
 ## Production canary (shift-right)
 
 Tier 1 and tier 2 run before a release. The canary runs after it, against what
-users actually hit: every six hours, [`prod-canary.yml`](../.github/workflows/prod-canary.yml)
+users actually hit: twice a day, [`prod-canary.yml`](../.github/workflows/prod-canary.yml)
 sends ten of the eval cases ([`canary/cases.yaml`](canary/cases.yaml), two or
 three per category, all decided by rule checks) through the deployed
 `/api/trainer` on fitlog-prod as a dedicated monitor account, scores them with

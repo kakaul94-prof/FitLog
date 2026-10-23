@@ -473,6 +473,37 @@ jobs:
           cache: npm
       - if: steps.gate.outputs.ready == 'true'
         run: npm ci
+      # The Pages Functions load Sentry's SDK (functions/api/_middleware.ts),
+      # which needs the nodejs_als compatibility flag on the project (Cloudflare
+      # → fitlog-prod → Settings → Functions → Compatibility flags). Deploying
+      # without it would break every /api route, so look first: a missing flag
+      # stops the deploy and the previous version keeps serving; settings that
+      # can't be read are a warning, not a block.
+      - if: steps.gate.outputs.ready == 'true'
+        name: Check the Functions runtime has the flag Sentry needs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          project=$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/fitlog-prod") || project=''
+          ok=$(printf '%s' "$project" | jq -r '.success' 2>/dev/null) || ok=''
+          if [ "$ok" != "true" ]; then
+            echo "::warning::Could not read fitlog-prod's settings to confirm the nodejs_als compatibility flag; deploying anyway."
+            exit 0
+          fi
+          flags=$(printf '%s' "$project" | jq -r '.result.deployment_configs.production.compatibility_flags // [] | join(" ")')
+          case " $flags " in
+            *" nodejs_als "* | *" nodejs_compat "*) echo "Functions compatibility flags: $flags" ;;
+            *)
+              echo "::error::fitlog-prod's production Functions have no nodejs_als compatibility flag (flags: '${flags:-none}'). The Sentry SDK in functions/api/_middleware.ts needs it and deploying would break every /api route. Add it in Cloudflare → fitlog-prod → Settings → Functions → Compatibility flags (production), then re-run this job."
+              exit 1
+              ;;
+          esac
+      # Sentry: the DSN is baked into the bundle like the other VITE_ values;
+      # the org, project and token let vite.config.ts upload this build's source
+      # maps under the commit SHA (and delete them from dist/ before it ships).
+      # All optional: without them the build is exactly what it was.
       - if: steps.gate.outputs.ready == 'true'
         name: Build with production settings
         run: npm run build
@@ -480,11 +511,17 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.PROD_VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.PROD_VITE_SUPABASE_ANON_KEY }}
           VITE_USDA_API_KEY: ${{ secrets.PROD_VITE_USDA_API_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.PROD_VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENV: production
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
       # Uploads dist/ plus the functions/ API routes. Runtime secrets and
-      # bindings (e.g. the Anthropic key, Workers AI) stay in Cloudflare.
+      # bindings (e.g. the Anthropic key, Workers AI, the Sentry DSN) stay in
+      # Cloudflare. The commit hash is what the deployment shows in Cloudflare.
       - if: steps.gate.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=fitlog-prod --branch=main
+          command: pages deploy dist --project-name=fitlog-prod --branch=main --commit-hash=${{ github.sha }}

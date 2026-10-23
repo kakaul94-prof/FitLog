@@ -1,0 +1,159 @@
+# The production app canary: the journey a real user makes, through the REAL
+# deployed app (fitlog-prod) in a phone-sized Chromium, as a dedicated monitor
+# account: sign in, load today's diary, log a food and see it saved, delete it,
+# ask the trainer (canary/). Every 30 minutes, after every production deploy,
+# and on demand.
+#
+# Shift-right: the test suites prove a release before it ships; this proves the
+# shipped app still works for a user, from the outside. It is a monitor, not a
+# gate: no deploy job depends on it and nothing here can block or slow one.
+#
+# What it touches in production: a sign-in and sign-out of the monitor account,
+# one 1 kcal diary entry named "Canary check <run>" that the same run deletes
+# (and the next run sweeps if this one crashed), and on the hour one POST to
+# /api/trainer, which writes nothing. The account holds nothing else and is
+# safe to delete. Everything it writes is its own: every table is RLS
+# owner-only, so it cannot see or touch a real user's rows.
+#
+# A missing secret FAILS the run, on every trigger, the schedule included (the
+# first version of prod-canary.yml warned and skipped instead, and showed green
+# for a week without running once; canary/workflows.test.mjs keeps it so).
+#
+# Alerts are GitHub issues labelled prod-app-canary (canary/alerts.mjs): one
+# per outage, opened by the first failing run, commented on while it lasts,
+# closed by the first run that recovers. The issue names the failing step and
+# the error and links the run, whose artifact holds the Playwright trace.
+# Every run is appended to data/app-canary.json on the gh-pages branch, which
+# the quality dashboard charts as uptime and step latency.
+#
+# Repository secrets: PROD_VITE_SUPABASE_URL and PROD_VITE_SUPABASE_ANON_KEY
+# (the deploy already uses them), PROD_CANARY_EMAIL and PROD_CANARY_PASSWORD
+# (a user created in the production Supabase project for this and nothing
+# else; the AI canary uses the same two). The site defaults to
+# https://fitlog-prod.pages.dev; a PROD_SITE_URL repository variable overrides it.
+#
+# Pause it: `gh workflow disable "Production app canary"` (and enable to resume).
+# GitHub runs scheduled workflows from the default branch only, and switches
+# the schedule off after 60 days without a commit; the dashboard's "last run"
+# tile shows either.
+name: Production app canary
+
+on:
+  schedule:
+    - cron: '0 * * * *' # on the hour: the whole journey, the trainer included (one Claude call)
+    - cron: '30 * * * *' # on the half hour: the same without the trainer, so AI spend stays at 24 calls a day
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      trainer:
+        description: Ask the trainer too (one Claude call, about $0.003)
+        type: boolean
+        default: true
+      drill:
+        description: Break the run on purpose to prove the alerting (the next real run closes the issue)
+        type: choice
+        options: [none, selector]
+        default: none
+
+concurrency:
+  group: app-canary
+  cancel-in-progress: false
+
+permissions:
+  contents: write # append the run to data/app-canary.json on the gh-pages branch
+  issues: write # open, comment on and close prod-app-canary issues
+
+jobs:
+  canary:
+    name: Canary against production
+    # After CI on main, only when it deployed: a red CI run ships nothing, so
+    # there is nothing new to check (the schedule still runs regardless).
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || github.event_name == 'workflow_run' && 'deploy' || 'manual' }}
+      # The trainer step runs on the hourly schedule, after a deploy, and by hand unless switched off.
+      CANARY_TRAINER: ${{ github.event_name == 'workflow_dispatch' && inputs.trainer || github.event_name == 'workflow_run' || github.event.schedule == '0 * * * *' }}
+      CANARY_DRILL: ${{ github.event_name == 'workflow_dispatch' && inputs.drill || 'none' }}
+      CANARY_SITE_URL: ${{ vars.PROD_SITE_URL }}
+    steps:
+      - name: Check the secrets are configured
+        env:
+          SUPABASE_URL: ${{ secrets.PROD_VITE_SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.PROD_VITE_SUPABASE_ANON_KEY }}
+          EMAIL: ${{ secrets.PROD_CANARY_EMAIL }}
+          PASSWORD: ${{ secrets.PROD_CANARY_PASSWORD }}
+        run: |
+          missing=()
+          [ -n "$SUPABASE_URL" ] || missing+=(PROD_VITE_SUPABASE_URL)
+          [ -n "$ANON_KEY" ] || missing+=(PROD_VITE_SUPABASE_ANON_KEY)
+          [ -n "$EMAIL" ] || missing+=(PROD_CANARY_EMAIL)
+          [ -n "$PASSWORD" ] || missing+=(PROD_CANARY_PASSWORD)
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::The canary cannot run: add these repository secrets: ${missing[*]} (see canary/README.md). A canary that skips is not a canary, so this fails on every trigger, the schedule included."
+            exit 1
+          fi
+          echo "secrets: all present"
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The dashboard data, checked out first so the publish step can append to it.
+      - name: Check out the dashboard branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: _site
+
+      - name: Run the canary
+        id: run
+        env:
+          CANARY_SUPABASE_URL: ${{ secrets.PROD_VITE_SUPABASE_URL }}
+          CANARY_SUPABASE_ANON_KEY: ${{ secrets.PROD_VITE_SUPABASE_ANON_KEY }}
+          CANARY_EMAIL: ${{ secrets.PROD_CANARY_EMAIL }}
+          CANARY_PASSWORD: ${{ secrets.PROD_CANARY_PASSWORD }}
+        run: npm run canary
+
+      # From here on, steps run whether the canary passed or failed: a failing
+      # run is exactly when an issue must be opened, and a passing one is when
+      # an open issue gets closed. The monitor's credentials are passed only so
+      # the summary can strip them from any error text.
+      - name: Summarize the run
+        if: ${{ !cancelled() }}
+        id: summary
+        env:
+          CANARY_EMAIL: ${{ secrets.PROD_CANARY_EMAIL }}
+          CANARY_PASSWORD: ${{ secrets.PROD_CANARY_PASSWORD }}
+        run: node canary/summarize.mjs reports/app-canary/playwright.json reports/app-canary/summary.json
+
+      - name: Open, update or close the alert issue
+        if: ${{ !cancelled() && steps.summary.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANARY_EMAIL: ${{ secrets.PROD_CANARY_EMAIL }}
+          CANARY_PASSWORD: ${{ secrets.PROD_CANARY_PASSWORD }}
+        run: node canary/alerts.mjs reports/app-canary/summary.json --out reports/app-canary/alerts.json
+
+      # Every run is data, the failed ones most of all: the trace lives here.
+      - name: Upload the results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-canary
+          path: reports/app-canary
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Publish to the dashboard
+        if: ${{ !cancelled() && steps.summary.outcome == 'success' }}
+        run: bash canary/publish.sh _site

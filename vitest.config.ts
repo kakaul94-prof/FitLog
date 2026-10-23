@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts', 'metrics/**/*.test.mjs'],
+    include: ['src/**/*.test.ts', 'shared/**/*.test.ts', 'canary/**/*.test.{ts,mjs}', 'metrics/**/*.test.mjs'],
     environment: 'node',
     // CI also writes machine-readable results for the quality dashboard
     // (metrics/). Naming reporters replaces Vitest's defaults, so the

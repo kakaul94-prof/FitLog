@@ -1,0 +1,18 @@
+appId: app.fitlog.mobile
+name: "spike: sign in through the native accessibility tree"
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Sign in"
+    timeout: 90000
+# In the native tree a WebView input shows its placeholder as hint text.
+- tapOn: "you@example.com"
+- inputText: ${MAESTRO_FITLOG_EMAIL}
+- tapOn: "Your password"
+- inputText: ${MAESTRO_FITLOG_PASSWORD}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "Breakfast"
+    timeout: 90000
+- takeScreenshot: reports/android/shots/02-diary-native

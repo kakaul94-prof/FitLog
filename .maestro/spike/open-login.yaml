@@ -1,0 +1,9 @@
+appId: app.fitlog.mobile
+name: "spike: open the sign-in screen"
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Sign in"
+    timeout: 90000
+- takeScreenshot: reports/android/shots/01-login

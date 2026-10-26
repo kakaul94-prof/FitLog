@@ -1,0 +1,118 @@
+name: Android UI tests (Maestro)
+
+# SPIKE (branch feat/android-maestro): proves Maestro can see and drive
+# FitLog's Capacitor WebView on an Android emulator against a throwaway local
+# stack. Manual only while it is a spike; the real job replaces this file.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-ui:
+    name: Maestro flows on an Android emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # The emulator reaches the runner through 10.0.2.2, its alias for the
+      # host's loopback: the local Supabase API on :54321 and the app's own web
+      # server on :5174. Nothing in this job is a hosted project.
+      HOST_FROM_EMULATOR: 10.0.2.2
+      WEB_PORT: '5174'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM (hardware acceleration for the emulator)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # Disposable local Supabase, built from supabase/schema.sql + seed.sql,
+      # the same stack the Playwright E2E and API suites use.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Start test database
+        run: supabase start
+      - name: Read the local stack's keys
+        run: bash api-tests/scripts/local-env.sh
+
+      # A production build (like the one the phone loads from Cloudflare) whose
+      # Supabase URL is the local stack as the emulator sees it.
+      - name: Build the web app for the emulator
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://${{ env.HOST_FROM_EMULATOR }}:54321
+          VITE_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          VITE_USDA_API_KEY: android-ui-dummy-key
+
+      - name: Serve the build to the emulator
+        run: |
+          mkdir -p reports/android
+          nohup npx vite preview --host 0.0.0.0 --port "$WEB_PORT" --strictPort > reports/android/vite-preview.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS "http://127.0.0.1:$WEB_PORT/" > /dev/null && break
+            sleep 1
+          done
+          curl -fsS "http://127.0.0.1:$WEB_PORT/" | head -c 300; echo
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      # Same native shell as the phone APK; only the URL it loads differs.
+      - name: Point the native shell at the runner and sync Capacitor
+        run: npx cap sync android
+        env:
+          CAP_SERVER_URL: http://${{ env.HOST_FROM_EMULATOR }}:${{ env.WEB_PORT }}
+      - name: Build the debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          "$HOME/.maestro/bin/maestro" --version
+
+      - name: Run the flows on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_7
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: bash .maestro/ci/run-spike.sh
+        env:
+          # Seed account of the local stack (supabase/seed.sql): a throwaway
+          # value for a disposable database, read by the flows from the
+          # environment so no credential is written into a flow file.
+          MAESTRO_FITLOG_EMAIL: alice@e2e.test
+          MAESTRO_FITLOG_PASSWORD: alice-password
+
+      - name: Upload screenshots, hierarchies and logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ui-spike
+          path: reports/android/
+          retention-days: 14

@@ -1,0 +1,11 @@
+appId: app.fitlog.mobile
+name: "spike: dump the DevTools hierarchy of the diary (fails on purpose)"
+androidWebViewHierarchy: devtools
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Breakfast"
+    timeout: 90000
+# Maestro writes the screen hierarchy only for a failing step: this one is
+# meant to fail, so the DevTools view of the diary lands in the output folder.
+- assertVisible: "zz-not-on-this-screen-zz"

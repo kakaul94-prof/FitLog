@@ -52,7 +52,11 @@ test('the production journey', async ({ page }, info) => {
       )
       await diary.gotoDate(today())
       await loaded
-      await expect(page.getByLabel(/calories remaining$/)).toBeVisible()
+      // The day's calorie card: the ring when a goal is set, or "N calories
+      // eaten. Set your goal…" when it isn't. The monitor account stays empty
+      // on purpose, so in production it has no goal and shows the second.
+      const calorieCard = page.getByLabel(/calories (remaining|over budget)$/).or(page.getByText(/calories eaten\./))
+      await expect(calorieCard.first()).toBeVisible()
       await expect(page.getByRole('button', { name: /^Snacks( \+ Add| \d+ cal)/ })).toBeVisible()
       // The drill: a heading the app has never had. Fails here, before anything is written.
       if (t.drill === 'selector') {

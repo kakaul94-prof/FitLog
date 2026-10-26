@@ -5,6 +5,10 @@ name: Android UI tests (Maestro)
 # stack. Manual only while it is a spike; the real job replaces this file.
 on:
   workflow_dispatch:
+  # A workflow can only be dispatched by name once it exists on the default
+  # branch, so while it is a spike it runs on pushes to its own branch.
+  push:
+    branches: [feat/android-maestro]
 
 permissions:
   contents: read

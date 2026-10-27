@@ -665,11 +665,17 @@ export function WorkoutPage() {
             }}
           >
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="leave-workout-title"
               className="mx-auto w-full max-w-md p-3"
               onClick={(ev) => ev.stopPropagation()}
             >
               <Card className="overflow-hidden">
-                <div className="border-b border-border p-3 text-center text-xs text-muted-foreground">
+                <div
+                  id="leave-workout-title"
+                  className="border-b border-border p-3 text-center text-xs text-muted-foreground"
+                >
                   Leave workout?
                 </div>
                 <button

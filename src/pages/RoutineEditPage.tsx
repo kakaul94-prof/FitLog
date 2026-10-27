@@ -1039,11 +1039,17 @@ export function RoutineEditPage() {
             onClick={() => blocker.reset?.()}
           >
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="save-template-changes-title"
               className="mx-auto w-full max-w-md p-3"
               onClick={(ev) => ev.stopPropagation()}
             >
               <Card className="overflow-hidden">
-                <div className="border-b border-border p-3 text-center text-xs text-muted-foreground">
+                <div
+                  id="save-template-changes-title"
+                  className="border-b border-border p-3 text-center text-xs text-muted-foreground"
+                >
                   Save changes to this template?
                 </div>
                 <button

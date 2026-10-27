@@ -1,53 +1,28 @@
 #!/usr/bin/env bash
 # Spike: runs inside android-emulator-runner once the emulator is booted.
-# Installs the test APK, then records what Maestro can see of the WebView in
-# both of its modes (native accessibility tree vs. Chrome DevTools) and
-# whether it can sign in through each. Every result lands in reports/android.
+# Installs the test APK, runs the native-mode probe flow, and keeps every
+# screenshot, hierarchy and log in reports/android for the artifact.
 set -uo pipefail
 
 out=reports/android
-mkdir -p "$out/shots" "$out/output"
+mkdir -p "$out/shots"
 
 adb devices
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb shell getprop ro.build.version.release > "$out/android-version.txt"
+echo "Android $(adb shell getprop ro.build.version.release), WebView: $(adb shell dumpsys webviewupdate | grep -m1 'Current WebView package')"
 
-# Can the emulator reach the runner's web server and the local Supabase API?
-for port in 5174 54321; do
-  if adb shell "nc -z -w 5 10.0.2.2 $port"; then echo "10.0.2.2:$port reachable from emulator"
-  else echo "10.0.2.2:$port NOT reachable from emulator"; fi
-done
-
-run_flow() { # name -> exit code recorded in results.txt, never aborts the spike
-  local name=$1
-  maestro test ".maestro/spike/$name.yaml" \
-    --test-output-dir "$out/output/$name" \
-    --debug-output "$out/debug/$name" --flatten-debug-output
-  local rc=$?
-  echo "$name: exit $rc" | tee -a "$out/results.txt"
-  return 0
-}
-
-# 1. Open the sign-in screen, then dump the native accessibility hierarchy.
-run_flow open-login
-maestro hierarchy > "$out/hierarchy-login-native.txt" 2>&1 || true
-
-# 2. Sign in using native-tree selectors (placeholders / visible text).
-run_flow login-native
-maestro hierarchy > "$out/hierarchy-diary-native.txt" 2>&1 || true
-
-# 3. Sign in using DevTools selectors (HTML ids), from a cleared state.
-run_flow login-devtools
-
-# 4. A flow that fails on purpose with DevTools on, so Maestro writes the
-#    DevTools view of the diary screen to its screen-hierarchy folder.
-run_flow dump-devtools
+start=$(date +%s)
+maestro test .maestro/spike/probe-native.yaml \
+  --test-output-dir "$out/output" \
+  --debug-output "$out/debug" --flatten-debug-output \
+  --format junit --output "$out/report.xml"
+rc=$?
+echo "probe-native: exit $rc in $(( $(date +%s) - start ))s" | tee "$out/results.txt"
 
 adb logcat -d > "$out/logcat.txt" 2>&1 || true
-echo "---- WebView console and Capacitor lines ----"
-grep -E "Capacitor/Console|chromium|Capacitor:|cr_" "$out/logcat.txt" | tail -80 || true
-echo "---- results ----"; cat "$out/results.txt"
+echo "---- app process deaths ----"
+grep -E "Killing [0-9]+:app.fitlog.mobile|app.fitlog.mobile.*has died|FATAL" "$out/logcat.txt" || echo "none"
+echo "---- WebView console ----"
+grep -E "Capacitor/Console" "$out/logcat.txt" | tail -40 || true
 
-# The spike passes if the DevTools sign-in worked: that is the mode the real
-# flows will use. The other results are information.
-grep -q '^login-devtools: exit 0$' "$out/results.txt"
+exit $rc

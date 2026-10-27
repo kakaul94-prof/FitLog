@@ -101,9 +101,12 @@ jobs:
         with:
           api-level: 34
           arch: x86_64
-          target: google_apis
+          # Plain AOSP image: no Google Play Services, whose restarts on a fresh
+          # emulator killed the app mid-flow (its WebView font provider lives there).
+          target: default
           profile: pixel_7
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096
           emulator-boot-timeout: 900
           script: bash .maestro/ci/run-spike.sh
         env:

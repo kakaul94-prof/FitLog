@@ -1,0 +1,56 @@
+appId: app.fitlog.mobile
+name: probe-native
+---
+# Native accessibility tree only: HTML ids arrive as resource-id, a button's
+# text is its whole accessible name, and labels + placeholders as hint text.
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "email"
+    timeout: 90000
+- takeScreenshot: reports/android/shots/10-login
+- tapOn:
+    id: "email"
+- inputText: ${MAESTRO_FITLOG_EMAIL}
+- tapOn:
+    id: "password"
+- inputText: ${MAESTRO_FITLOG_PASSWORD}
+- hideKeyboard
+- tapOn:
+    text: "Sign in"
+    index: 1
+- extendedWaitUntil:
+    visible: ".*calories remaining"
+    timeout: 60000
+- takeScreenshot: reports/android/shots/11-diary
+
+# Bottom-nav tab, then the hardware back button (MainActivity's dispatcher).
+- tapOn: "Progress"
+- extendedWaitUntil:
+    visible: "Log weight \\(lb\\)"
+    timeout: 30000
+- back
+- extendedWaitUntil:
+    visible: ".*calories remaining"
+    timeout: 30000
+
+# Kill and relaunch: the session must survive without signing in again.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: ".*calories remaining"
+    timeout: 60000
+- takeScreenshot: reports/android/shots/12-relaunched
+
+# Airplane mode: does the app's own offline pill appear and clear?
+- setAirplaneMode: enabled
+- extendedWaitUntil:
+    visible: "Offline"
+    timeout: 30000
+- takeScreenshot: reports/android/shots/13-offline
+- setAirplaneMode: disabled
+- extendedWaitUntil:
+    notVisible: "Offline"
+    timeout: 60000
+- takeScreenshot: reports/android/shots/14-back-online

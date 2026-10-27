@@ -12,8 +12,9 @@
 #   eval-ai-live   AI trainer evals, tier 2: real Claude (key in ai-evals/.env.live), capped
 #   canary-prod    the production AI canary once (target in ai-evals/.env.canary), capped
 #   test-e2e       Playwright E2E, in its container
+#   test-java      Java E2E: Selenium + TestNG + Cucumber + REST Assured, Allure report (e2e-java/)
 #   test-security  security scans: gitleaks, npm audit, pip-audit, ZAP (report only)
-#   test           unit, API, AI evals, then E2E; stops at the first failing layer
+#   test           unit, API, AI evals, E2E, then the Java E2E; stops at the first failing layer
 #   report         build the Allure report from the last API and AI-eval runs and open it
 #   perf-smoke     k6 smoke: 2 virtual users for a minute (perf-tests/)
 #   perf-load      k6 load: the realistic journey mix at expected load, budgets enforced
@@ -127,6 +128,11 @@ test_e2e() {
   docker compose run --rm --build e2e
 }
 
+test_java() {
+  stack_running || die "the local Supabase stack isn't running: make stack-up"
+  bash e2e-java/scripts/run.sh "$@"
+}
+
 test_security() {
   PYTHON="$(python_bin)" bash scripts/security-scan.sh
 }
@@ -166,8 +172,9 @@ case "$command" in
   eval-ai-live) eval_ai_live "$@" ;;
   canary-prod) canary_prod "$@" ;;
   test-e2e) test_e2e ;;
+  test-java) test_java "$@" ;;
   test-security) test_security ;;
-  test) stack_up && test_unit && test_contracts && test_api && test_ai && test_e2e ;;
+  test) stack_up && test_unit && test_contracts && test_api && test_ai && test_e2e && test_java ;;
   report) report ;;
   perf-smoke) perf smoke "$@" ;;
   perf-load) perf load "$@" ;;
@@ -175,5 +182,5 @@ case "$command" in
   perf-soak) perf soak "$@" ;;
   perf-clean) perf cleanup ;;
   stack-down) stack_down ;;
-  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; [ -z "$command" ] || exit 1 ;;
+  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; [ -z "$command" ] || exit 1 ;;
 esac

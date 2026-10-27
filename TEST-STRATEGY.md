@@ -32,6 +32,7 @@ Goals: none of these reaches production; a failure names the risk and the screen
 | Rows that break the data model | **Contract tests**: [`contracts`](api-tests/tests/contracts), [`validation`](api-tests/tests/validation) | Every table's CRUD response checked against a strict pydantic model; CHECK ranges at both edges | 81 + 103 |
 | Lost, duplicated or half-applied writes | **Resilience**: [`tests/resilience`](api-tests/tests/resilience) + E2E (§4) | Idempotency is a database property; what the user sees after a lost reply is a UI one | 34 + 30 |
 | A screen that doesn't work on a phone | **Playwright E2E**: [`e2e/`](e2e/README.md), Docker, Pixel 7 | The only layer driving the real UI; each journey also polls Postgres, so a nice screen with nothing saved fails | 132 (119 journeys, 4 RLS, 9 sign-ins) |
+| The core flows breaking, checked with a second toolchain | **Java E2E**: [`e2e-java/`](e2e-java/README.md), Selenium + TestNG + Cucumber + REST Assured | Independent of Playwright's fixtures and stubs: a plain WebDriver, a real sign-in and a fresh user per test, the database read back through REST Assured; also the walkthrough piece for the classic Java stack | 17 (10 TestNG cases, 4 scenarios, 3 API) |
 | Unsafe, leaky or wrong trainer answers | **AI evals**: [`ai-evals/`](ai-evals/README.md), tier 1 stubbed, tier 2 live | Guardrails are deterministic and gate releases; model behaviour needs the real model and a judged rubric | 264; 87 cases × 3 live |
 | Trainer unusable when Claude fails | **AI evals tier 1**: [`test_dependency_failures.py`](ai-evals/tests/test_dependency_failures.py) | 18 simulated upstream failures (429, 529, bad key, cut stream, stall, token limit…) | 78 |
 | Slow under load, drifting over an hour | **k6**: [`perf-tests/`](perf-tests/README.md) | Replays the app's own request mix on users seeded with 90 days of history; a budget per endpoint group | 5 scenarios |
@@ -65,7 +66,7 @@ The rule: **a bug gets a failing test before it gets a fix**, as two commits, so
 
 **Never stubbed: my own database.** Every CI job starts a throwaway Supabase stack in Docker from the production [`schema.sql`](supabase/schema.sql) and RLS policies, seeded with ten accounts; a stubbed database would pass tests a real policy fails. [`env.ts`](e2e/support/env.ts) and the testkit refuse any non-local URL.
 
-**Run-unique data.** E2E rows carry a run id in their names ([`support/data.ts`](e2e/support/data.ts)) and each area owns a seeded account, so specs run in parallel and rerun without a reset; API and k6 users are created per run and deleted afterwards.
+**Run-unique data.** E2E rows carry a run id in their names ([`support/data.ts`](e2e/support/data.ts)) and each area owns a seeded account, so specs run in parallel and rerun without a reset; API and k6 users are created per run and deleted afterwards; the Java suite goes one step further and creates a user per test.
 
 ## 6. Release gates
 

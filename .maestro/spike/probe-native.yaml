@@ -25,6 +25,28 @@ name: probe-native
     timeout: 60000
 - takeScreenshot: reports/android/shots/11-diary
 
+# Log a food: the insert needs crypto.randomUUID, so this proves the page
+# runs in a secure context. Alice starts each CI run with an empty diary.
+- tapOn: "Snacks \\+ Add"
+- tapOn: "Quick add"
+- tapOn:
+    id: "qa-name"
+- inputText: "Android probe"
+- tapOn:
+    id: "qa-kcal"
+- inputText: "123"
+- hideKeyboard
+- tapOn: "Add to snacks"
+- extendedWaitUntil:
+    visible: "Added Android probe"
+    timeout: 30000
+- tapOn: "Done"
+- extendedWaitUntil:
+    visible: "Android probe 123"
+    timeout: 30000
+- assertVisible: "1877 calories remaining"
+- takeScreenshot: reports/android/shots/11b-logged
+
 # Bottom-nav tab, then the hardware back button (MainActivity's dispatcher).
 - tapOn: "Progress"
 - extendedWaitUntil:

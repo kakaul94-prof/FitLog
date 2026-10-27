@@ -9,6 +9,11 @@ mkdir -p "$out/shots"
 
 adb devices
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+# The page loads from the emulator's own localhost (a secure context, which
+# crypto.randomUUID needs), tunnelled over adb to the runner's web server.
+# Supabase stays on 10.0.2.2, the emulated network, so airplane mode cuts it.
+adb reverse tcp:5174 tcp:5174
+adb reverse --list
 echo "Android $(adb shell getprop ro.build.version.release), WebView: $(adb shell dumpsys webviewupdate | grep -m1 'Current WebView package')"
 
 start=$(date +%s)

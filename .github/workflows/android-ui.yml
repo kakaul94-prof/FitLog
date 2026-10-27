@@ -83,7 +83,8 @@ jobs:
       - name: Point the native shell at the runner and sync Capacitor
         run: npx cap sync android
         env:
-          CAP_SERVER_URL: http://${{ env.HOST_FROM_EMULATOR }}:${{ env.WEB_PORT }}
+          # localhost via adb reverse (run-spike.sh): a secure context for the page.
+          CAP_SERVER_URL: http://localhost:${{ env.WEB_PORT }}
       - name: Build the debug APK
         run: |
           cd android

@@ -37,4 +37,12 @@ for i in $(seq 1 "$repeat"); do
 done
 
 adb logcat -d > "$out/logcat.txt" 2>&1 || true
+
+# Android logs every kill of the app's process. "remove task" means a launch
+# landed in a task that was still being removed (subflows/sign-in.yaml):
+# report it even when the flow happened to pass.
+races=$(grep -rh "Killing [0-9]*:app.fitlog.mobile.*remove task" "$out"/run-*/debug "$out/logcat.txt" 2>/dev/null | sort -u)
+echo "Launches killed by task removal: $(printf '%s' "$races" | grep -c . || true)"
+[ -n "$races" ] && printf '%s\n' "$races"
+
 exit $status

@@ -2,9 +2,13 @@
 # Credentials come from the environment (MAESTRO_FITLOG_EMAIL / _PASSWORD).
 appId: app.fitlog.mobile
 ---
-# Stop the app first. Clearing a running app's data makes Android remove its
-# task about a second later, and the app (launchMode singleTask) relaunches
-# into that same task, so the removal kills the fresh launch: a blank screen.
+# Background, then stop, then clear. Clearing an app's data removes its task,
+# and the fresh launch (launchMode singleTask) joins that task if it still
+# exists: if the old window is still animating out, Android finishes the
+# removal about a second later by killing the task, new launch included (a
+# blank screen). Going Home first leaves no window to animate out, so the
+# stop and the clear end the old task at once.
+- pressKey: Home
 - stopApp
 - launchApp:
     clearState: true

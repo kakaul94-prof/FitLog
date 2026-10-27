@@ -55,9 +55,10 @@ onFlowComplete:
     visible: "Save changes\\?"
     timeout: 10000
 - tapOn: "Keep editing"
+# Android reads an input as its value then its label: "3, Servings".
 - assertVisible:
     id: "srv"
-    text: "3"
+    text: "3, Servings"
 # Back again, and Discard: the saved entry is untouched.
 - back
 - extendedWaitUntil:

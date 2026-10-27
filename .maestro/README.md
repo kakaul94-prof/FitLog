@@ -42,7 +42,13 @@ flowchart LR
 
 ## Selectors
 
-Maestro reads the screen through Android's accessibility tree, and the WebView puts the web app into it: an HTML `id` arrives as the element's resource id (`id: "email"`), a button's text is its whole accessible name (`"Snacks + Add"`, `"Oats mh3k2x7 250"`), and an input's label and placeholder arrive as hint text. `data-testid` is not exposed, so test ids are plain HTML ids, added only where nothing unique was there already:
+Maestro reads the screen through Android's accessibility tree, and the WebView puts the web app into it:
+- an HTML `id` arrives as the element's resource id (`id: "email"`);
+- a button's text is its whole accessible name (`"Snacks + Add"`, `"Oats mh3k2x7 250"`);
+- an empty input's label and placeholder arrive as hint text, and a filled input reads as its value then its label (`"3, Servings"`);
+- plain text split across elements stays split: a weigh-in row is `"120.2"`, `" "`, `"lb"`, so flows find it by its buttons' labels (`"Delete 120.2 lb"`).
+
+`data-testid` is not exposed, so test ids are plain HTML ids, added only where nothing unique was there already:
 
 | Element | Id |
 |---|---|
@@ -52,6 +58,8 @@ Maestro reads the screen through Android's accessibility tree, and the WebView p
 | Progress tab's value field (its label is now linked to it) and its Add button | `measurement-value`, `measurement-add` |
 
 Everything else uses ids the app already had (`email`, `password`, `qa-name`, `qa-kcal`, `qa-p`, `qa-c`, `qa-f`, `srv`) or the text a user reads. Maestro's DevTools mode (`androidWebViewHierarchy: devtools`) is deliberately not used: it matched the same screen differently from one flow to the next, and Maestro Studio doesn't support it.
+
+**If something is on the screenshot but not in the hierarchy**, the WebView left it out of the accessibility tree, so a screen reader can't reach it either. That was true of the diary entry's "Save changes?" prompt while it rendered inside the page: dialog markup alone didn't fix it, and rendering it in a portal on `<body>`, like the app's other sheets, did. Fix the app, not the selector.
 
 ## Running locally
 
@@ -98,7 +106,9 @@ Common causes:
 | Symptom | Likely cause |
 |---|---|
 | A step fails and the screenshot shows the home screen | The app was killed or crashed: look for `Killing` or `FATAL` in `logcat.txt` |
-| "Element not found" with the element on the screenshot | Its text in the hierarchy differs from the selector, e.g. a button's text is its whole accessible name. Match the hierarchy, or add an HTML `id` |
+| "Element not found" with the element on the screenshot | Its text in the hierarchy differs from the selector, e.g. a button's text is its whole accessible name. Match the hierarchy, or add an HTML `id`. If it isn't in the hierarchy at all, it is missing from the accessibility tree (see Selectors) |
+| "Element not found" for something further down the page | Maestro doesn't scroll on its own: `scrollUntilVisible` first, as a user would |
+| A clean launch shows a blank screen | The app was running when its data was cleared, and the clear's task removal killed the new launch. Flows `stopApp` before `launchApp: clearState`; keep it that way |
 | The diary never appears after sign-in | The web build points somewhere else: check the build's `VITE_SUPABASE_URL` and `vite-preview.log` |
 | `db.js: sign-in failed` | The stack isn't running, or the seed lacks the Kim account: `npm run db:reset` |
 | `06-offline-sync` stuck on "Offline" | The emulator's network didn't come back: `adb shell cmd connectivity airplane-mode disable` |

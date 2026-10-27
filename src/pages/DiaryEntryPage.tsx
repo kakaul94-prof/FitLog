@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { ChevronLeft, Trash2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -146,7 +147,10 @@ export function DiaryEntryPage() {
         </Button>
       </div>
 
-      {blocker.state === 'blocked' && (
+      {/* In a portal on <body>, like the app's other sheets: rendered inside
+          the page, Android's WebView left it out of the accessibility tree,
+          so screen readers and the Android UI tests couldn't reach it. */}
+      {blocker.state === 'blocked' && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
           <Card
             role="dialog"
@@ -186,7 +190,8 @@ export function DiaryEntryPage() {
               </Button>
             </CardContent>
           </Card>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

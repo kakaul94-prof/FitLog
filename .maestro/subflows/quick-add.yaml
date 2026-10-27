@@ -1,0 +1,20 @@
+# From the diary: Quick add a calories-only food to Snacks and wait until it
+# is saved. Inputs: NAME, KCAL. Ends on the diary.
+appId: app.fitlog.mobile
+---
+- tapOn:
+    id: "add-food-snacks"
+- tapOn: "Quick add"
+- tapOn:
+    id: "qa-name"
+- inputText: ${NAME}
+- tapOn:
+    id: "qa-kcal"
+- inputText: ${KCAL}
+- hideKeyboard
+- tapOn: "Add to snacks"
+- tapOn: "Done"
+- extendedWaitUntil:
+    visible: "${NAME} ${KCAL}"
+    timeout: 30000
+- runFlow: wait-saved.yaml

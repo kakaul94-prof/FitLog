@@ -121,6 +121,7 @@ export function LoginPage() {
                 <p className="text-sm text-destructive">{error}</p>
               )}
               <Button
+                id="sign-in-submit"
                 type="submit"
                 className="w-full"
                 disabled={status === 'sending'}

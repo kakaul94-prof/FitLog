@@ -1,0 +1,27 @@
+# A wrong password shows the server's error and stays on the sign-in screen.
+appId: app.fitlog.mobile
+name: 08-invalid-login
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "email"
+    timeout: 90000
+- tapOn:
+    id: "email"
+- inputText: ${MAESTRO_FITLOG_EMAIL}
+- tapOn:
+    id: "password"
+- inputText: "not-the-password"
+- hideKeyboard
+- tapOn:
+    id: "sign-in-submit"
+- extendedWaitUntil:
+    visible: "Invalid login credentials"
+    timeout: 30000
+- assertVisible:
+    id: "email"
+- assertVisible:
+    id: "sign-in-submit"
+- assertNotVisible: ".*calories remaining"

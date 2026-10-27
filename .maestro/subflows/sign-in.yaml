@@ -1,0 +1,23 @@
+# Fresh install state, then sign in as the test account; ends on the diary.
+# Credentials come from the environment (MAESTRO_FITLOG_EMAIL / _PASSWORD).
+appId: app.fitlog.mobile
+---
+- launchApp:
+    clearState: true
+# The first launch after an install also starts the WebView, so allow longer.
+- extendedWaitUntil:
+    visible:
+      id: "email"
+    timeout: 90000
+- tapOn:
+    id: "email"
+- inputText: ${MAESTRO_FITLOG_EMAIL}
+- tapOn:
+    id: "password"
+- inputText: ${MAESTRO_FITLOG_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "sign-in-submit"
+- extendedWaitUntil:
+    visible: ".*calories remaining"
+    timeout: 60000

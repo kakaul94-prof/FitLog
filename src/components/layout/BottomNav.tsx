@@ -16,6 +16,7 @@ export function BottomNav() {
         {tabs.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
+            id={`nav-${label.toLowerCase()}`}
             to={to}
             end={end}
             className={({ isActive }) =>

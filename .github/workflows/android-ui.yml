@@ -1,14 +1,46 @@
 name: Android UI tests (Maestro)
 
-# SPIKE (branch feat/android-maestro): proves Maestro can see and drive
-# FitLog's Capacitor WebView on an Android emulator against a throwaway local
-# stack. Manual only while it is a spike; the real job replaces this file.
+# The phone app's everyday journeys (sign in, log, edit, delete, weigh in,
+# restart, offline, back button, bad password), driven by Maestro on an
+# Android emulator against a throwaway local Supabase stack. See
+# .maestro/README.md.
+#
+# Separate from ci.yml on purpose: it runs in parallel with it, never gates
+# the production deploy, and only runs when the app could have changed. On a
+# pull request it fails that PR's checks; nightly it catches drift; by hand
+# it takes a repeat count for flake hunts (retries are always off).
 on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'supabase/**'
+      - '.maestro/**'
+      - '.github/workflows/android-ui.yml'
+  schedule:
+    - cron: '30 4 * * *' # nightly, 04:30 UTC
   workflow_dispatch:
-  # A workflow can only be dispatched by name once it exists on the default
-  # branch, so while it is a spike it runs on pushes to its own branch.
+    inputs:
+      repeat:
+        description: Times to run the whole flow set in a row (retries are off)
+        type: number
+        default: 1
+        required: true
+  # TEMPORARY while the branch is built (a workflow can't be dispatched by
+  # name until it is on the default branch). Removed before merge.
   push:
     branches: [feat/android-maestro]
+
+# A newer push to the same PR supersedes an in-flight run.
+concurrency:
+  group: android-ui-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -17,13 +49,11 @@ jobs:
   android-ui:
     name: Maestro flows on an Android emulator
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90 # one run is ~15 min; a 5x flake hunt needs the rest
     env:
-      # The emulator reaches the runner through 10.0.2.2, its alias for the
-      # host's loopback: the local Supabase API on :54321 and the app's own web
-      # server on :5174. Nothing in this job is a hosted project.
-      HOST_FROM_EMULATOR: 10.0.2.2
       WEB_PORT: '5174'
+      MAESTRO_VERSION: '2.12.0'
+      REPEAT: ${{ inputs.repeat || 1 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,34 +69,33 @@ jobs:
           cache: npm
       - run: npm ci
 
-      # Disposable local Supabase, built from supabase/schema.sql + seed.sql,
-      # the same stack the Playwright E2E and API suites use.
+      # The same disposable Supabase stack as the E2E and API suites, built
+      # from supabase/schema.sql + seed.sql (the flows use the Kim account).
       - uses: supabase/setup-cli@v1
         with:
           version: 2.118.0
       - name: Start test database
         run: supabase start
-      - name: Read the local stack's keys
+      - name: Read the local stack's URL and keys
         run: bash api-tests/scripts/local-env.sh
 
-      # A production build (like the one the phone loads from Cloudflare) whose
-      # Supabase URL is the local stack as the emulator sees it.
+      # A production build, like the one the phone loads, whose Supabase URL is
+      # the runner as the emulator's network sees it (10.0.2.2). Airplane mode
+      # cuts that network, so the offline flow is really offline.
       - name: Build the web app for the emulator
         run: npm run build
         env:
-          VITE_SUPABASE_URL: http://${{ env.HOST_FROM_EMULATOR }}:54321
+          VITE_SUPABASE_URL: http://10.0.2.2:54321
           VITE_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
-          VITE_USDA_API_KEY: android-ui-dummy-key
+          VITE_USDA_API_KEY: android-ui-dummy-key # never valid; no flow searches USDA
 
-      - name: Serve the build to the emulator
+      # The emulator reaches this over adb reverse (run.sh), as its localhost.
+      - name: Serve the build
         run: |
           mkdir -p reports/android
-          nohup npx vite preview --host 0.0.0.0 --port "$WEB_PORT" --strictPort > reports/android/vite-preview.log 2>&1 &
-          for _ in $(seq 1 30); do
-            curl -fsS "http://127.0.0.1:$WEB_PORT/" > /dev/null && break
-            sleep 1
-          done
-          curl -fsS "http://127.0.0.1:$WEB_PORT/" | head -c 300; echo
+          nohup npx vite preview --host 127.0.0.1 --port "$WEB_PORT" --strictPort \
+            > reports/android/vite-preview.log 2>&1 &
+          npx --yes wait-on@8.0.3 --timeout 60000 "http-get://127.0.0.1:$WEB_PORT/"
 
       - uses: actions/setup-java@v4
         with:
@@ -78,20 +107,27 @@ jobs:
           log-accepted-android-sdk-licenses: false
       - name: Install SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
 
-      # Same native shell as the phone APK; only the URL it loads differs.
-      - name: Point the native shell at the runner and sync Capacitor
+      # The same native shell as the phone's APK; only the URL it loads differs
+      # (capacitor.config.ts). This APK is never published.
+      - name: Point the native shell at the test server and sync Capacitor
         run: npx cap sync android
         env:
-          # localhost via adb reverse (run-spike.sh): a secure context for the page.
           CAP_SERVER_URL: http://localhost:${{ env.WEB_PORT }}
-      - name: Build the debug APK
+      - name: Build the test APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+      - name: Upload the test APK (for running the flows locally)
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ui-test-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
 
-      - name: Install Maestro
+      - name: Install Maestro ${{ env.MAESTRO_VERSION }}
         run: |
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
@@ -103,24 +139,41 @@ jobs:
           api-level: 34
           arch: x86_64
           # Plain AOSP image: no Google Play Services, whose restarts on a fresh
-          # emulator killed the app mid-flow (its WebView font provider lives there).
+          # emulator killed the app mid-flow (its WebView fonts come from there).
           target: default
           profile: pixel_7
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -memory 4096
           emulator-boot-timeout: 900
-          script: bash .maestro/ci/run-spike.sh
+          script: bash .maestro/ci/run.sh
         env:
-          # Seed account of the local stack (supabase/seed.sql): a throwaway
-          # value for a disposable database, read by the flows from the
-          # environment so no credential is written into a flow file.
-          MAESTRO_FITLOG_EMAIL: alice@e2e.test
-          MAESTRO_FITLOG_PASSWORD: alice-password
+          # The local stack only: db.js refuses any other URL. The account and
+          # its password are throwaway seed values (supabase/seed.sql) for a
+          # disposable database, passed in rather than written into a flow.
+          MAESTRO_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          MAESTRO_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          MAESTRO_FITLOG_EMAIL: kim@e2e.test
+          MAESTRO_FITLOG_PASSWORD: kim-password
 
-      - name: Upload screenshots, hierarchies and logs
+      - name: Job summary (passes per flow)
+        if: ${{ !cancelled() }}
+        run: node .maestro/ci/summary.mjs reports/android
+
+      - name: Upload the Maestro reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: android-ui-spike
+          name: android-ui-junit
+          path: reports/android/run-*/report.xml
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Screenshot and view hierarchy of each failing step, Maestro's logs, the
+      # device log and the web server log.
+      - name: Upload screenshots and logs from the failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ui-failure
           path: reports/android/
           retention-days: 14

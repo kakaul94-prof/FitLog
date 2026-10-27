@@ -14,6 +14,7 @@
 --   Heidi: entries spec (edits and deletes diary entries and weigh-ins)
 --   Ivan:  profile spec (goals and settings; also signs out, which ends every session)
 --   Judy:  resilience specs (offline queue, duplicate and lost requests, stale caches)
+--   Kim:   Android UI flows (.maestro/), which wipe her diary and weigh-ins
 -- ============================================================
 
 -- auth.users + auth.identities is what GoTrue writes on a real signup.
@@ -54,6 +55,9 @@ values
    now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
   ('00000000-0000-0000-0000-000000000000', 'a0a0a0a0-0000-4000-8000-000000000010',
    'authenticated', 'authenticated', 'judy@e2e.test', crypt('judy-password', gen_salt('bf')),
+   now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', ''),
+  ('00000000-0000-0000-0000-000000000000', 'b1b1b1b1-0000-4000-8000-000000000011',
+   'authenticated', 'authenticated', 'kim@e2e.test', crypt('kim-password', gen_salt('bf')),
    now(), '{"provider":"email","providers":["email"]}', '{}', now(), now(), '', '', '', '');
 
 insert into auth.identities (
@@ -64,15 +68,16 @@ select gen_random_uuid(), id, id::text, 'email',
        now(), now(), now()
 from auth.users
 where email in ('alice@e2e.test', 'bob@e2e.test', 'carol@e2e.test', 'dave@e2e.test', 'erin@e2e.test',
-                'frank@e2e.test', 'grace@e2e.test', 'heidi@e2e.test', 'ivan@e2e.test', 'judy@e2e.test');
+                'frank@e2e.test', 'grace@e2e.test', 'heidi@e2e.test', 'ivan@e2e.test', 'judy@e2e.test',
+                'kim@e2e.test');
 
 -- The on_auth_user_created trigger has already made the profiles rows.
--- Give Alice, Erin and Frank a fixed calorie goal so the diary (and the
+-- Give Alice, Erin, Frank and Kim a fixed calorie goal so the diary (and the
 -- trainer's snapshot) render deterministically.
 update public.profiles
 set calorie_goal_mode = 'manual', manual_calorie_goal = 2000
 where id in ('aaaaaaaa-0000-4000-8000-000000000001', 'eeeeeeee-0000-4000-8000-000000000005',
-             'ffffffff-0000-4000-8000-000000000006');
+             'ffffffff-0000-4000-8000-000000000006', 'b1b1b1b1-0000-4000-8000-000000000011');
 
 -- Erin (cardio + GPS specs) weighs exactly 80 kg, so calorie estimates are
 -- known numbers. Dated long ago so it's her latest weigh-in for any test date.

@@ -1,0 +1,38 @@
+# Force-stop the app (the process really ends) and open it again: still
+# signed in, and the day's log is intact.
+appId: app.fitlog.mobile
+name: 05-kill-relaunch
+onFlowStart:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: reset
+onFlowComplete:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: cleanup
+---
+- runFlow: ../subflows/sign-in.yaml
+- runFlow:
+    file: ../subflows/quick-add.yaml
+    env:
+      NAME: "Rice ${output.runId}"
+      KCAL: "300"
+
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Rice ${output.runId} 300"
+    timeout: 60000
+- assertVisible: "1700 calories remaining"
+- assertNotVisible:
+    id: "email"
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: food
+      NAME: "Rice ${output.runId}"
+- assertTrue:
+    condition: ${output.foodCount == 1}
+    label: "Still exactly one row after the restart"

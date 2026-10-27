@@ -1,0 +1,8 @@
+target/
+.idea/
+*.iml
+.vscode/
+app.pid
+app.log
+# TestNG default report dir (only written when TestNG is launched outside Maven)
+test-output/

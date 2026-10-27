@@ -25,7 +25,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
 
       # Same container as CI; only the Playwright arguments change. The input
       # goes through an env var rather than being pasted into the script.

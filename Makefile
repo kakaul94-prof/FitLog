@@ -9,7 +9,7 @@
 SHELL := bash
 RUN := bash scripts/test-all.sh
 
-.PHONY: help stack-up test-unit test-contracts test-api test-ai eval-ai-live canary-prod test-e2e test-security test report stack-down \
+.PHONY: help stack-up test-unit test-contracts test-api test-ai eval-ai-live canary-prod test-e2e test-java test-security test report stack-down \
 	perf-smoke perf-load perf-stress perf-soak perf-clean
 
 help: ## List the targets
@@ -38,6 +38,9 @@ canary-prod: ## The production AI canary once, by hand (needs ai-evals/.env.cana
 
 test-e2e: ## Playwright end-to-end tests, in their container
 	@$(RUN) test-e2e
+
+test-java: ## Java E2E (Selenium + TestNG + Cucumber + REST Assured) against the local stack; ARGS="-Dgroups=smoke"
+	@$(RUN) test-java $(ARGS)
 
 test-security: ## Security scans: gitleaks, npm audit, pip-audit, OWASP ZAP (report only)
 	@$(RUN) test-security

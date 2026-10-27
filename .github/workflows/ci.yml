@@ -59,7 +59,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
 
       # Same image and command as a local run (compose.yaml + e2e/Dockerfile).
       - name: Run Playwright in its container
@@ -85,6 +88,68 @@ jobs:
           path: reports/playwright.json
           if-no-files-found: ignore
           retention-days: 7
+
+  # The Java E2E suite (e2e-java/, also `make test-java`): Selenium WebDriver +
+  # TestNG + Cucumber + REST Assured, reported with Allure. Same disposable local
+  # Supabase stack as the other jobs; the app is the Vite dev server on the
+  # runner, the browser is the runner's own Chrome, headless. A separate job so
+  # it runs alongside the Playwright suite and adds nothing to its time; it is
+  # not a deploy-prod gate until it has a green history.
+  e2e-java:
+    name: E2E tests (Java, Selenium + TestNG + Cucumber + REST Assured)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      # The dev server and the Supabase CLI come from the app's own node_modules.
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Start test database
+        run: supabase start
+      # Exports the stack's URL and local keys (masked) and starts the app on :5174.
+      - name: Start the app against the local stack
+        run: bash e2e-java/scripts/start-app.sh
+
+      - name: Run the Java suite
+        working-directory: e2e-java
+        env:
+          CI: 'true'
+          HEADLESS: 'true'
+          BROWSER: chrome
+        run: ./mvnw -B --no-transfer-progress test
+
+      - name: Dev server log
+        if: failure()
+        run: tail -n 60 e2e-java/app.log || true
+
+      - name: Build the Allure report
+        if: ${{ !cancelled() }}
+        run: >
+          npx --yes allure-commandline@2.46.1 generate e2e-java/target/allure-results
+          --clean -o e2e-java/target/allure-report
+      - name: Upload the report, JUnit XML and failure screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-e2e-report
+          path: |
+            e2e-java/target/allure-report
+            e2e-java/target/surefire-reports/*.xml
+            e2e-java/target/screenshots
+          if-no-files-found: ignore
+          retention-days: 14
 
   # API, database and Pages Functions tests (api-tests/, pytest + pytest-bdd)
   # against the same disposable local Supabase as E2E, in parallel with it.
@@ -130,7 +195,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
       # Exports the stack's URLs and local keys to later steps (masked in logs).
       - name: Point the suite at the local stack
         run: bash api-tests/scripts/local-env.sh
@@ -199,7 +267,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
       - name: Point the verification at the local stack
         run: bash api-tests/scripts/local-env.sh
       - name: Supabase verification (PostgREST schema + live replay)
@@ -243,7 +314,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
       - name: Point the evals at the local stack
         run: bash api-tests/scripts/local-env.sh
       - name: Start the Pages Functions, with Claude replaced by a recording stub
@@ -315,7 +389,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
       - name: Point the suite at the local stack
         run: bash api-tests/scripts/local-env.sh
 

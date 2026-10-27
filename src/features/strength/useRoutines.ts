@@ -3,11 +3,15 @@ import { supabase } from '@/lib/supabase'
 import { isCardioKey } from '@/lib/cardio'
 import { isLiftKey } from '@/lib/warmup'
 import { mergeTemplateRows, type TemplateRow } from '@/lib/templateDiff'
+import type { WorkoutDetail } from './useStrength'
 import type {
   IntervalsTarget,
   Routine,
   RoutineExercise,
+  Workout,
   WorkoutCheckin,
+  WorkoutExercise,
+  WorkoutSet,
 } from '@/lib/database.types'
 
 export function useRoutines() {
@@ -289,11 +293,19 @@ export function useStartFromRoutine() {
       }
       // Seed the rest timer from the template (migration_routine_rest.sql).
       // A DB without the column errors here → the workout keeps its default.
-      const { data: rt } = await supabase
-        .from('routines')
-        .select('rest_seconds')
-        .eq('id', routineId)
-        .maybeSingle()
+      // The template's exercises are read at the same time.
+      const [{ data: rt }, { data: rex }] = await Promise.all([
+        supabase
+          .from('routines')
+          .select('rest_seconds')
+          .eq('id', routineId)
+          .maybeSingle(),
+        supabase
+          .from('routine_exercises')
+          .select('*')
+          .eq('routine_id', routineId)
+          .order('position'),
+      ])
       const tplRest = (rt as { rest_seconds?: number } | null)?.rest_seconds
       if (typeof tplRest === 'number') row.rest_seconds = tplRest
       let { data: w, error: we } = await supabase
@@ -311,12 +323,8 @@ export function useStartFromRoutine() {
           .single())
       }
       if (we) throw we
-      const workoutId = (w as { id: string }).id
-      const { data: rex } = await supabase
-        .from('routine_exercises')
-        .select('*')
-        .eq('routine_id', routineId)
-        .order('position')
+      const workout = w as Workout
+      const workoutId = workout.id
       // Cardio items don't become workout exercises — the workout page shows
       // them as a checklist from the source routine; logging one writes a
       // normal exercise_entries row.
@@ -326,42 +334,63 @@ export function useStartFromRoutine() {
           (!plan || (plan[re.id] ?? 0) > 0) &&
           !skip?.includes(re.id),
       )
-      for (const orig of exs) {
+      // All exercises go in one insert and all their sets in a second, instead
+      // of two requests per exercise. Ids are chosen here so each set can name
+      // its exercise without waiting for the first insert's reply.
+      const exRows = exs.map((orig) => {
         const sw = swaps?.[orig.id]
-        const re = sw
-          ? { ...orig, exercise_key: sw.key, exercise_name: sw.name }
-          : orig
-        const { data: we2 } = await supabase
+        return {
+          id: crypto.randomUUID(),
+          workout_id: workoutId,
+          exercise_key: sw ? sw.key : orig.exercise_key,
+          exercise_name: sw ? sw.name : orig.exercise_name,
+          position: orig.position,
+          superset_group: orig.superset_group,
+        }
+      })
+      // Start every exercise with one empty set — no last-time prefill and no
+      // template target numbers loaded, so the boxes begin blank. With a time
+      // budget, lay out the planned number of (still blank) sets instead.
+      const setRows = exRows.flatMap((we2, i) => {
+        const setCount = plan ? Math.max(1, plan[exs[i].id] ?? 1) : 1
+        return Array.from({ length: setCount }, (_, n) => ({
+          workout_id: workoutId,
+          workout_exercise_id: we2.id,
+          exercise_key: we2.exercise_key,
+          exercise_name: we2.exercise_name,
+          set_number: n + 1,
+          reps: null,
+          weight_lb: null,
+        }))
+      })
+      let exercises: WorkoutExercise[] = []
+      let sets: WorkoutSet[] = []
+      if (exRows.length) {
+        const { data: exIns, error: exErr } = await supabase
           .from('workout_exercises')
-          .insert({
-            workout_id: workoutId,
-            exercise_key: re.exercise_key,
-            exercise_name: re.exercise_name,
-            position: re.position,
-            superset_group: re.superset_group,
-          })
+          .insert(exRows)
           .select('*')
-          .single()
-        const weId = (we2 as { id: string }).id
-        // Start every exercise with one empty set — no last-time prefill and no
-        // template target numbers loaded, so the boxes begin blank. With a time
-        // budget, lay out the planned number of (still blank) sets instead.
-        const setCount = plan ? Math.max(1, plan[re.id] ?? 1) : 1
-        await supabase.from('workout_sets').insert(
-          Array.from({ length: setCount }, (_, i) => ({
-            workout_id: workoutId,
-            workout_exercise_id: weId,
-            exercise_key: re.exercise_key,
-            exercise_name: re.exercise_name,
-            set_number: i + 1,
-            reps: null,
-            weight_lb: null,
-          })),
+        if (exErr) throw exErr
+        const { data: setIns, error: setErr } = await supabase
+          .from('workout_sets')
+          .insert(setRows)
+          .select('*')
+        if (setErr) throw setErr
+        exercises = ((exIns ?? []) as WorkoutExercise[]).sort(
+          (a, b) => a.position - b.position,
+        )
+        sets = ((setIns ?? []) as WorkoutSet[]).sort(
+          (a, b) => a.set_number - b.set_number,
         )
       }
+      // The workout page opens on these rows with no fetch of its own.
+      const detail: WorkoutDetail = { workout, exercises, sets }
+      qc.setQueryData(['workout', workoutId], detail)
       return workoutId
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['workouts'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['workouts'] })
+    },
   })
 }
 

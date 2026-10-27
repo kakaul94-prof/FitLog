@@ -46,7 +46,7 @@ import type {
 // The one check-in sheet. Before a workout: how the last one (< 3 days ago)
 // landed — its main muscles and joints — plus the joints today loads. Achy or
 // sharp joints drive today's swaps (lib/checkin.ts); very sore muscles only get
-// a "go lighter" heads-up. The same rows open from the 9:00 notification with
+// a "go lighter" heads-up. The same rows open from the next-day notification with
 // Save instead of Start. Swaps change today's workout only, never the routine.
 
 export interface StartVars {
@@ -108,7 +108,7 @@ export function useWorkoutCheckin() {
   return { start, sheet, isPending: startFrom.isPending || create.isPending }
 }
 
-/** Morning mode, opened from the 9:00 notification (Lift tab `?recovery=<id>`). */
+/** Morning mode, opened from the next-day notification (Lift tab `?recovery=<id>`). */
 export function RecoverySheet({ workoutId, onClose }: { workoutId: string; onClose: () => void }) {
   return <CheckinSheet recoveryId={workoutId} busy={false} onCancel={onClose} onDone={async () => onClose()} />
 }
@@ -196,7 +196,7 @@ function CheckinSheet({
   const prev =
     target && (saveMode || isRecent(target.workout.workout_date, today)) ? target : null
   const prefill = prev?.workout.checkin?.after?.morning
-  // Answered the 9:00 check-in today: don't ask about the last workout again —
+  // Answered the next-day check-in today: don't ask about the last workout again —
   // only the joints today's lifts load, pre-set from that answer.
   const doneToday = !saveMode && answeredToday(prefill, today)
   const askLast = !!prev && !doneToday
@@ -353,7 +353,7 @@ function CheckinSheet({
     }
   }
 
-  // Answered this morning and today loads no tracked joint (a blank start, say):
+  // Answered it earlier today and today loads no tracked joint (a blank start, say):
   // nothing left to ask, so start straight away.
   const skipSheet = doneToday && !loading && todayJoints.length === 0
   const skipped = useRef(false)
@@ -396,7 +396,7 @@ function CheckinSheet({
           <span className="text-sm">
             <span className="capitalize">{label}</span>
             {carried && (
-              <span className="block text-xs text-muted-foreground">from this morning</span>
+              <span className="block text-xs text-muted-foreground">from earlier today</span>
             )}
           </span>
           {kind === 'm' ? (
@@ -493,13 +493,13 @@ function CheckinSheet({
                   <p className="text-sm text-muted-foreground">
                     {askLast
                       ? `${weekday} · ${agoLabel(prev.workout.workout_date, today)}. ${
-                          prefill && !saveMode ? 'Pre-filled from this morning.' : 'Everything starts as Fine.'
+                          prefill && !saveMode ? 'Pre-filled from your check-in.' : 'Everything starts as Fine.'
                         }`
                       : `${vars?.name ?? ''}${lifts.length ? ` · ${lifts.length} exercises` : ''}`}
                   </p>
                   {doneToday && (
                     <p className="text-sm text-muted-foreground">
-                      {prev?.workout.name || 'Your last workout'} checked this morning.
+                      {prev?.workout.name || 'Your last workout'} checked earlier today.
                     </p>
                   )}
                 </div>

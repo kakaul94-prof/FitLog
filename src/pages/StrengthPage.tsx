@@ -84,7 +84,7 @@ export function StrengthPage() {
   const { data: workouts } = useWorkouts()
   const { data: routines } = useRoutines()
   const { data: profile } = useProfile()
-  // ?recovery=<workoutId> — the 9:00 "how's your body?" notification lands here.
+  // ?recovery=<workoutId> — the next-day "how's your body?" notification lands here.
   const [params, setParams] = useSearchParams()
   const recoveryId = params.get('recovery')
   const checkin = useWorkoutCheckin()

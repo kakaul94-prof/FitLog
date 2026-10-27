@@ -4,8 +4,9 @@ import {
   answeredToday,
   isRecent,
   jointsLoaded,
+  lastActivity,
   musclesWorked,
-  nextMorning9,
+  recoveryPingAt,
   recoverySummary,
   sorenessHeadsUp,
   withRecovery,
@@ -37,11 +38,28 @@ describe('timing', () => {
     expect(isRecent('2026-10-08', '2026-10-11')).toBe(false)
     expect(agoLabel('2026-10-10', '2026-10-11')).toBe('yesterday')
   })
-  it('fires at 9:00 the next day, across a month end', () => {
-    const d = nextMorning9('2026-10-31')
-    expect([d.getMonth(), d.getDate(), d.getHours()]).toEqual([10, 1, 9])
+  it('fires 24 h after the workout ends, across a month end', () => {
+    const d = recoveryPingAt(new Date(2026, 9, 31, 18, 30))
+    expect([d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()]).toEqual([10, 1, 18, 30])
   })
-  it('knows a 9:00 answer was given today (local date)', () => {
+  it('keeps the question out of 21:00–9:00 quiet hours', () => {
+    const hm = (d: Date) => [d.getDate(), d.getHours(), d.getMinutes()]
+    expect(hm(recoveryPingAt(new Date(2026, 9, 26, 7, 0)))).toEqual([27, 9, 0])
+    expect(hm(recoveryPingAt(new Date(2026, 9, 26, 22, 30)))).toEqual([27, 21, 0])
+    expect(hm(recoveryPingAt(new Date(2026, 9, 26, 21, 0)))).toEqual([27, 21, 0])
+    expect(hm(recoveryPingAt(new Date(2026, 9, 26, 9, 0)))).toEqual([27, 9, 0])
+  })
+  it('takes the end from the latest Done tap or logged set', () => {
+    const t = lastActivity([
+      '2026-10-26T18:05:00.123456+00:00',
+      null,
+      '2026-10-26T18:40:00.000Z',
+      '2026-10-26T18:20:00+00:00',
+    ])
+    expect(t?.toISOString()).toBe('2026-10-26T18:40:00.000Z')
+    expect(lastActivity([null, undefined])).toBeNull()
+  })
+  it('knows the notification was answered today (local date)', () => {
     const at = (day: number, h: number) => new Date(2026, 9, day, h, 4).toISOString()
     expect(answeredToday(answer({ at: at(19, 9) }), '2026-10-19')).toBe(true)
     expect(answeredToday(answer({ at: at(19, 23) }), '2026-10-19')).toBe(true)
@@ -63,7 +81,7 @@ describe('answers', () => {
     const c2 = withRecovery({ ...c1, skipped: ['Lunge'] }, 'pre', answer({}))
     expect(c2.after?.morning).toBe(morning)
     expect(c2.skipped).toEqual(['Lunge'])
-    expect(recoverySummary(c2.after)).toBe('next morning: knee achy; before next workout: all fine')
+    expect(recoverySummary(c2.after)).toBe('a day later: knee achy; before next workout: all fine')
   })
   it('labels sides and sharp pain', () => {
     const a = answer({ joints: { shoulder: { feel: 'sharp', side: 'left' } } })

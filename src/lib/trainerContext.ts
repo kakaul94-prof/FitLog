@@ -394,7 +394,7 @@ export async function buildTrainerContext(
     .filter((r) => r.checkin?.flags?.length || r.checkin?.after)
   if (checkins.length) {
     out.push(
-      `Soreness and pain check-ins (joints achy/sharp before a workout + what was swapped; and how each workout felt the next morning / before the next one): ${checkins
+      `Soreness and pain check-ins (joints achy/sharp before a workout + what was swapped; and how each workout felt a day later / before the next one): ${checkins
         .map((r) => {
           const parts = [
             checkinSummary(r.checkin),

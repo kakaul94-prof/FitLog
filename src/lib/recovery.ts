@@ -5,9 +5,9 @@ import { daysBetweenISO, todayISO } from './date'
 import type { RecoveryAnswer, WorkoutCheckin } from './database.types'
 
 // Next-day recovery: how a recent workout landed — the main muscles it worked
-// and the joints it loaded. Asked by the 9:00 notification ("morning") and
-// again at the next start ("pre"); both answers are kept on that workout's own
-// checkin.after. Pure, so it's unit-tested.
+// and the joints it loaded. Asked by the notification ~24 h later (stored as
+// "morning", its old 9:00 name) and again at the next start ("pre"); both
+// answers are kept on that workout's own checkin.after. Pure, so it's unit-tested.
 
 export interface Lift {
   key: string
@@ -42,7 +42,7 @@ export const isRecent = (workoutDate: string, today: string) => {
   return d >= 0 && d < RECENT_DAYS
 }
 
-/** The 9:00 answer was given today (local) — the start sheet then skips the
+/** The notification's answer was given today (local) — the start sheet then skips the
  *  last workout and asks only about the joints today loads. */
 export const answeredToday = (a: RecoveryAnswer | undefined, today: string) =>
   !!a && todayISO(new Date(a.at)) === today
@@ -53,10 +53,26 @@ export function agoLabel(workoutDate: string, today: string): string {
   return d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`
 }
 
-/** 9:00 local the day after the workout — when the recovery question fires. */
-export function nextMorning9(workoutDate: string): Date {
-  const [y, m, d] = workoutDate.split('-').map(Number)
-  return new Date(y, m - 1, d + 1, 9, 0, 0)
+/** When a workout ended, for the recovery question: the latest of its Done
+ *  taps and logged sets. null = nothing logged yet. */
+export function lastActivity(stamps: (string | null | undefined)[]): Date | null {
+  const t = Math.max(...stamps.map((s) => (s ? Date.parse(s) : NaN)).filter((n) => !isNaN(n)))
+  return Number.isFinite(t) ? new Date(t) : null
+}
+
+/** Quiet hours for the recovery question, local: nothing after 21:00 or before 9:00. */
+export const QUIET_FROM = 21
+export const QUIET_UNTIL = 9
+
+/** When the recovery question fires: 24 h after the workout ended, kept out of
+ *  quiet hours — a 7:00 time waits until 9:00, a 22:30 one moves up to 21:00. */
+export function recoveryPingAt(endedAt: Date): Date {
+  const at = new Date(endedAt)
+  at.setDate(at.getDate() + 1) // same clock time tomorrow, even across a DST change
+  const h = at.getHours() + at.getMinutes() / 60
+  if (h < QUIET_UNTIL) at.setHours(QUIET_UNTIL, 0, 0, 0)
+  else if (h > QUIET_FROM) at.setHours(QUIET_FROM, 0, 0, 0)
+  return at
 }
 
 /** Lifts today that work a muscle answered very sore or sharp → "go lighter". */
@@ -111,11 +127,11 @@ export function answerLabel(a: RecoveryAnswer): string {
     : 'all fine'
 }
 
-/** "next morning: quads sore; before next workout: all fine" for the trainer. */
+/** "a day later: quads sore; before next workout: all fine" for the trainer. */
 export function recoverySummary(after: WorkoutCheckin['after']): string {
   if (!after) return ''
   const parts: string[] = []
-  if (after.morning) parts.push(`next morning: ${answerLabel(after.morning)}`)
+  if (after.morning) parts.push(`a day later: ${answerLabel(after.morning)}`)
   if (after.pre) parts.push(`before next workout: ${answerLabel(after.pre)}`)
   return parts.join('; ')
 }

@@ -18,7 +18,7 @@ type Row = Workout & {
   workout_sets: { reps: number | null; weight_lb: number | null }[]
 }
 
-/** The workout to ask "how did it land?" about: the one the 9:00 notification
+/** The workout to ask "how did it land?" about: the one the next-day notification
  *  named (`id`), or else the latest one in the last 3 days with a logged set.
  *  null when there's none — the check-in then skips the recovery section. */
 export function useRecoveryTarget(id?: string | null, enabled = true) {

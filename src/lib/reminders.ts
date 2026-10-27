@@ -180,7 +180,7 @@ export async function syncStreakNudge(loggedToday: boolean): Promise<void> {
 }
 
 /**
- * One-shot "how's your body?" for 9:00 the day after a workout with sets.
+ * One-shot "how's your body?" ~24 h after a workout with sets (recoveryPingAt).
  * One slot: a later workout replaces it. Not tied to the Reminders settings —
  * it's part of the workout check-in, and it never fires once that's answered.
  */

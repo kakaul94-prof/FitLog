@@ -56,6 +56,7 @@ Four layers, each where it is cheapest to prove what it proves:
 | AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 264 tests, ~2 min; live tier on demand; production canary twice a day | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); the real model's behaviour on 87 cases x 3 runs, including fairness (counterfactual name, age and sex pairs scored for equivalence, and stated dietary and religious constraints), judged where rules can't decide (by hand, capped at a few dollars); and a canary of ten cases through the deployed production trainer twice a day, with a latency budget and GitHub-issue alerts |
 | End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
 | Production monitoring | Playwright canary ([`canary/`](canary/README.md)) + Sentry | one journey every 30 min, ~2 min; errors as they happen | The deployed app still works for a user, from the outside (sign in, diary, log and delete a food, ask the trainer), with a GitHub issue per outage; and the errors real use hits, with the release and a readable stack, scrubbed of anything personal (see [Production monitoring](#production-monitoring)) |
+| End to end (Java) | Selenium + TestNG + Cucumber + REST Assured ([`e2e-java/`](e2e-java/README.md)) | 17 tests, ~2 min | The core journeys (sign in, log / edit / delete a food, totals, weigh-in) a second way, in a small interview-style Java framework: page objects, explicit waits only, a browser and a user per test, Allure report |
 | Performance | k6 ([`perf-tests/`](perf-tests/README.md)) | smoke on every PR (~2 min); load + soak nightly; stress and spike by hand | The backend holds its latency and error budgets under realistic user journeys at expected load, degrades predictably past it, and doesn't drift over a long run |
 
 One command runs them all, bottom of the pyramid first, stopping at the first failing layer:
@@ -75,6 +76,7 @@ make test          # or, without make: bash scripts/test-all.sh test
 | `make canary-prod` | The production AI canary once, by hand: ten cases through the deployed trainer, capped at $0.25 (needs `ai-evals/.env.canary`; see `ai-evals/README.md`) |
 | `npm run canary` | The production app canary once, by hand: the user journey through the live site as the monitor account (same `ai-evals/.env.canary`; see [`canary/README.md`](canary/README.md)) |
 | `make test-e2e` | Playwright, in its container |
+| `make test-java` | The Java E2E suite (Selenium + TestNG + Cucumber + REST Assured) against the local stack, Allure results in `e2e-java/target` |
 | `make test-security` | Security scans: gitleaks, npm audit, pip-audit and an OWASP ZAP baseline scan (report only) |
 | `make report` | Builds and opens the Allure report of the last API and AI-eval runs |
 | `make perf-smoke` / `perf-load` / `perf-stress` / `perf-soak` | The k6 scenarios against the local stack (see Performance tests); `make perf-clean` removes a stopped run's users |
@@ -314,6 +316,10 @@ e2e/
 └── support/       # local-only env guard, Supabase API client
 canary/            # production app canary: the journey through the live site, alerts, publish, their tests
 shared/            # code the browser AND the Pages Functions use: Sentry scrubbing, the release tag
+e2e-java/
+├── pom.xml        # Selenium + TestNG + Cucumber + REST Assured, Allure
+├── scripts/       # start-app.sh (local stack env + Vite on :5174), run.sh
+└── src/test/      # pages/, tests/, cucumber/, resources/features/
 testkit/           # shared Python package (fitlog-testkit): clients, token forger, factories, contracts, Claude stub
 api-tests/
 ├── tests/         # auth, authz, contracts, validation, security, functions, bdd

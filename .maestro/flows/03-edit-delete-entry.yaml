@@ -28,6 +28,10 @@ onFlowComplete:
 - eraseText: 10
 - inputText: "2"
 - hideKeyboard
+# The buttons sit under the nutrient breakdown: scroll to them, as a user does.
+- scrollUntilVisible:
+    element: "Save changes"
+    centerElement: true
 - tapOn: "Save changes"
 - extendedWaitUntil:
     visible: "Toast ${output.runId} 400"
@@ -46,6 +50,9 @@ onFlowComplete:
 
 # Delete, through the app's confirm dialog (a native Android alert).
 - tapOn: "Toast ${output.runId} 400"
+- scrollUntilVisible:
+    element: "Delete entry"
+    centerElement: true
 - tapOn: "Delete entry"
 - extendedWaitUntil:
     visible: "Delete this entry\\?"

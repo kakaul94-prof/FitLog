@@ -36,5 +36,15 @@ for i in $(seq 1 "$repeat"); do
   echo "::endgroup::"
 done
 
+if [ -n "${DIAG:-}" ]; then
+  mkdir -p "$out/diag"
+  maestro test .maestro/diag/back-prompt.yaml \
+    --test-output-dir "$out/diag/output" --debug-output "$out/diag/debug" --flatten-debug-output || true
+  # A brand-new Maestro session, with the prompt still on screen.
+  maestro hierarchy > "$out/diag/fresh-hierarchy.json" 2>&1 || true
+  echo "---- fresh hierarchy texts ----"
+  grep -o -E '"(text|resource-id)" *: *"[^"]+"' "$out/diag/fresh-hierarchy.json" | grep -v -E 'systemui|android:id' | head -40
+fi
+
 adb logcat -d > "$out/logcat.txt" 2>&1 || true
 exit $status

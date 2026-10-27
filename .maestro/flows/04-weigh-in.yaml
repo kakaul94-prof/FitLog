@@ -21,8 +21,10 @@ onFlowComplete:
 - hideKeyboard
 - tapOn:
     id: "measurement-add"
-- extendedWaitUntil:
-    visible: "${output.weight} lb"
+# The history list is below the trend chart: scroll down to the new row.
+- scrollUntilVisible:
+    element: "${output.weight} lb"
+    centerElement: true
     timeout: 30000
 - runFlow: ../subflows/wait-saved.yaml
 - runScript:

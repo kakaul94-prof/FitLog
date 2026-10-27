@@ -148,9 +148,16 @@ export function DiaryEntryPage() {
 
       {blocker.state === 'blocked' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6">
-          <Card className="w-full max-w-xs">
+          <Card
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="save-changes-title"
+            className="w-full max-w-xs"
+          >
             <CardContent className="space-y-3 p-4">
-              <p className="text-sm font-medium">Save changes?</p>
+              <p id="save-changes-title" className="text-sm font-medium">
+                Save changes?
+              </p>
               <p className="text-xs text-muted-foreground">
                 You changed the servings for this entry.
               </p>

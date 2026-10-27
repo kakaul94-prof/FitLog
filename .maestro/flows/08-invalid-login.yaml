@@ -2,6 +2,8 @@
 appId: app.fitlog.mobile
 name: 08-invalid-login
 ---
+# Stopped first, like subflows/sign-in.yaml, so the clear can't kill the launch.
+- stopApp
 - launchApp:
     clearState: true
 - extendedWaitUntil:

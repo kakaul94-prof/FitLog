@@ -154,7 +154,6 @@ jobs:
           MAESTRO_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
           MAESTRO_FITLOG_EMAIL: kim@e2e.test
           MAESTRO_FITLOG_PASSWORD: kim-password
-          DIAG: '1' # TEMPORARY: back-prompt diagnostic
 
       - name: Job summary (passes per flow)
         if: ${{ !cancelled() }}

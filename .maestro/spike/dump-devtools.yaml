@@ -1,5 +1,5 @@
 appId: app.fitlog.mobile
-name: "spike: dump the DevTools hierarchy of the diary (fails on purpose)"
+name: dump-devtools
 androidWebViewHierarchy: devtools
 ---
 - launchApp

@@ -1,5 +1,5 @@
 appId: app.fitlog.mobile
-name: "spike: open the sign-in screen"
+name: open-login
 ---
 - launchApp:
     clearState: true

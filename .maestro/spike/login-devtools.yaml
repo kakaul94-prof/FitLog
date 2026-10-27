@@ -1,5 +1,5 @@
 appId: app.fitlog.mobile
-name: "spike: sign in through the DevTools hierarchy (HTML ids)"
+name: login-devtools
 androidWebViewHierarchy: devtools
 ---
 - launchApp:

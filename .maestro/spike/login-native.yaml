@@ -1,5 +1,5 @@
 appId: app.fitlog.mobile
-name: "spike: sign in through the native accessibility tree"
+name: login-native
 ---
 - launchApp:
     clearState: true

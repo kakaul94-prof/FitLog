@@ -12,6 +12,12 @@ adb devices
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 adb shell getprop ro.build.version.release > "$out/android-version.txt"
 
+# Can the emulator reach the runner's web server and the local Supabase API?
+for port in 5174 54321; do
+  if adb shell "nc -z -w 5 10.0.2.2 $port"; then echo "10.0.2.2:$port reachable from emulator"
+  else echo "10.0.2.2:$port NOT reachable from emulator"; fi
+done
+
 run_flow() { # name -> exit code recorded in results.txt, never aborts the spike
   local name=$1
   maestro test ".maestro/spike/$name.yaml" \
@@ -37,7 +43,9 @@ run_flow login-devtools
 #    DevTools view of the diary screen to its screen-hierarchy folder.
 run_flow dump-devtools
 
-adb logcat -d -t 2000 > "$out/logcat.txt" 2>&1 || true
+adb logcat -d > "$out/logcat.txt" 2>&1 || true
+echo "---- WebView console and Capacitor lines ----"
+grep -E "Capacitor/Console|chromium|Capacitor:|cr_" "$out/logcat.txt" | tail -80 || true
 echo "---- results ----"; cat "$out/results.txt"
 
 # The spike passes if the DevTools sign-in worked: that is the mode the real

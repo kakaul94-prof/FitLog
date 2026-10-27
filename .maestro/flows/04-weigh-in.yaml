@@ -22,10 +22,13 @@ onFlowComplete:
 - tapOn:
     id: "measurement-add"
 # The history list is below the trend chart: scroll down to the new row.
+# Its value and unit are separate text nodes, so find the row by its own
+# buttons' accessibility labels, which name the weigh-in.
 - scrollUntilVisible:
-    element: "${output.weight} lb"
+    element: "Delete ${output.weight} lb"
     centerElement: true
     timeout: 30000
+- assertVisible: "Change date of ${output.weight} lb"
 - runFlow: ../subflows/wait-saved.yaml
 - runScript:
     file: ../scripts/db.js

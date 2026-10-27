@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import { useUndoSwap } from '@/features/strength/useCheckin'
 import { flagsLabel } from '@/lib/checkin'
-import { nextMorning9 } from '@/lib/recovery'
+import { lastActivity, recoveryPingAt } from '@/lib/recovery'
 import { scheduleRecoveryCheck } from '@/lib/reminders'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { NewChatButton, TrainerChat } from '@/components/TrainerChat'
@@ -176,20 +176,24 @@ export function WorkoutPage() {
   const exercises = data?.exercises ?? []
   const sets = data?.sets ?? []
 
-  // Arm tomorrow's 9:00 "how's your body?" once a set is logged. Re-arming is
-  // harmless (one slot, same time); once the workout's recovery is answered it
-  // stays quiet. Past workouts are skipped inside (fire time already gone).
-  const recoveryArmed = useRef(false)
-  const hasLoggedSet = sets.some((s) => s.reps != null || s.weight_lb != null)
+  // Arm "how's your body?" for 24 h after the workout's latest logged set or
+  // Done tap, kept within 9:00–21:00. Each new set re-arms it later (one slot,
+  // so the latest wins); once the recovery is answered it stays quiet. Opening
+  // an old workout doesn't touch it — only activity in the last few hours does.
+  const endedAt = lastActivity([
+    ...exercises.map((e) => e.ended_at),
+    ...sets.filter((s) => s.reps != null || s.weight_lb != null).map((s) => s.created_at),
+  ])?.getTime()
+  const answered = !!workout?.checkin?.after
   useEffect(() => {
-    if (recoveryArmed.current || !workout || !hasLoggedSet || workout.checkin?.after) return
-    recoveryArmed.current = true
+    if (!workout || endedAt == null || answered) return
+    if (Date.now() - endedAt > 6 * 3600_000) return
     void scheduleRecoveryCheck(
       workout.id,
       workout.name || 'your workout',
-      nextMorning9(workout.workout_date),
+      recoveryPingAt(new Date(endedAt)),
     )
-  }, [workout, hasLoggedSet])
+  }, [workout?.id, workout?.name, endedAt, answered]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cardio items programmed on the source template. They never become workout
   // exercises — they render as a checklist here, and logging one writes a

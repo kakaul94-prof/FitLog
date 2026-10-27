@@ -597,7 +597,7 @@ export interface WorkoutCheckin {
   swaps: CheckinSwap[]
   /** Names of planned lifts left out because of the check-in. */
   skipped: string[]
-  /** Next-day recovery for THIS workout: the 9:00 notification's answer and
+  /** Next-day recovery for THIS workout: the next-day notification's answer and
    *  the one given at the next start. Both kept. */
   after?: { morning?: RecoveryAnswer; pre?: RecoveryAnswer }
 }

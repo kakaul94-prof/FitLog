@@ -8,7 +8,7 @@ FitLog is a phone-first food, cardio and strength tracker (React + Supabase) wit
 - **Production deploys only from `main` after all four pass.** k6 smoke, security scans and quality metrics run alongside without blocking.
 - **My own database is never stubbed**: a throwaway Supabase stack in Docker per CI run, built from the production schema and RLS policies. Third-party and AI services always are.
 - **Flakiness is measured, not retried away**: 6 flaky E2E results in 3,009 over 35 pushes, all one app bug, none since its fix; 0 in 34,354 unit, API and AI results.
-- **The installed Android app is driven on an emulator**: 8 Maestro flows run the real APK through the back button, restarts and airplane mode on app PRs and nightly, outside the deploy gate; 40 of 40 passed in 5 back-to-back runs with retries off.
+- **The installed Android app is driven on an emulator**: 8 Maestro flows run the real APK through the back button, restarts and airplane mode on app PRs and nightly, outside the deploy gate. With retries off, a first 40-of-40 was followed by 1 failure in the next 8: a launch race, traced in the device log and fixed at its cause; since then 48 of 48, with a log check proving the race never fired.
 - **Biggest gaps**: the production canaries are built and wired but not yet live (they wait on a monitor account, §6), and the phone's hardware features (camera, GPS, Bluetooth, notifications, Health Connect, biometrics) are tested by hand only.
 
 ## 1. Goals and risks

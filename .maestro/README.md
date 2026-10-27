@@ -108,7 +108,7 @@ Common causes:
 | A step fails and the screenshot shows the home screen | The app was killed or crashed: look for `Killing` or `FATAL` in `logcat.txt` |
 | "Element not found" with the element on the screenshot | Its text in the hierarchy differs from the selector, e.g. a button's text is its whole accessible name. Match the hierarchy, or add an HTML `id`. If it isn't in the hierarchy at all, it is missing from the accessibility tree (see Selectors) |
 | "Element not found" for something further down the page | Maestro doesn't scroll on its own: `scrollUntilVisible` first, as a user would |
-| A clean launch shows a blank screen | The app was running when its data was cleared, and the clear's task removal killed the new launch. Flows `stopApp` before `launchApp: clearState`; keep it that way |
+| A clean launch shows a blank screen | The launch joined the old task while Android was still removing it, and the removal killed it: `logcat.txt` shows `Killing <pid>:app.fitlog.mobile … remove task`, and `run.sh` counts these. Flows go Home, `stopApp`, then `launchApp: clearState`, so no old window is left animating out; keep that order |
 | The diary never appears after sign-in | The web build points somewhere else: check the build's `VITE_SUPABASE_URL` and `vite-preview.log` |
 | `db.js: sign-in failed` | The stack isn't running, or the seed lacks the Kim account: `npm run db:reset` |
 | `06-offline-sync` stuck on "Offline" | The emulator's network didn't come back: `adb shell cmd connectivity airplane-mode disable` |

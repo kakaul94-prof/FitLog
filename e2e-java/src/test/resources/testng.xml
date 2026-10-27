@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<!--
+  What runs, and how parallel it is.
+
+  parallel="methods": every @Test method (and every DataProvider row) gets its own thread from a
+  pool of thread-count. Each UI test opens its own browser (DriverFactory is thread-local) and
+  its own user (TestUser), so the methods never share state.
+
+  Filter by group from the command line:  ./mvnw test -Dgroups=smoke
+-->
+<suite name="FitLog Java E2E" parallel="methods" thread-count="4" data-provider-thread-count="3" verbose="1">
+
+  <!-- Before any test: load the app once so a cold dev server never eats a test's wait. -->
+  <listeners>
+    <listener class-name="app.fitlog.e2e.support.AppWarmUp"/>
+  </listeners>
+
+  <test name="UI journeys (TestNG + Selenium)">
+    <packages>
+      <package name="app.fitlog.e2e.tests"/>
+    </packages>
+  </test>
+
+  <test name="API (REST Assured)">
+    <packages>
+      <package name="app.fitlog.e2e.tests.api"/>
+    </packages>
+  </test>
+
+  <test name="Scenarios (Cucumber)">
+    <classes>
+      <class name="app.fitlog.e2e.cucumber.RunCucumberTest"/>
+    </classes>
+  </test>
+
+</suite>

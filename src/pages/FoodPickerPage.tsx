@@ -52,6 +52,11 @@ import {
 } from '@/lib/usda'
 import { todayISO } from '@/lib/date'
 import {
+  highlightSegments,
+  matchesFoodSearch,
+  searchWords,
+} from '@/lib/foodSearch'
+import {
   ingredientUnits,
   matchServingUnit,
   scaleNutrients,
@@ -247,14 +252,15 @@ export function FoodPickerPage() {
   }
 
   const q = search.trim().toLowerCase()
-  const byName = (arr: Food[]) =>
-    q ? arr.filter((f) => f.name.toLowerCase().includes(q)) : arr
+  const words = searchWords(search)
+  const bySearch = (arr: Food[]) =>
+    arr.filter((f) => matchesFoodSearch(f, words))
   const visible =
     tab === 'all'
       ? (foods ?? [])
       : tab === 'recent'
-        ? byName(history?.recent ?? [])
-        : byName(history?.frequent ?? [])
+        ? bySearch(history?.recent ?? [])
+        : bySearch(history?.frequent ?? [])
   const mealList = (meals ?? []).filter(
     (m) => !q || m.name.toLowerCase().includes(q),
   )
@@ -292,7 +298,7 @@ export function FoodPickerPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Search your foods"
+            placeholder="Search foods or brands"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -382,6 +388,7 @@ export function FoodPickerPage() {
             <FoodRow
               key={f.id}
               food={f}
+              words={words}
               multi={multi}
               picked={multi && isPicked(f.id)}
               onTap={() => onRowTap(f)}
@@ -728,14 +735,29 @@ export function FoodPickerPage() {
 const ROW_CLASS =
   'flex w-full select-none items-center gap-3 p-3 text-left [-webkit-touch-callout:none] active:bg-accent'
 
+/** `text` with the searched words marked, so the row shows why it matched. */
+function Highlighted({ text, words }: { text: string; words: string[] }) {
+  return highlightSegments(text, words).map((s, i) =>
+    s.hit ? (
+      <mark key={i} className="rounded-sm bg-primary/20 text-inherit">
+        {s.text}
+      </mark>
+    ) : (
+      s.text
+    ),
+  )
+}
+
 function FoodRow({
   food,
+  words,
   multi,
   picked,
   onTap,
   onMenu,
 }: {
   food: Food
+  words: string[]
   multi: boolean
   picked: boolean
   onTap: () => void
@@ -744,11 +766,18 @@ function FoodRow({
   const press = useLongPress(onMenu, onTap)
   const body = (
     <div className="min-w-0 flex-1">
-      <div className="text-sm font-medium">{food.name}</div>
+      <div className="text-sm font-medium">
+        <Highlighted text={food.name} words={words} />
+      </div>
       <div className="text-xs text-muted-foreground">
         {Math.round(food.nutrients.kcal ?? 0)} calories · {food.serving_qty}{' '}
         {food.serving_unit}
-        {food.brand ? ` · ${food.brand}` : ''}
+        {food.brand && (
+          <>
+            {' · '}
+            <Highlighted text={food.brand} words={words} />
+          </>
+        )}
       </div>
     </div>
   )

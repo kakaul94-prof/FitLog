@@ -130,6 +130,7 @@ class CustomExercise(Owned):
 class Routine(Owned):
     name: str
     position: int
+    rest_seconds: int  # rest timer seeded into its workouts (migration_routine_rest.sql)
     updated_at: datetime
 
 

@@ -8,7 +8,9 @@ export class FoodPickerPage extends BasePage {
 
   readonly quickAddButton = this.page.getByRole('button', { name: 'Quick add' })
   readonly doneButton = this.page.getByRole('button', { name: 'Done', exact: true })
-  readonly searchBox = this.page.getByPlaceholder('Search your foods')
+  // The picker searches brands too (5915c5b); the Foods library and recipe
+  // editor still say "Search your foods".
+  readonly searchBox = this.page.getByPlaceholder('Search foods or brands')
   readonly multiAddButton = this.page.getByRole('button', { name: 'Multi-add' })
   readonly emptyState = this.page.getByText('No foods found.')
   readonly usdaSearchButton = this.page.getByRole('button', { name: /^Search USDA for/ })

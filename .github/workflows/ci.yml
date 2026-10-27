@@ -59,7 +59,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
 
       # Same image and command as a local run (compose.yaml + e2e/Dockerfile).
       - name: Run Playwright in its container
@@ -85,6 +88,68 @@ jobs:
           path: reports/playwright.json
           if-no-files-found: ignore
           retention-days: 7
+
+  # The Java E2E suite (e2e-java/, also `make test-java`): Selenium WebDriver +
+  # TestNG + Cucumber + REST Assured, reported with Allure. Same disposable local
+  # Supabase stack as the other jobs; the app is the Vite dev server on the
+  # runner, the browser is the runner's own Chrome, headless. A separate job so
+  # it runs alongside the Playwright suite and adds nothing to its time; it is
+  # not a deploy-prod gate until it has a green history.
+  e2e-java:
+    name: E2E tests (Java, Selenium + TestNG + Cucumber + REST Assured)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: maven
+      # The dev server and the Supabase CLI come from the app's own node_modules.
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Start test database
+        run: supabase start
+      # Exports the stack's URL and local keys (masked) and starts the app on :5174.
+      - name: Start the app against the local stack
+        run: bash e2e-java/scripts/start-app.sh
+
+      - name: Run the Java suite
+        working-directory: e2e-java
+        env:
+          CI: 'true'
+          HEADLESS: 'true'
+          BROWSER: chrome
+        run: ./mvnw -B --no-transfer-progress test
+
+      - name: Dev server log
+        if: failure()
+        run: tail -n 60 e2e-java/app.log || true
+
+      - name: Build the Allure report
+        if: ${{ !cancelled() }}
+        run: >
+          npx --yes allure-commandline@2.46.1 generate e2e-java/target/allure-results
+          --clean -o e2e-java/target/allure-report
+      - name: Upload the report, JUnit XML and failure screenshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-e2e-report
+          path: |
+            e2e-java/target/allure-report
+            e2e-java/target/surefire-reports/*.xml
+            e2e-java/target/screenshots
+          if-no-files-found: ignore
+          retention-days: 14
 
   # API, database and Pages Functions tests (api-tests/, pytest + pytest-bdd)
   # against the same disposable local Supabase as E2E, in parallel with it.
@@ -130,7 +195,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
       # Exports the stack's URLs and local keys to later steps (masked in logs).
       - name: Point the suite at the local stack
         run: bash api-tests/scripts/local-env.sh
@@ -170,6 +238,44 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # Consumer-driven contract tests (contracts/, also `make test-contracts`):
+  # the frontend's real API calls, recorded into contracts/*.json, replayed
+  # against the Pages Functions in-process and against the local Supabase
+  # stack's PostgREST + Auth. A renamed field, a changed type or a removed
+  # endpoint the app depends on fails here, by name, in under two minutes.
+  # No wrangler, no Python, and nothing leaves the runner but the local stack.
+  contracts:
+    name: Contract tests (frontend <-> API)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      # The offline half first: the consumer tests must reproduce the committed
+      # contract files, then the Pages Functions are verified in-process.
+      - name: Consumer contracts and Pages Functions verification
+        run: npm run test:contracts
+        env:
+          CI: 'true' # an outdated or missing contract file fails instead of being rewritten
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      - name: Start test database
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
+      - name: Point the verification at the local stack
+        run: bash api-tests/scripts/local-env.sh
+      - name: Supabase verification (PostgREST schema + live replay)
+        run: npm run test:contracts:supabase
+
   # Tier 1 of the AI trainer evals (ai-evals/, also `make test-ai`): the
   # function's own guardrails against prompt injection, information exposure,
   # unintended actions and a failing Claude, with Claude replaced by a scripted
@@ -208,7 +314,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
       - name: Point the evals at the local stack
         run: bash api-tests/scripts/local-env.sh
       - name: Start the Pages Functions, with Claude replaced by a recording stub
@@ -280,7 +389,10 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        run: supabase start
+        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
+        run: |
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
+          supabase start
       - name: Point the suite at the local stack
         run: bash api-tests/scripts/local-env.sh
 
@@ -404,7 +516,7 @@ jobs:
 
   deploy-prod:
     name: Deploy to production
-    needs: [unit, e2e, api, ai-evals] # the quality gate: only runs if every test job passed
+    needs: [unit, e2e, api, ai-evals, contracts] # the quality gate: only runs if every test job passed
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -438,6 +550,37 @@ jobs:
           cache: npm
       - if: steps.gate.outputs.ready == 'true'
         run: npm ci
+      # The Pages Functions load Sentry's SDK (functions/api/_middleware.ts),
+      # which needs the nodejs_als compatibility flag on the project (Cloudflare
+      # → fitlog-prod → Settings → Functions → Compatibility flags). Deploying
+      # without it would break every /api route, so look first: a missing flag
+      # stops the deploy and the previous version keeps serving; settings that
+      # can't be read are a warning, not a block.
+      - if: steps.gate.outputs.ready == 'true'
+        name: Check the Functions runtime has the flag Sentry needs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          project=$(curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/fitlog-prod") || project=''
+          ok=$(printf '%s' "$project" | jq -r '.success' 2>/dev/null) || ok=''
+          if [ "$ok" != "true" ]; then
+            echo "::warning::Could not read fitlog-prod's settings to confirm the nodejs_als compatibility flag; deploying anyway."
+            exit 0
+          fi
+          flags=$(printf '%s' "$project" | jq -r '.result.deployment_configs.production.compatibility_flags // [] | join(" ")')
+          case " $flags " in
+            *" nodejs_als "* | *" nodejs_compat "*) echo "Functions compatibility flags: $flags" ;;
+            *)
+              echo "::error::fitlog-prod's production Functions have no nodejs_als compatibility flag (flags: '${flags:-none}'). The Sentry SDK in functions/api/_middleware.ts needs it and deploying would break every /api route. Add it in Cloudflare → fitlog-prod → Settings → Functions → Compatibility flags (production), then re-run this job."
+              exit 1
+              ;;
+          esac
+      # Sentry: the DSN is baked into the bundle like the other VITE_ values;
+      # the org, project and token let vite.config.ts upload this build's source
+      # maps under the commit SHA (and delete them from dist/ before it ships).
+      # All optional: without them the build is exactly what it was.
       - if: steps.gate.outputs.ready == 'true'
         name: Build with production settings
         run: npm run build
@@ -445,11 +588,17 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.PROD_VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.PROD_VITE_SUPABASE_ANON_KEY }}
           VITE_USDA_API_KEY: ${{ secrets.PROD_VITE_USDA_API_KEY }}
+          VITE_SENTRY_DSN: ${{ secrets.PROD_VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENV: production
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
       # Uploads dist/ plus the functions/ API routes. Runtime secrets and
-      # bindings (e.g. the Anthropic key, Workers AI) stay in Cloudflare.
+      # bindings (e.g. the Anthropic key, Workers AI, the Sentry DSN) stay in
+      # Cloudflare. The commit hash is what the deployment shows in Cloudflare.
       - if: steps.gate.outputs.ready == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=fitlog-prod --branch=main
+          command: pages deploy dist --project-name=fitlog-prod --branch=main --commit-hash=${{ github.sha }}

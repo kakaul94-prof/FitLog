@@ -1,6 +1,8 @@
 # The production AI canary: a small, fixed set of the trainer evals' cases
 # through the REAL deployed trainer (fitlog-prod), as a dedicated monitor
-# account, every six hours and on demand (ai-evals/aievals/canary.py).
+# account, twice a day and on demand (ai-evals/aievals/canary.py). The app
+# canary (app-canary.yml) checks the journey around it every 30 minutes; this
+# one checks what the trainer SAYS.
 #
 # Shift-right: the live tier proves the model behaves before a release; this
 # proves the deployed feature still does. It is a monitor, outside the release
@@ -21,10 +23,14 @@
 # Repository secrets: PROD_VITE_SUPABASE_URL and PROD_VITE_SUPABASE_ANON_KEY
 # (the deploy already uses them), PROD_CANARY_EMAIL and PROD_CANARY_PASSWORD
 # (a user created in the production Supabase project for this and nothing
-# else). The judge (an input, off by default) also needs ANTHROPIC_API_KEY_EVALS.
-# The site defaults to https://fitlog-prod.pages.dev; a PROD_SITE_URL repository
-# variable overrides it. On the schedule, missing secrets skip the run with a
-# warning instead of failing every six hours; a manual run fails loudly.
+# else; shared with the app canary). The judge (an input, off by default) also
+# needs ANTHROPIC_API_KEY_EVALS. The site defaults to
+# https://fitlog-prod.pages.dev; a PROD_SITE_URL repository variable overrides it.
+#
+# A missing secret FAILS the run, on every trigger. The first version of this
+# file warned and skipped on the schedule instead, and twelve scheduled runs
+# showed green while no canary ever ran; canary/workflows.test.mjs pins the
+# gate so that cannot come back.
 #
 # GitHub runs scheduled workflows from the default branch only, so the schedule
 # (and the "Run workflow" button) start once this file is on main.
@@ -32,7 +38,7 @@ name: Production AI canary
 
 on:
   schedule:
-    - cron: '23 */6 * * *' # 00:23, 06:23, 12:23 and 18:23 UTC
+    - cron: '23 */12 * * *' # 00:23 and 12:23 UTC: about $0.05 a run, $3 a month
   workflow_dispatch:
     inputs:
       judge:
@@ -60,7 +66,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check the secrets are configured
-        id: gate
         env:
           SUPABASE_URL: ${{ secrets.PROD_VITE_SUPABASE_URL }}
           ANON_KEY: ${{ secrets.PROD_VITE_SUPABASE_ANON_KEY }}
@@ -68,7 +73,6 @@ jobs:
           PASSWORD: ${{ secrets.PROD_CANARY_PASSWORD }}
           JUDGE: ${{ inputs.judge }}
           JUDGE_KEY: ${{ secrets.ANTHROPIC_API_KEY_EVALS }}
-          SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
           missing=()
           [ -n "$SUPABASE_URL" ] || missing+=(PROD_VITE_SUPABASE_URL)
@@ -76,25 +80,18 @@ jobs:
           [ -n "$EMAIL" ] || missing+=(PROD_CANARY_EMAIL)
           [ -n "$PASSWORD" ] || missing+=(PROD_CANARY_PASSWORD)
           if [ "$JUDGE" = "true" ] && [ -z "$JUDGE_KEY" ]; then missing+=(ANTHROPIC_API_KEY_EVALS); fi
-          if [ ${#missing[@]} -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          elif [ "$SCHEDULED" = "true" ]; then
-            echo "::warning::Canary skipped: add these repository secrets: ${missing[*]} (see the comment at the top of prod-canary.yml)."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::Add these repository secrets: ${missing[*]} (see the comment at the top of prod-canary.yml)."
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::The canary cannot run: add these repository secrets: ${missing[*]} (see the comment at the top of prod-canary.yml). A canary that skips is not a canary, so this fails on every trigger, the schedule included."
             exit 1
           fi
+          echo "secrets: all present"
 
-      - if: steps.gate.outputs.ready == 'true'
-        uses: actions/checkout@v4
-      - if: steps.gate.outputs.ready == 'true'
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - if: steps.gate.outputs.ready == 'true'
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
@@ -103,16 +100,14 @@ jobs:
             api-tests/requirements.txt
       # Node and esbuild because replies are parsed by the app's own code
       # (ai-evals/harness, src/lib/trainer.ts); Python for the canary itself.
-      - if: steps.gate.outputs.ready == 'true'
-        name: Install the evals
+      - name: Install the evals
         run: |
           npm ci
           pip install -r ai-evals/requirements.txt
 
       # The dashboard data, checked out first: the alert step reads the earlier
       # runs for its cost baseline, and the publish step appends to the file.
-      - if: steps.gate.outputs.ready == 'true'
-        name: Check out the dashboard branch
+      - name: Check out the dashboard branch
         uses: actions/checkout@v4
         with:
           ref: gh-pages
@@ -120,8 +115,7 @@ jobs:
 
       # Inputs reach the shell only through env and are validated, never
       # interpolated into the script.
-      - if: steps.gate.outputs.ready == 'true'
-        name: Run the canary
+      - name: Run the canary
         id: run
         working-directory: ai-evals
         env:
@@ -145,8 +139,8 @@ jobs:
 
       # Runs whether the canary passed or failed: a failed run is exactly when an
       # issue must be opened, and a passing one is when an open issue gets closed.
-      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
-        name: Open, update or close the alert issues
+      - name: Open, update or close the alert issues
+        if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
         working-directory: ai-evals
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -156,14 +150,14 @@ jobs:
           --out ../reports/prod-canary/alerts.json
 
       # Every run is data, the failed ones most of all.
-      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
-        name: Upload the results
+      - name: Upload the results
+        if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
           name: prod-canary
           path: reports/prod-canary
           if-no-files-found: ignore
           retention-days: 30
-      - if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
-        name: Publish to the dashboard
+      - name: Publish to the dashboard
+        if: ${{ !cancelled() && steps.run.outcome != 'skipped' }}
         run: bash ai-evals/scripts/publish-canary.sh _site

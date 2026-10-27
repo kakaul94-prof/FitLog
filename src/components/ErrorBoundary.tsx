@@ -1,6 +1,7 @@
 import { Component, useEffect, type ReactNode } from 'react'
 import { useRouteError } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
+import { reportError } from '@/lib/monitoring'
 
 const RELOAD_KEY = 'fitlog:chunk-reload'
 /** Attempts older than this belong to a previous incident, not a reload loop. */
@@ -129,6 +130,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   componentDidCatch(error: Error) {
     const step = planRecovery(error)
     if (step > 0) executeRecovery(step)
+    // A stale chunk after a deploy heals itself above and is noise; anything
+    // else that reached the root is the kind of error nobody would otherwise see.
+    else reportError(error, { where: 'error-boundary' })
   }
 
   render() {
@@ -159,7 +163,8 @@ export function RouteErrorElement() {
 
   useEffect(() => {
     if (step > 0) executeRecovery(step)
-  }, [step])
+    else reportError(error, { where: 'route' })
+  }, [step, error])
 
   if (step > 0) return <Spinner />
   const message = error instanceof Error ? `${error.name}: ${error.message}` : ''

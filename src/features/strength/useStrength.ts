@@ -1,4 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 import { insertOnce } from '@/lib/idempotent'
 import { supabase } from '@/lib/supabase'
 import type {
@@ -54,29 +59,31 @@ export function useWorkout(id: string | undefined) {
   return useQuery({
     queryKey: ['workout', id],
     enabled: !!id,
+    // One request: the workout with its exercises and sets embedded, instead
+    // of three round trips one after another. This refetch runs after every
+    // edit on the workout page, so it is the hot path.
     queryFn: async (): Promise<WorkoutDetail> => {
-      const { data: w, error: we } = await supabase
+      const { data, error } = await supabase
         .from('workouts')
-        .select('*')
+        .select('*, workout_exercises(*), workout_sets(*)')
         .eq('id', id)
+        .order('position', { referencedTable: 'workout_exercises' })
+        .order('set_number', { referencedTable: 'workout_sets' })
         .maybeSingle()
-      if (we) throw we
-      const { data: exs, error: ee } = await supabase
-        .from('workout_exercises')
-        .select('*')
-        .eq('workout_id', id)
-        .order('position')
-      if (ee) throw ee
-      const { data: sets, error: se } = await supabase
-        .from('workout_sets')
-        .select('*')
-        .eq('workout_id', id)
-        .order('set_number')
-      if (se) throw se
+      if (error) throw error
+      if (!data) return { workout: null, exercises: [], sets: [] }
+      const {
+        workout_exercises: exs,
+        workout_sets: sets,
+        ...w
+      } = data as Workout & {
+        workout_exercises: WorkoutExercise[] | null
+        workout_sets: WorkoutSet[] | null
+      }
       return {
-        workout: (w as Workout | null) ?? null,
-        exercises: (exs ?? []) as WorkoutExercise[],
-        sets: (sets ?? []) as WorkoutSet[],
+        workout: w as Workout,
+        exercises: exs ?? [],
+        sets: sets ?? [],
       }
     },
   })
@@ -339,25 +346,44 @@ export function useAddExercise() {
       name: string
       supersetWithId?: string
     }) => {
-      const { data: existing } = await supabase
-        .from('workout_exercises')
-        .select('id,position,superset_group')
-        .eq('workout_id', workoutId)
-      const ex = (existing ?? []) as {
-        id: string
-        position: number
-        superset_group: number | null
-      }[]
+      // Last time's sets and the lift's strength goal decide the prefill; they
+      // don't depend on the new exercise row, so fetch them alongside it.
+      const priorQ = supabase
+        .from('workout_sets')
+        .select('*')
+        .eq('exercise_key', key)
+        .order('created_at', { ascending: false })
+        .limit(30)
+      const goalQ = supabase
+        .from('strength_goals')
+        .select('*')
+        .eq('exercise_key', key)
+        .maybeSingle()
+
+      // Positions and superset groups come from the workout already on screen;
+      // only a cold cache (a deep link straight to the picker) asks the server.
+      const cached = qc.getQueryData<WorkoutDetail>(['workout', workoutId])
+      let ex: { id: string; position: number; superset_group: number | null }[]
+      if (cached?.workout) {
+        ex = cached.exercises
+      } else {
+        const { data: existing } = await supabase
+          .from('workout_exercises')
+          .select('id,position,superset_group')
+          .eq('workout_id', workoutId)
+        ex = (existing ?? []) as typeof ex
+      }
       const position = ex.length
 
       let group: number | null = null
+      let anchorWrite: PromiseLike<unknown> = Promise.resolve()
       if (supersetWithId) {
         const anchor = ex.find((e) => e.id === supersetWithId)
         group = anchor?.superset_group ?? null
         if (group == null) {
           group = ex.reduce((m, e) => Math.max(m, e.superset_group ?? 0), 0) + 1
           if (anchor) {
-            await supabase
+            anchorWrite = supabase
               .from('workout_exercises')
               .update({ superset_group: group })
               .eq('id', anchor.id)
@@ -365,7 +391,7 @@ export function useAddExercise() {
         }
       }
 
-      const { data: we, error: weErr } = await supabase
+      const weQ = supabase
         .from('workout_exercises')
         .insert({
           workout_id: workoutId,
@@ -376,25 +402,16 @@ export function useAddExercise() {
         })
         .select('*')
         .single()
-      if (weErr) throw weErr
 
-      const { data: prev } = await supabase
-        .from('workout_sets')
-        .select('*')
-        .eq('exercise_key', key)
-        .order('created_at', { ascending: false })
-        .limit(30)
+      const [{ data: we, error: weErr }, { data: prev }, { data: goalRow }] =
+        await Promise.all([weQ, priorQ, goalQ, anchorWrite])
+      if (weErr) throw weErr
       const prior = ((prev ?? []) as WorkoutSet[]).filter(
         (s) => s.workout_id !== workoutId,
       )
 
       // If this lift has a strength goal, prefill the suggested weight/reps for
       // the upcoming session (instead of the usual blank "match last time").
-      const { data: goalRow } = await supabase
-        .from('strength_goals')
-        .select('*')
-        .eq('exercise_key', key)
-        .maybeSingle()
       const goal = goalRow as StrengthGoal | null
       let suggested:
         | { weightLb: number | null; reps: number | null }[]
@@ -459,11 +476,39 @@ export function useAddExercise() {
           },
         ]
       }
-      const { error: sErr } = await supabase.from('workout_sets').insert(rows)
+      const { data: inserted, error: sErr } = await supabase
+        .from('workout_sets')
+        .insert(rows)
+        .select('*')
       if (sErr) throw sErr
-      return { workoutId }
+      return {
+        workoutId,
+        exercise: we as WorkoutExercise,
+        sets: (inserted ?? []) as WorkoutSet[],
+        anchor: supersetWithId && group != null ? { id: supersetWithId, group } : null,
+      }
     },
-    onSuccess: (d) => qc.invalidateQueries({ queryKey: ['workout', d.workoutId] }),
+    // Put the new exercise on screen from the rows the inserts returned, then
+    // refresh in the background rather than waiting on a refetch.
+    onSuccess: (d) => {
+      qc.setQueryData<WorkoutDetail>(['workout', d.workoutId], (prev) =>
+        prev
+          ? {
+              ...prev,
+              exercises: [
+                ...prev.exercises.map((e) =>
+                  d.anchor && e.id === d.anchor.id
+                    ? { ...e, superset_group: d.anchor.group }
+                    : e,
+                ),
+                d.exercise,
+              ],
+              sets: [...prev.sets, ...d.sets],
+            }
+          : prev,
+      )
+      void qc.invalidateQueries({ queryKey: ['workout', d.workoutId] })
+    },
   })
 }
 
@@ -529,54 +574,119 @@ export function useDeleteExercise() {
   })
 }
 
+// --- Set writes update the workout on screen at once ------------------------
+// Each set write patches the cached ['workout', id] in onMutate, so the page
+// changes on tap instead of after the write plus a refetch. The refetch still
+// runs, in the background, once the last queued set write has landed: an
+// earlier write's refetch could otherwise return before a later write reached
+// the server and briefly undo that later edit on screen.
+
+const SET_WRITE_KEY = ['workoutSet'] as const
+type SetWriteCtx = { prev?: WorkoutDetail }
+
+async function patchWorkoutCache(
+  qc: QueryClient,
+  workoutId: string,
+  fn: (d: WorkoutDetail) => WorkoutDetail,
+): Promise<SetWriteCtx> {
+  const key = ['workout', workoutId]
+  await qc.cancelQueries({ queryKey: key })
+  const prev = qc.getQueryData<WorkoutDetail>(key)
+  if (prev) qc.setQueryData<WorkoutDetail>(key, fn(prev))
+  return { prev }
+}
+
+function rollbackWorkout(qc: QueryClient, workoutId: string, ctx?: SetWriteCtx) {
+  if (ctx?.prev) qc.setQueryData(['workout', workoutId], ctx.prev)
+}
+
+function settleWorkout(qc: QueryClient, workoutId: string) {
+  // This write still counts as pending while onSettled runs.
+  if (qc.isMutating({ mutationKey: SET_WRITE_KEY }) <= 1)
+    void qc.invalidateQueries({ queryKey: ['workout', workoutId] })
+}
+
+type AddSetVars = {
+  workout_id: string
+  workout_exercise_id: string
+  exercise_key: string
+  exercise_name: string
+  set_number: number
+  reps: number | null
+  weight_lb: number | null
+  /** Chosen in onMutate so the row on screen and the saved row share an id. */
+  id?: string
+}
+
 export function useAddSet() {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async (s: {
-      workout_id: string
-      workout_exercise_id: string
-      exercise_key: string
-      exercise_name: string
-      set_number: number
-      reps: number | null
-      weight_lb: number | null
-    }) => {
-      const { error } = await supabase.from('workout_sets').insert(s)
-      if (error) throw error
-      return { workout_id: s.workout_id }
+  return useMutation<void, Error, AddSetVars, SetWriteCtx>({
+    mutationKey: SET_WRITE_KEY,
+    mutationFn: async (s) => {
+      await insertOnce<WorkoutSet>('workout_sets', { ...s, id: s.id ?? crypto.randomUUID() })
     },
-    onSuccess: (d) => qc.invalidateQueries({ queryKey: ['workout', d.workout_id] }),
+    onMutate: (s) => {
+      const id = (s.id ??= crypto.randomUUID())
+      const row: WorkoutSet = {
+        user_id: '',
+        duration_sec: null,
+        distance: null,
+        effort: null,
+        is_warmup: false,
+        feel: null,
+        pain: null,
+        created_at: new Date().toISOString(),
+        ...s,
+        id,
+      }
+      return patchWorkoutCache(qc, s.workout_id, (d) => ({ ...d, sets: [...d.sets, row] }))
+    },
+    onError: (_e, s, ctx) => rollbackWorkout(qc, s.workout_id, ctx),
+    onSettled: (_d, _e, s) => settleWorkout(qc, s.workout_id),
   })
 }
 
+type UpdateSetVars = { id: string; workout_id: string } & Partial<WorkoutSet>
+
 export function useUpdateSet() {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async ({
-      id,
-      workout_id,
-      ...patch
-    }: { id: string; workout_id: string } & Partial<WorkoutSet>) => {
+  return useMutation<void, Error, UpdateSetVars, SetWriteCtx>({
+    mutationKey: SET_WRITE_KEY,
+    mutationFn: async ({ id, ...rest }) => {
+      // workout_id only routes the cache patch; it's not a column to change.
+      const patch: Partial<WorkoutSet> = { ...rest }
+      delete patch.workout_id
       const { error } = await supabase
         .from('workout_sets')
         .update(patch)
         .eq('id', id)
       if (error) throw error
-      return { workout_id }
     },
-    onSuccess: (d) => qc.invalidateQueries({ queryKey: ['workout', d.workout_id] }),
+    onMutate: ({ id, workout_id, ...patch }) =>
+      patchWorkoutCache(qc, workout_id, (d) => ({
+        ...d,
+        sets: d.sets.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+      })),
+    onError: (_e, v, ctx) => rollbackWorkout(qc, v.workout_id, ctx),
+    onSettled: (_d, _e, v) => settleWorkout(qc, v.workout_id),
   })
 }
 
 export function useDeleteSet() {
   const qc = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ id, workout_id }: { id: string; workout_id: string }) => {
+  return useMutation<void, Error, { id: string; workout_id: string }, SetWriteCtx>({
+    mutationKey: SET_WRITE_KEY,
+    mutationFn: async ({ id }) => {
       const { error } = await supabase.from('workout_sets').delete().eq('id', id)
       if (error) throw error
-      return { workout_id }
     },
-    onSuccess: (d) => qc.invalidateQueries({ queryKey: ['workout', d.workout_id] }),
+    onMutate: ({ id, workout_id }) =>
+      patchWorkoutCache(qc, workout_id, (d) => ({
+        ...d,
+        sets: d.sets.filter((s) => s.id !== id),
+      })),
+    onError: (_e, v, ctx) => rollbackWorkout(qc, v.workout_id, ctx),
+    onSettled: (_d, _e, v) => settleWorkout(qc, v.workout_id),
   })
 }
 

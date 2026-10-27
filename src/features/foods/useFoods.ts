@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { todayISO, addDaysISO } from '@/lib/date'
+import { foodSearchFilter, searchWords } from '@/lib/foodSearch'
 import type { Food } from '@/lib/database.types'
 
 export function useFoods(search = '') {
@@ -13,7 +14,8 @@ export function useFoods(search = '') {
         .eq('archived', false)
         .order('updated_at', { ascending: false })
         .limit(50)
-      if (search.trim()) q = q.ilike('name', `%${search.trim()}%`)
+      const filter = foodSearchFilter(searchWords(search))
+      if (filter) q = q.or(filter)
       const { data, error } = await q
       if (error) throw error
       return (data ?? []) as Food[]

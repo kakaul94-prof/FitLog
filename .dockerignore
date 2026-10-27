@@ -11,3 +11,7 @@ e2e/.auth
 supabase/.temp
 *.png
 *.csv
+e2e-java/target
+e2e-java/app.log
+e2e-java/app.pid
+e2e-java

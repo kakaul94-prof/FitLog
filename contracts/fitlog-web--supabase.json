@@ -1,0 +1,1710 @@
+{
+  "format": "fitlog-contract/1",
+  "consumer": "fitlog-web",
+  "provider": "supabase",
+  "generatedBy": "contracts/consumer/supabase.consumer.test.ts",
+  "interactions": [
+    {
+      "id": "auth.sign-in-wrong-password",
+      "description": "Sign in with the wrong password",
+      "consumer": "src/pages/LoginPage.tsx signInPassword(): shows error.message",
+      "providerStates": [
+        {
+          "name": "the password is wrong"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/auth/v1/token",
+        "query": {
+          "grant_type": "password"
+        },
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "authorization": "Bearer {{anonKey}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": {
+          "email": "{{email}}",
+          "password": "not-the-password",
+          "gotrue_meta_security": {}
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error_code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "msg": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error_code",
+            "msg"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "code": 400,
+          "error_code": "invalid_credentials",
+          "msg": "Invalid login credentials"
+        }
+      }
+    },
+    {
+      "id": "auth.sign-in",
+      "description": "Sign in with email and password",
+      "consumer": "src/pages/LoginPage.tsx signInPassword(); session read by src/lib/auth.tsx and apiHeaders()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/auth/v1/token",
+        "query": {
+          "grant_type": "password"
+        },
+        "headers": {
+          "content-type": "application/json;charset=UTF-8",
+          "authorization": "Bearer {{anonKey}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}",
+          "gotrue_meta_security": {}
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "access_token": {
+              "type": "string",
+              "minLength": 1
+            },
+            "token_type": {
+              "type": "string",
+              "const": "bearer"
+            },
+            "expires_in": {
+              "type": "number"
+            },
+            "refresh_token": {
+              "type": "string",
+              "minLength": 1
+            },
+            "user": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "email": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "id",
+                "email"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "access_token",
+            "token_type",
+            "expires_in",
+            "refresh_token",
+            "user"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "access_token": "{{accessToken}}",
+          "token_type": "bearer",
+          "expires_in": 3600,
+          "expires_at": 1792587600,
+          "refresh_token": "contract-refresh-token",
+          "user": {
+            "id": "{{userId}}",
+            "aud": "authenticated",
+            "role": "authenticated",
+            "email": "{{email}}",
+            "email_confirmed_at": "2026-10-01T09:00:00Z",
+            "app_metadata": {
+              "provider": "email",
+              "providers": [
+                "email"
+              ]
+            },
+            "user_metadata": {},
+            "identities": [],
+            "created_at": "2026-10-01T09:00:00Z",
+            "updated_at": "2026-10-21T11:00:00Z",
+            "is_anonymous": false
+          }
+        }
+      }
+    },
+    {
+      "id": "auth.current-user",
+      "description": "Who is signed in",
+      "consumer": "src/features/profile/useProfile.ts updateProfile(): user.id",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/auth/v1/user",
+        "query": {},
+        "headers": {
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "email": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "id",
+            "email"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "id": "{{userId}}",
+          "aud": "authenticated",
+          "role": "authenticated",
+          "email": "{{email}}",
+          "email_confirmed_at": "2026-10-01T09:00:00Z",
+          "app_metadata": {
+            "provider": "email",
+            "providers": [
+              "email"
+            ]
+          },
+          "user_metadata": {},
+          "identities": [],
+          "created_at": "2026-10-01T09:00:00Z",
+          "updated_at": "2026-10-21T11:00:00Z",
+          "is_anonymous": false
+        }
+      }
+    },
+    {
+      "id": "diary.log-food",
+      "description": "Log a food to a meal",
+      "consumer": "src/features/diary/useDiary.ts useLogFood() -> insertDiaryRows()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "a food exists",
+          "params": {
+            "id": "f0000000-0000-4000-8000-000000000001"
+          }
+        },
+        {
+          "name": "no diary entry",
+          "params": {
+            "id": "e0000000-0000-4000-8000-000000000001"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/rest/v1/diary_entries",
+        "query": {
+          "columns": "\"id\",\"created_at\",\"entry_date\",\"meal\",\"food_id\",\"food_name\",\"brand\",\"servings\",\"serving_qty\",\"serving_unit\",\"nutrients\""
+        },
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": [
+          {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "created_at": "2026-10-21T12:00:00.000Z",
+            "entry_date": "2026-10-21",
+            "meal": "lunch",
+            "food_id": "f0000000-0000-4000-8000-000000000001",
+            "food_name": "Greek yogurt",
+            "brand": "Fage",
+            "servings": 1.5,
+            "serving_qty": 170,
+            "serving_unit": "g",
+            "nutrients": {
+              "kcal": 150,
+              "protein": 15,
+              "carb": 8,
+              "fat": 7
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 201,
+        "headers": {},
+        "schema": null,
+        "example": null
+      }
+    },
+    {
+      "id": "diary.log-food-already-saved",
+      "description": "Re-send a food entry that already reached the server",
+      "consumer": "src/features/diary/useDiary.ts insertDiaryRows(): reads error.code",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "a food exists",
+          "params": {
+            "id": "f0000000-0000-4000-8000-000000000001"
+          }
+        },
+        {
+          "name": "a diary entry exists",
+          "params": {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "date": "2026-10-21"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/rest/v1/diary_entries",
+        "query": {
+          "columns": "\"id\",\"created_at\",\"entry_date\",\"meal\",\"food_id\",\"food_name\",\"brand\",\"servings\",\"serving_qty\",\"serving_unit\",\"nutrients\""
+        },
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": [
+          {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "created_at": "2026-10-21T12:00:00.000Z",
+            "entry_date": "2026-10-21",
+            "meal": "lunch",
+            "food_id": "f0000000-0000-4000-8000-000000000001",
+            "food_name": "Greek yogurt",
+            "brand": "Fage",
+            "servings": 1.5,
+            "serving_qty": 170,
+            "serving_unit": "g",
+            "nutrients": {
+              "kcal": 150,
+              "protein": 15,
+              "carb": 8,
+              "fat": 7
+            }
+          }
+        ]
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "const": "23505"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "code": "23505",
+          "details": "Key (id)=(e0000000-0000-4000-8000-000000000001) already exists.",
+          "hint": null,
+          "message": "duplicate key value violates unique constraint \"diary_entries_pkey\""
+        }
+      }
+    },
+    {
+      "id": "diary.confirm-entries-saved",
+      "description": "Check which of the re-sent entries are already stored",
+      "consumer": "src/features/diary/useDiary.ts insertDiaryRows()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "a diary entry exists",
+          "params": {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "date": "2026-10-21"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/rest/v1/diary_entries",
+        "query": {
+          "select": "id",
+          "id": "in.(e0000000-0000-4000-8000-000000000001)"
+        },
+        "headers": {
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "example": [
+          {
+            "id": "e0000000-0000-4000-8000-000000000001"
+          }
+        ]
+      }
+    },
+    {
+      "id": "diary.read-day",
+      "description": "Read one day's diary entries",
+      "consumer": "src/features/diary/useDiary.ts useDiary() -> fetchDiaryDay()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "a diary entry exists",
+          "params": {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "date": "2026-10-21"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/rest/v1/diary_entries",
+        "query": {
+          "select": "*",
+          "entry_date": "eq.2026-10-21",
+          "order": "created_at.asc"
+        },
+        "headers": {
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "user_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "entry_date": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "meal": {
+                "type": "string",
+                "enum": [
+                  "breakfast",
+                  "lunch",
+                  "dinner",
+                  "snacks"
+                ]
+              },
+              "food_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "food_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "brand": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "servings": {
+                "type": "number"
+              },
+              "serving_qty": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "serving_unit": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "nutrients": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "number"
+                }
+              },
+              "position": {
+                "type": "number"
+              },
+              "created_at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+              }
+            },
+            "required": [
+              "id",
+              "user_id",
+              "entry_date",
+              "meal",
+              "food_id",
+              "food_name",
+              "brand",
+              "servings",
+              "serving_qty",
+              "serving_unit",
+              "nutrients",
+              "position",
+              "created_at"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "example": [
+          {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "user_id": "{{userId}}",
+            "entry_date": "2026-10-21",
+            "meal": "lunch",
+            "food_id": "f0000000-0000-4000-8000-000000000001",
+            "food_name": "Greek yogurt",
+            "brand": "Fage",
+            "servings": 1.5,
+            "serving_qty": 170,
+            "serving_unit": "g",
+            "nutrients": {
+              "kcal": 150,
+              "protein": 15,
+              "carb": 8,
+              "fat": 7
+            },
+            "position": 0,
+            "created_at": "2026-10-21T12:00:00+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "diary.update-servings",
+      "description": "Change an entry's servings",
+      "consumer": "src/features/diary/useDiary.ts useUpdateDiaryServings()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "a diary entry exists",
+          "params": {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "date": "2026-10-21"
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/rest/v1/diary_entries",
+        "query": {
+          "id": "eq.e0000000-0000-4000-8000-000000000001"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": {
+          "servings": 2
+        }
+      },
+      "response": {
+        "status": 204,
+        "headers": {},
+        "schema": null,
+        "example": null
+      }
+    },
+    {
+      "id": "diary.update-entry",
+      "description": "Edit an entry (move it to another meal here)",
+      "consumer": "src/features/diary/useDiary.ts useUpdateDiaryEntry()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "a diary entry exists",
+          "params": {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "date": "2026-10-21"
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/rest/v1/diary_entries",
+        "query": {
+          "id": "eq.e0000000-0000-4000-8000-000000000001"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": {
+          "meal": "dinner"
+        }
+      },
+      "response": {
+        "status": 204,
+        "headers": {},
+        "schema": null,
+        "example": null
+      }
+    },
+    {
+      "id": "diary.delete-entry",
+      "description": "Delete an entry",
+      "consumer": "src/features/diary/useDiary.ts useDeleteDiaryEntry()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "a diary entry exists",
+          "params": {
+            "id": "e0000000-0000-4000-8000-000000000001",
+            "date": "2026-10-21"
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/rest/v1/diary_entries",
+        "query": {
+          "id": "eq.e0000000-0000-4000-8000-000000000001"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 204,
+        "headers": {},
+        "schema": null,
+        "example": null
+      }
+    },
+    {
+      "id": "diary.delete-entries",
+      "description": "Delete several entries at once",
+      "consumer": "src/features/diary/useDiary.ts useDeleteDiaryEntries()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "path": "/rest/v1/diary_entries",
+        "query": {
+          "id": "in.(e0000000-0000-4000-8000-000000000001,e0000000-0000-4000-8000-000000000002)"
+        },
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 204,
+        "headers": {},
+        "schema": null,
+        "example": null
+      }
+    },
+    {
+      "id": "summary.read-cardio-day",
+      "description": "Read one day's cardio entries",
+      "consumer": "src/features/exercise/useExercise.ts useExerciseEntries() -> fetchExerciseEntries(); DiaryPage sums .calories",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "an exercise entry exists",
+          "params": {
+            "date": "2026-10-21"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/rest/v1/exercise_entries",
+        "query": {
+          "select": "*",
+          "entry_date": "eq.2026-10-21",
+          "order": "created_at.asc"
+        },
+        "headers": {
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "user_id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "entry_date": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "met": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "duration_min": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "distance_mi": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "calories": {
+                "type": "number"
+              },
+              "avg_hr": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "zone": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "max_hr": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "hr_samples": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "zone_seconds": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "number"
+                }
+              },
+              "load_lb": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "level": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "level_max": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "created_at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+              }
+            },
+            "required": [
+              "id",
+              "user_id",
+              "entry_date",
+              "name",
+              "met",
+              "duration_min",
+              "distance_mi",
+              "calories",
+              "avg_hr",
+              "zone",
+              "max_hr",
+              "hr_samples",
+              "zone_seconds",
+              "load_lb",
+              "level",
+              "level_max",
+              "created_at"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "example": [
+          {
+            "id": "c0000000-0000-4000-8000-000000000001",
+            "user_id": "{{userId}}",
+            "entry_date": "2026-10-21",
+            "name": "Walking",
+            "met": 3.5,
+            "duration_min": 30,
+            "distance_mi": 1.6,
+            "calories": 120,
+            "avg_hr": 112,
+            "zone": 2,
+            "max_hr": null,
+            "hr_samples": null,
+            "zone_seconds": null,
+            "load_lb": null,
+            "level": null,
+            "level_max": null,
+            "created_at": "2026-10-21T07:30:00+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "summary.read-profile",
+      "description": "Read the signed-in user's profile",
+      "consumer": "src/features/profile/useProfile.ts useProfile() -> fetchProfile(); DiaryPage resolves the calorie goal from it",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "the user has a profile"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/rest/v1/profiles",
+        "query": {
+          "select": "*"
+        },
+        "headers": {
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+              },
+              "sex": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "male",
+                  "female",
+                  null
+                ]
+              },
+              "birth_date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "height_cm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "activity_level": {
+                "type": "string",
+                "enum": [
+                  "sedentary",
+                  "light",
+                  "moderate",
+                  "active",
+                  "very_active"
+                ]
+              },
+              "weight_unit": {
+                "type": "string",
+                "minLength": 1
+              },
+              "distance_unit": {
+                "type": "string",
+                "minLength": 1
+              },
+              "goal_type": {
+                "type": "string",
+                "enum": [
+                  "lose",
+                  "maintain",
+                  "gain"
+                ]
+              },
+              "goal_rate_lb_per_week": {
+                "type": "number"
+              },
+              "goal_weight_lb": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "calorie_goal_mode": {
+                "type": "string",
+                "enum": [
+                  "calculated",
+                  "manual"
+                ]
+              },
+              "manual_calorie_goal": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "calorie_goal_history": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "goal": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "goal"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "macro_targets": {
+                "type": "object",
+                "properties": {
+                  "protein": {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "g",
+                          "g_per_lb",
+                          "pct",
+                          "remainder"
+                        ]
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "carb": {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "g",
+                          "g_per_lb",
+                          "pct",
+                          "remainder"
+                        ]
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "fat": {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "g",
+                          "g_per_lb",
+                          "pct",
+                          "remainder"
+                        ]
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "mode"
+                    ],
+                    "additionalProperties": true
+                  }
+                },
+                "required": [
+                  "protein",
+                  "carb",
+                  "fat"
+                ],
+                "additionalProperties": true
+              },
+              "volume_targets": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "daily_supplements": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "food_id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    },
+                    "servings": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "food_id",
+                    "servings"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "eat_back_exercise": {
+                "type": "boolean"
+              },
+              "max_hr": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "resting_hr": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "step_goal": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "program": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "weekly_cardio_min_target": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "cardio_goal": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "coach_enabled": {
+                "type": "boolean"
+              },
+              "rehab": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "trainer_memory": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "text",
+                    "created_at"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "fuel_timing": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "created_at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+              },
+              "updated_at": {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+              }
+            },
+            "required": [
+              "id",
+              "sex",
+              "birth_date",
+              "height_cm",
+              "activity_level",
+              "weight_unit",
+              "distance_unit",
+              "goal_type",
+              "goal_rate_lb_per_week",
+              "goal_weight_lb",
+              "calorie_goal_mode",
+              "manual_calorie_goal",
+              "calorie_goal_history",
+              "macro_targets",
+              "volume_targets",
+              "daily_supplements",
+              "eat_back_exercise",
+              "max_hr",
+              "resting_hr",
+              "step_goal",
+              "program",
+              "weekly_cardio_min_target",
+              "cardio_goal",
+              "coach_enabled",
+              "rehab",
+              "trainer_memory",
+              "fuel_timing",
+              "created_at",
+              "updated_at"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "example": [
+          {
+            "id": "{{userId}}",
+            "sex": "female",
+            "birth_date": "1994-05-02",
+            "height_cm": 168,
+            "activity_level": "moderate",
+            "weight_unit": "lb",
+            "distance_unit": "mi",
+            "goal_type": "lose",
+            "goal_rate_lb_per_week": 0.5,
+            "goal_weight_lb": 140,
+            "calorie_goal_mode": "calculated",
+            "manual_calorie_goal": null,
+            "calorie_goal_history": [
+              {
+                "from": "2026-10-01",
+                "goal": 1850
+              }
+            ],
+            "macro_targets": {
+              "protein": {
+                "mode": "g_per_lb",
+                "value": 0.9
+              },
+              "fat": {
+                "mode": "pct",
+                "value": 30
+              },
+              "carb": {
+                "mode": "remainder"
+              }
+            },
+            "volume_targets": null,
+            "daily_supplements": [],
+            "eat_back_exercise": false,
+            "max_hr": null,
+            "resting_hr": 58,
+            "step_goal": 8000,
+            "program": null,
+            "weekly_cardio_min_target": null,
+            "cardio_goal": null,
+            "coach_enabled": false,
+            "rehab": null,
+            "trainer_memory": [],
+            "fuel_timing": null,
+            "created_at": "2026-10-01T09:00:00+00:00",
+            "updated_at": "2026-10-20T18:00:00+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "profile.update",
+      "description": "Save profile fields",
+      "consumer": "src/features/profile/useProfile.ts useUpdateProfile() -> updateProfile()",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "the user has a profile"
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "path": "/rest/v1/profiles",
+        "query": {
+          "id": "eq.{{userId}}",
+          "select": "*"
+        },
+        "headers": {
+          "accept": "application/vnd.pgrst.object+json",
+          "content-type": "application/json",
+          "prefer": "return=representation",
+          "authorization": "Bearer {{accessToken}}",
+          "apikey": "{{anonKey}}"
+        },
+        "body": {
+          "eat_back_exercise": true
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/vnd.pgrst.object+json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            },
+            "sex": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "male",
+                "female",
+                null
+              ]
+            },
+            "birth_date": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "height_cm": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "activity_level": {
+              "type": "string",
+              "enum": [
+                "sedentary",
+                "light",
+                "moderate",
+                "active",
+                "very_active"
+              ]
+            },
+            "weight_unit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "distance_unit": {
+              "type": "string",
+              "minLength": 1
+            },
+            "goal_type": {
+              "type": "string",
+              "enum": [
+                "lose",
+                "maintain",
+                "gain"
+              ]
+            },
+            "goal_rate_lb_per_week": {
+              "type": "number"
+            },
+            "goal_weight_lb": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "calorie_goal_mode": {
+              "type": "string",
+              "enum": [
+                "calculated",
+                "manual"
+              ]
+            },
+            "manual_calorie_goal": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "calorie_goal_history": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "goal": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "from",
+                  "goal"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "macro_targets": {
+              "type": "object",
+              "properties": {
+                "protein": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "g",
+                        "g_per_lb",
+                        "pct",
+                        "remainder"
+                      ]
+                    },
+                    "value": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": true
+                },
+                "carb": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "g",
+                        "g_per_lb",
+                        "pct",
+                        "remainder"
+                      ]
+                    },
+                    "value": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": true
+                },
+                "fat": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "g",
+                        "g_per_lb",
+                        "pct",
+                        "remainder"
+                      ]
+                    },
+                    "value": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "mode"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "protein",
+                "carb",
+                "fat"
+              ],
+              "additionalProperties": true
+            },
+            "volume_targets": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "daily_supplements": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "food_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  },
+                  "servings": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "food_id",
+                  "servings"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "eat_back_exercise": {
+              "type": "boolean"
+            },
+            "max_hr": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "resting_hr": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "step_goal": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "program": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "weekly_cardio_min_target": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "cardio_goal": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "coach_enabled": {
+              "type": "boolean"
+            },
+            "rehab": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "trainer_memory": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "created_at": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "id",
+                  "text",
+                  "created_at"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "fuel_timing": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "created_at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+            },
+            "updated_at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}"
+            }
+          },
+          "required": [
+            "id",
+            "sex",
+            "birth_date",
+            "height_cm",
+            "activity_level",
+            "weight_unit",
+            "distance_unit",
+            "goal_type",
+            "goal_rate_lb_per_week",
+            "goal_weight_lb",
+            "calorie_goal_mode",
+            "manual_calorie_goal",
+            "calorie_goal_history",
+            "macro_targets",
+            "volume_targets",
+            "daily_supplements",
+            "eat_back_exercise",
+            "max_hr",
+            "resting_hr",
+            "step_goal",
+            "program",
+            "weekly_cardio_min_target",
+            "cardio_goal",
+            "coach_enabled",
+            "rehab",
+            "trainer_memory",
+            "fuel_timing",
+            "created_at",
+            "updated_at"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "id": "{{userId}}",
+          "sex": "female",
+          "birth_date": "1994-05-02",
+          "height_cm": 168,
+          "activity_level": "moderate",
+          "weight_unit": "lb",
+          "distance_unit": "mi",
+          "goal_type": "lose",
+          "goal_rate_lb_per_week": 0.5,
+          "goal_weight_lb": 140,
+          "calorie_goal_mode": "calculated",
+          "manual_calorie_goal": null,
+          "calorie_goal_history": [
+            {
+              "from": "2026-10-01",
+              "goal": 1850
+            }
+          ],
+          "macro_targets": {
+            "protein": {
+              "mode": "g_per_lb",
+              "value": 0.9
+            },
+            "fat": {
+              "mode": "pct",
+              "value": 30
+            },
+            "carb": {
+              "mode": "remainder"
+            }
+          },
+          "volume_targets": null,
+          "daily_supplements": [],
+          "eat_back_exercise": true,
+          "max_hr": null,
+          "resting_hr": 58,
+          "step_goal": 8000,
+          "program": null,
+          "weekly_cardio_min_target": null,
+          "cardio_goal": null,
+          "coach_enabled": false,
+          "rehab": null,
+          "trainer_memory": [],
+          "fuel_timing": null,
+          "created_at": "2026-10-01T09:00:00+00:00",
+          "updated_at": "2026-10-21T12:00:00+00:00"
+        }
+      }
+    }
+  ]
+}

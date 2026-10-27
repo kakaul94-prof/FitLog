@@ -97,6 +97,13 @@ async function main() {
     canaryRuns = []
   }
   if (canaryRuns.length) openAlerts = await loadOpenAlerts(canaryRuns)
+  try {
+    const res = await fetch('data/app-canary.json', { cache: 'no-store' })
+    appCanaryRuns = res.ok ? await res.json() : []
+  } catch {
+    appCanaryRuns = []
+  }
+  if (appCanaryRuns.length) appCanaryOpenAlerts = await loadOpenIssues(canaryRepo(appCanaryRuns), APP_CANARY_LABEL)
   colorKeys = sourceKeys(allRuns)
   if (window.Chart) Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif'
   render()
@@ -109,19 +116,20 @@ function render() {
   const runs = branch === 'all' ? allRuns : allRuns.filter((r) => r.branch === branch)
   const app = document.getElementById('app')
   if (!runs.length) {
-    app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>' + perfSection(perfRuns) + aiSection(aiRuns) + canarySection(canaryRuns)
+    app.innerHTML = '<p class="empty">No runs yet. The next push to main or dev publishes here.</p>' + perfSection(perfRuns) + aiSection(aiRuns) + appCanarySection(appCanaryRuns) + canarySection(canaryRuns)
     if (window.Chart) {
       if (perfRuns.length) drawPerfChart(perfRuns)
       if (aiRuns.length) {
         drawAiChart(aiRuns)
         drawAiLatency(aiRuns)
       }
+      if (appCanaryRuns.length) drawAppCanaryCharts(appCanaryRuns)
       if (canaryRuns.length) drawCanaryCharts(canaryRuns)
     }
     return
   }
   const keys = sourceKeys(runs)
-  app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys), perfSection(perfRuns), aiSection(aiRuns), canarySection(canaryRuns)].join('')
+  app.innerHTML = [lastRun(runs.at(-1)), kpis(runs, keys), chartCards(runs, keys), tables(runs), recentRuns(runs, keys), perfSection(perfRuns), aiSection(aiRuns), appCanarySection(appCanaryRuns), canarySection(canaryRuns)].join('')
   if (window.Chart) {
     drawCharts(runs, keys)
     if (perfRuns.length) drawPerfChart(perfRuns)
@@ -129,6 +137,7 @@ function render() {
       drawAiChart(aiRuns)
       drawAiLatency(aiRuns)
     }
+    if (appCanaryRuns.length) drawAppCanaryCharts(appCanaryRuns)
     if (canaryRuns.length) drawCanaryCharts(canaryRuns)
   }
 }
@@ -531,7 +540,7 @@ function canarySection(runs) {
       <td>${r.run_url ? `<a href="${esc(r.run_url)}">Run ↗</a>` : ''}</td></tr>`
   })
   return `<h2 class="section-title">Production canary</h2>
-    <p class="note">Every 6 hours, ${last.cases} eval cases through the real production trainer as a monitor account (<code>ai-evals/aievals/canary.py</code>). A failing run opens a GitHub issue labelled <code>${CANARY_LABEL}</code>; the first run that recovers closes it. Outside the release gate. Cost is estimated from characters: production returns no token counts.</p>
+    <p class="note">Twice a day, ${last.cases} eval cases through the real production trainer as a monitor account (<code>ai-evals/aievals/canary.py</code>). A failing run opens a GitHub issue labelled <code>${CANARY_LABEL}</code>; the first run that recovers closes it. Outside the release gate. Cost is estimated from characters: production returns no token counts.</p>
     <section class="grid kpis" aria-label="Production canary summary">
       ${tile('Last canary run', last.drill ? `<small>drill: ${esc(last.drill)}</small>` : canaryResult(last), `${ago(last.timestamp)} · ${esc(last.site)}${last.snapshot?.stale ? ' · snapshot fixture is stale' : ''}`)}
       ${tile('Runs passing', `${recent.filter((r) => r.status === 'pass').length}/${recent.length}`, `last ${recent.length} real runs${runs.length - real.length ? ` · ${runs.length - real.length} drills not counted` : ''}`)}
@@ -665,3 +674,170 @@ function drawPerfChart(runs) {
 }
 
 main()
+
+// -- Production app canary ---------------------------------------------------------
+
+// data/app-canary.json: one record per run of the production app canary
+// (.github/workflows/app-canary.yml, canary/), appended by canary/publish.sh:
+// a real user's journey (sign in, load the diary, log a food and see it saved,
+// delete it, ask the trainer) through the live app every 30 minutes and after
+// every deploy. Uptime is the share of real runs (drills left out) that
+// passed, the flaky ones included: a retry that passed means the app was up.
+// The open-alert tile reads GitHub live, like the AI canary's.
+let appCanaryRuns = []
+let appCanaryOpenAlerts = null // null: GitHub could not be read
+
+const APP_CANARY_LABEL = 'prod-app-canary'
+const APP_CANARY_DAY_MS = 24 * 60 * 60 * 1000
+
+async function loadOpenIssues(repo, labelName) {
+  if (!repo) return null
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/issues?labels=${labelName}&state=open&per_page=10`, {
+      headers: { accept: 'application/vnd.github+json' },
+    })
+    if (!res.ok) return null
+    return (await res.json()).filter((i) => !i.pull_request)
+  } catch {
+    return null
+  }
+}
+
+const appUp = (r) => r.status === 'pass' || r.status === 'flaky'
+const appReal = (runs) => runs.filter((r) => !r.drill)
+const appSince = (runs, ms, now = Date.now()) => runs.filter((r) => now - new Date(r.timestamp) < ms)
+const appUptime = (runs) => (runs.length ? (runs.filter(appUp).length / runs.length) * 100 : null)
+const appQuantile = (xs, q) => {
+  if (!xs.length) return null
+  const s = [...xs].sort((a, b) => a - b)
+  return s[Math.min(s.length - 1, Math.floor(q * s.length))]
+}
+const appStepNames = (runs) => (runs.at(-1)?.steps ?? []).map((s) => s.name)
+const appStepDuration = (r, name) => r.steps?.find((s) => s.name === name && s.status === 'pass')?.duration_ms ?? null
+
+function appCanaryResult(r) {
+  if (r.drill) return `<small>drill: ${esc(r.drill)}</small>`
+  if (r.status === 'pass') return badge('passed')
+  if (r.status === 'flaky') return badge('flaky')
+  return `${badge('failed')} <small>${esc(r.failing_step ?? 'before the first step')}</small>`
+}
+
+function appCanaryAlertTile(tile, last) {
+  if (appCanaryOpenAlerts === null) {
+    const open = last.alert && (last.alert.action === 'opened' || last.alert.action === 'commented')
+    const link = open && last.alert.url ? `<a href="${esc(last.alert.url)}">#${last.alert.issue}</a>` : 'none'
+    return tile('Open alert', link, `as of the last run (GitHub not readable) · label ${APP_CANARY_LABEL}`)
+  }
+  if (!appCanaryOpenAlerts.length) return tile('Open alert', 'none', `no open issue labelled ${APP_CANARY_LABEL}`)
+  const links = appCanaryOpenAlerts.map((i) => `<a href="${esc(i.html_url)}">#${i.number}</a> ${ago(i.created_at)}`).join(' · ')
+  return tile('Open alert', 'yes', links)
+}
+
+function appCanarySection(runs) {
+  if (!runs.length) return ''
+  const tile = (lbl, value, ctx) => `<div class="card kpi"><div class="label">${lbl}</div><div class="value">${value}</div><div class="ctx">${ctx}</div></div>`
+  const last = runs.at(-1)
+  const real = appReal(runs)
+  const day = appSince(real, APP_CANARY_DAY_MS)
+  const week = appSince(real, 7 * APP_CANARY_DAY_MS)
+  const month = appSince(real, 30 * APP_CANARY_DAY_MS)
+  const journeys = week.filter(appUp).map((r) => r.duration_ms).filter((d) => d != null)
+  const steps = appStepNames(runs).map((name) => {
+    const taken = week.map((r) => appStepDuration(r, name)).filter((d) => d != null)
+    const failed = week.filter((r) => r.failing_step === name).length
+    return `<tr><td>${esc(name)}</td><td class="num">${dur(appQuantile(taken, 0.5))}</td><td class="num">${dur(appQuantile(taken, 0.95))}</td><td class="num">${failed || '—'}</td><td class="num">${taken.length}</td></tr>`
+  })
+  const rows = runs.slice(-15).reverse().map((r) => {
+    const alert = r.alert?.issue
+      ? `${esc(r.alert.action)} <a href="${esc(r.alert.url ?? `https://github.com/${canaryRepo(runs) ?? ''}/issues/${r.alert.issue}`)}">#${r.alert.issue}</a>`
+      : r.alert?.action && r.alert.action !== 'none' ? esc(r.alert.action) : '—'
+    return `<tr><td>${when(r.timestamp)}</td><td>${esc(r.trigger ?? '')}</td><td>${appCanaryResult(r)}</td>
+      <td class="num">${dur(r.duration_ms)}</td><td>${r.trainer ? 'asked' : '—'}</td><td>${alert}</td>
+      <td>${r.run_url ? `<a href="${esc(r.run_url)}">Run ↗</a>` : ''}</td></tr>`
+  })
+  return `<h2 class="section-title">Production app canary</h2>
+    <p class="note">Every 30 minutes and after every deploy, a phone-sized browser signs in to the live app as a monitor account, loads today's diary, logs a 1 kcal food, checks it in the database, deletes it, and (on the hour) asks the trainer (<code>canary/</code>). A failing run opens a GitHub issue labelled <code>${APP_CANARY_LABEL}</code>; the first run that recovers closes it. A missing secret fails the run instead of skipping it. Outside the release gate.</p>
+    <section class="grid kpis" aria-label="Production app canary summary">
+      ${tile('Last run', appCanaryResult(last), `${ago(last.timestamp)} · ${esc(last.trigger ?? '')} · ${esc((last.site ?? '').replace(/^https?:\/\//, ''))}`)}
+      ${tile('Uptime 24 h / 7 d', `${pct(appUptime(day))} / ${pct(appUptime(week))}`, `${day.length} and ${week.length} real runs · 30 d ${pct(appUptime(month))} over ${month.length}${runs.length - real.length ? ` · ${runs.length - real.length} drills not counted` : ''}`)}
+      ${tile('Journey p50 / p95', journeys.length ? `${dur(appQuantile(journeys, 0.5))} / ${dur(appQuantile(journeys, 0.95))}` : '—', `sign-in to the last step, passing runs of the last 7 days`)}
+      ${appCanaryAlertTile(tile, last)}
+    </section>
+    <section class="grid two">
+      <div class="card"><h2>Uptime per day</h2><p class="note">Real runs that passed ÷ real runs, per day, last 30 days</p>
+        <div class="chart"><canvas id="c-app-canary-uptime" role="img" aria-label="Production app canary uptime per day chart"></canvas></div></div>
+      <div class="card"><h2>Time per step</h2><p class="note">How long each step took, per passing run (stacked), last 60 real runs</p>
+        <div class="chart"><canvas id="c-app-canary-steps" role="img" aria-label="Production app canary step duration chart"></canvas></div></div>
+    </section>
+    <section class="card"><h2>Steps, last 7 days</h2><p class="note">p50 and p95 of each step across passing runs, and how many runs failed at it</p>
+      <div class="table-wrap"><table><thead><tr><th>Step</th><th class="num">p50</th><th class="num">p95</th><th class="num">Failed at</th><th class="num">Timed</th></tr></thead><tbody>${steps.join('')}</tbody></table></div></section>
+    <section class="card"><h2>Recent app canary runs</h2><p class="note">Newest first · last ${rows.length} of ${runs.length}</p>
+      <div class="table-wrap"><table><thead><tr><th>When</th><th>Trigger</th><th>Result</th><th class="num">Took</th><th>Trainer</th><th>Alert</th><th></th></tr></thead>
+      <tbody>${rows.join('')}</tbody></table></div></section>`
+}
+
+function drawAppCanaryCharts(runs) {
+  const real = appReal(runs)
+  if (!real.length) return
+  const common = (fmt, scale, source) => ({
+    maintainAspectRatio: false,
+    animation: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { align: 'start', labels: { color: css('--ink-2'), usePointStyle: true, boxWidth: 8, boxHeight: 8 } },
+      tooltip: { callbacks: { label: (item) => ` ${item.dataset.label}: ${fmt(item.parsed.y)}` } },
+    },
+    scales: {
+      x: { stacked: true, grid: { display: false }, border: { color: css('--axis') }, ticks: { color: css('--muted'), maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+      y: { stacked: true, ...scale, grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--muted'), maxTicksLimit: 5, callback: fmt } },
+    },
+    onClick: (_, els) => {
+      const r = source?.[els[0]?.index]
+      if (r?.run_url) window.open(r.run_url, '_blank', 'noopener')
+    },
+  })
+
+  // Uptime per day: the last 30 days, oldest first.
+  const days = []
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(Date.now() - i * APP_CANARY_DAY_MS)
+    days.push(d.toISOString().slice(0, 10))
+  }
+  const byDay = new Map(days.map((d) => [d, []]))
+  for (const r of real) {
+    const key = String(r.timestamp).slice(0, 10)
+    if (byDay.has(key)) byDay.get(key).push(r)
+  }
+  charts.push(
+    new Chart(document.getElementById('c-app-canary-uptime'), {
+      type: 'bar',
+      data: {
+        labels: days.map((d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+        datasets: [{ label: 'Uptime', data: days.map((d) => appUptime(byDay.get(d))), backgroundColor: css('--s3'), borderRadius: 3 }],
+      },
+      options: common((v) => (v == null ? '—' : `${Math.round(v)}%`), { min: 0, max: 100 }, null),
+    }),
+  )
+
+  // Time per step, stacked, for the last 60 passing runs.
+  const timed = real.filter(appUp).slice(-60)
+  const names = appStepNames(runs)
+  charts.push(
+    new Chart(document.getElementById('c-app-canary-steps'), {
+      type: 'bar',
+      data: {
+        labels: timed.map((r) => new Date(r.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric' })),
+        datasets: names.map((name, i) => ({
+          label: name,
+          data: timed.map((r) => {
+            const ms = appStepDuration(r, name)
+            return ms == null ? null : ms / 1000
+          }),
+          backgroundColor: css(SLOTS[i % SLOTS.length]),
+          stack: 'steps',
+        })),
+      },
+      options: common((v) => dur(v * 1000), { beginAtZero: true }, timed),
+    }),
+  )
+}

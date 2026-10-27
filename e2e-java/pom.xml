@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FitLog Java E2E suite: Selenium WebDriver + TestNG + Cucumber + REST Assured,
+  reported with Allure. Everything lives under src/test; there is no main code.
+
+  Run:  ./mvnw test                      (all groups, parallel)
+        ./mvnw test -Dgroups=smoke       (TestNG group filter)
+        ./mvnw test -Dbrowser=firefox -Dheadless=true
+        ./mvnw allure:serve              (open the report from the last run)
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>app.fitlog</groupId>
+  <artifactId>fitlog-e2e-java</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+  <name>FitLog Java E2E</name>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <!-- Libraries (pinned; bump deliberately) -->
+    <selenium.version>4.51.0</selenium.version>
+    <testng.version>7.12.0</testng.version>
+    <cucumber.version>7.34.9</cucumber.version>
+    <rest-assured.version>5.5.7</rest-assured.version>
+    <assertj.version>3.27.7</assertj.version>
+    <allure.version>2.35.5</allure.version>
+    <aspectj.version>1.9.26</aspectj.version>
+    <jackson.version>2.22.4</jackson.version>
+    <slf4j.version>2.0.20</slf4j.version>
+
+    <!-- Plugins -->
+    <maven-compiler.version>3.16.0</maven-compiler.version>
+    <!--
+      3.5.x: the last Surefire line with its own TestNG provider. 3.6.0 runs TestNG through the
+      JUnit Platform instead and silently ignores suiteXmlFiles (no parallel, no groups from
+      testng.xml), with only a deprecation warning in the log.
+    -->
+    <maven-surefire.version>3.5.6</maven-surefire.version>
+    <allure-maven.version>2.18.0</allure-maven.version>
+    <!-- Same Allure CLI the repo's CI uses for the API and AI-eval reports -->
+    <allure-cli.version>2.46.1</allure-cli.version>
+
+    <!--
+      Filters need no configuration here: Surefire reads -Dgroups=smoke itself (TestNG groups),
+      and every -D user property is passed on to the forked test JVM, so
+      -Dcucumber.filter.tags=@smoke reaches Cucumber unchanged.
+    -->
+    <!--
+      Where the JDK puts the Unix-domain socket behind its NIO Selector on Windows. Selenium's
+      HTTP client needs that Selector, and on some Windows machines the JDK cannot connect a
+      Unix-domain socket created in the user's %TEMP% ("Unable to establish loopback
+      connection"), so it is kept in target/ instead. Override with -Djdk.uds.tmpdir=...
+      Harmless on Linux/macOS and in CI, where pipes are real pipes.
+    -->
+    <jdk.uds.tmpdir>${project.build.directory}</jdk.uds.tmpdir>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.qameta.allure</groupId>
+        <artifactId>allure-bom</artifactId>
+        <version>${allure.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Browser automation. Selenium Manager (built in) downloads the matching driver. -->
+    <dependency>
+      <groupId>org.seleniumhq.selenium</groupId>
+      <artifactId>selenium-java</artifactId>
+      <version>${selenium.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Test runner: groups, DataProvider, parallel methods, listeners -->
+    <dependency>
+      <groupId>org.testng</groupId>
+      <artifactId>testng</artifactId>
+      <version>${testng.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- BDD: Gherkin features + step definitions, run through TestNG -->
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-java</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-testng</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <!-- Constructor injection of one ScenarioContext into every step class of a scenario -->
+    <dependency>
+      <groupId>io.cucumber</groupId>
+      <artifactId>cucumber-picocontainer</artifactId>
+      <version>${cucumber.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- API tests and test-data setup through the Supabase REST + Auth APIs -->
+    <dependency>
+      <groupId>io.rest-assured</groupId>
+      <artifactId>rest-assured</artifactId>
+      <version>${rest-assured.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Fluent assertions with readable failure messages -->
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>${assertj.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Allure: one adapter per runner, plus a REST Assured filter that logs every request/response -->
+    <dependency>
+      <groupId>io.qameta.allure</groupId>
+      <artifactId>allure-testng</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.qameta.allure</groupId>
+      <artifactId>allure-cucumber7-jvm</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.qameta.allure</groupId>
+      <artifactId>allure-rest-assured</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- Allure's @Step / @Attachment annotations are woven at runtime (see surefire argLine) -->
+    <dependency>
+      <groupId>org.aspectj</groupId>
+      <artifactId>aspectjweaver</artifactId>
+      <version>${aspectj.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- JSON for request bodies and API responses -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Quiet, plain logging for Selenium / REST Assured -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>${slf4j.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven-compiler.version}</version>
+        <configuration>
+          <release>${maven.compiler.release}</release>
+          <parameters>true</parameters>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven-surefire.version}</version>
+        <configuration>
+          <!-- testng.xml owns what runs and how parallel it is -->
+          <suiteXmlFiles>
+            <suiteXmlFile>src/test/resources/testng.xml</suiteXmlFile>
+          </suiteXmlFiles>
+          <!-- Retries OFF on purpose: a flaky test must fail, not be rerun into green -->
+          <rerunFailingTestsCount>0</rerunFailingTestsCount>
+          <trimStackTrace>false</trimStackTrace>
+          <testFailureIgnore>false</testFailureIgnore>
+          <argLine>
+            -Dfile.encoding=UTF-8
+            "-Djdk.net.unixdomain.tmpdir=${jdk.uds.tmpdir}"
+            -javaagent:"${settings.localRepository}/org/aspectj/aspectjweaver/${aspectj.version}/aspectjweaver-${aspectj.version}.jar"
+          </argLine>
+          <systemPropertyVariables>
+            <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+
+      <!-- ./mvnw allure:report  -> target/site/allure-maven-plugin ; ./mvnw allure:serve opens it -->
+      <plugin>
+        <groupId>io.qameta.allure</groupId>
+        <artifactId>allure-maven</artifactId>
+        <version>${allure-maven.version}</version>
+        <configuration>
+          <reportVersion>${allure-cli.version}</reportVersion>
+          <resultsDirectory>${project.build.directory}/allure-results</resultsDirectory>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

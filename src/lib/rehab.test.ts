@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MAX_TARGET_PER_WEEK,
+  clampTarget,
+  daysLabel,
   flagsForInjury,
   formatPain,
   injuriesWarningFor,
@@ -104,6 +107,24 @@ describe('injuryDay', () => {
       resolved: '2026-09-10',
     })
     expect(injuryDay(inj, '2026-09-20')).toBe(10)
+  })
+})
+
+describe('clampTarget', () => {
+  it('keeps a weekly target between 0 (just track) and the max', () => {
+    expect(clampTarget(3)).toBe(3)
+    expect(clampTarget(-1)).toBe(0)
+    expect(clampTarget(0)).toBe(0)
+    expect(clampTarget(MAX_TARGET_PER_WEEK + 1)).toBe(MAX_TARGET_PER_WEEK)
+    expect(clampTarget(2.6)).toBe(3)
+  })
+})
+
+describe('daysLabel', () => {
+  it('says "1 day", not "1 days"', () => {
+    expect(daysLabel(1)).toBe('1 day')
+    expect(daysLabel(2)).toBe('2 days')
+    expect(daysLabel(0)).toBe('0 days')
   })
 })
 

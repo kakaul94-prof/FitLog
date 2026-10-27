@@ -1,0 +1,555 @@
+{
+  "format": "fitlog-contract/1",
+  "consumer": "fitlog-web",
+  "provider": "pages-functions",
+  "generatedBy": "contracts/consumer/functions.consumer.test.ts",
+  "interactions": [
+    {
+      "id": "trainer.ask",
+      "description": "Ask the trainer a question",
+      "consumer": "src/lib/trainer.ts askTrainer(): reads the text stream, strips [[REMEMBER: …]]",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "Claude answers",
+          "params": {
+            "text": "Add 5 lb next session and keep the reps at 5.\n\n[[REMEMBER: Trains at home with dumbbells only]]"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/trainer",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "How do I add weight to my bench?"
+            }
+          ],
+          "context": "BENCH PRESS: 185 lb x 5, 5, 5 on 2026-10-19",
+          "memory": [
+            "Left knee aches on deep squats"
+          ]
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "text/plain; charset=utf-8"
+        },
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "example": "Add 5 lb next session and keep the reps at 5.\n\n[[REMEMBER: Trains at home with dumbbells only]]"
+      }
+    },
+    {
+      "id": "trainer.ask-nothing",
+      "description": "Ask with no question",
+      "consumer": "src/lib/trainer.ts askTrainer(): throws data.error, shown in the chat bubble",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/trainer",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "messages": [],
+          "context": "BENCH PRESS: 185 lb x 5, 5, 5 on 2026-10-19",
+          "memory": []
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "error": "Ask a question first."
+        }
+      }
+    },
+    {
+      "id": "trainer.ask-signed-out",
+      "description": "Ask with a session the provider no longer accepts",
+      "consumer": "src/lib/trainer.ts askTrainer(): throws data.error, shown in the chat bubble",
+      "providerStates": [
+        {
+          "name": "the session has expired"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/trainer",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "How do I add weight to my bench?"
+            }
+          ],
+          "context": "BENCH PRESS: 185 lb x 5, 5, 5 on 2026-10-19",
+          "memory": [
+            "Left knee aches on deep squats"
+          ]
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "error": "Your session has expired. Sign in again."
+        }
+      }
+    },
+    {
+      "id": "trainer.ask-claude-down",
+      "description": "Ask while Claude is failing",
+      "consumer": "src/lib/trainer.ts askTrainer(): throws data.error, shown in the chat bubble",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "Claude is down"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/trainer",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "How do I add weight to my bench?"
+            }
+          ],
+          "context": "BENCH PRESS: 185 lb x 5, 5, 5 on 2026-10-19",
+          "memory": [
+            "Left knee aches on deep squats"
+          ]
+        }
+      },
+      "response": {
+        "status": 502,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "error": "Claude is having a moment. Try again shortly. (code: upstream)"
+        }
+      }
+    },
+    {
+      "id": "trainer.ask-not-configured",
+      "description": "Ask when the deployment has no AI key",
+      "consumer": "src/lib/trainer.ts askTrainer(): throws data.error, shown in the chat bubble",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "the AI key is not configured"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/trainer",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "messages": [
+            {
+              "role": "user",
+              "content": "How do I add weight to my bench?"
+            }
+          ],
+          "context": "BENCH PRESS: 185 lb x 5, 5, 5 on 2026-10-19",
+          "memory": [
+            "Left knee aches on deep squats"
+          ]
+        }
+      },
+      "response": {
+        "status": 503,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "error": "The trainer isn't set up correctly right now. (code: no-key)"
+        }
+      }
+    },
+    {
+      "id": "scan-plate.scan",
+      "description": "Scan a meal photo",
+      "consumer": "src/lib/scanPlate.ts scanPlate(): reads items[].name/grams/kcal/protein/carb/fat and note",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "Claude answers",
+          "params": {
+            "text": "{\"items\":[{\"name\":\"Grilled chicken breast\",\"grams\":150,\"kcal\":248,\"protein\":46,\"carb\":0,\"fat\":5},{\"name\":\"White rice\",\"grams\":200,\"kcal\":260,\"protein\":5,\"carb\":57,\"fat\":0.5}],\"note\":\"Assumed about a teaspoon of oil on the chicken.\"}"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/scan-plate",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/contract"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "grams": {
+                    "type": "number"
+                  },
+                  "kcal": {
+                    "type": "number"
+                  },
+                  "protein": {
+                    "type": "number"
+                  },
+                  "carb": {
+                    "type": "number"
+                  },
+                  "fat": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "name",
+                  "grams",
+                  "kcal",
+                  "protein",
+                  "carb",
+                  "fat"
+                ],
+                "additionalProperties": true
+              }
+            },
+            "note": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "items": [
+            {
+              "name": "Grilled chicken breast",
+              "grams": 150,
+              "kcal": 248,
+              "protein": 46,
+              "carb": 0,
+              "fat": 5
+            },
+            {
+              "name": "White rice",
+              "grams": 200,
+              "kcal": 260,
+              "protein": 5,
+              "carb": 57,
+              "fat": 0.5
+            }
+          ],
+          "note": "Assumed about a teaspoon of oil on the chicken."
+        }
+      }
+    },
+    {
+      "id": "scan-plate.scan-no-image",
+      "description": "Scan with an empty image",
+      "consumer": "src/lib/scanPlate.ts scanPlate(): throws data.error, shown on the scan screen",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/scan-plate",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "image": ""
+        }
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "error": "No image provided."
+        }
+      }
+    },
+    {
+      "id": "scan-plate.scan-signed-out",
+      "description": "Scan with a session the provider no longer accepts",
+      "consumer": "src/lib/scanPlate.ts scanPlate(): throws data.error, shown on the scan screen",
+      "providerStates": [
+        {
+          "name": "the session has expired"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/scan-plate",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/contract"
+        }
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "error": "Your session has expired. Sign in again."
+        }
+      }
+    },
+    {
+      "id": "scan-plate.scan-unreadable",
+      "description": "Scan a photo the model cannot make sense of",
+      "consumer": "src/lib/scanPlate.ts scanPlate(): throws data.error, shown on the scan screen",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "Claude answers",
+          "params": {
+            "text": "Sorry, I cannot see any food here."
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/scan-plate",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/contract"
+        }
+      },
+      "response": {
+        "status": 422,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "error": "Couldn't read the meal. Try a clearer, well-lit photo."
+        }
+      }
+    },
+    {
+      "id": "scan-plate.scan-not-configured",
+      "description": "Scan when the deployment has no AI key",
+      "consumer": "src/lib/scanPlate.ts scanPlate(): throws data.error, shown on the scan screen",
+      "providerStates": [
+        {
+          "name": "a signed-in user"
+        },
+        {
+          "name": "the AI key is not configured"
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "path": "/api/scan-plate",
+        "query": {},
+        "headers": {
+          "content-type": "application/json",
+          "authorization": "Bearer {{accessToken}}"
+        },
+        "body": {
+          "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/contract"
+        }
+      },
+      "response": {
+        "status": 503,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "error": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "additionalProperties": true
+        },
+        "example": {
+          "error": "Meal scanning is not configured (no API key)."
+        }
+      }
+    }
+  ]
+}

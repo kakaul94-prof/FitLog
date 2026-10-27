@@ -9,18 +9,22 @@ import { insertOnce } from '@/lib/idempotent'
 import { supabase } from '@/lib/supabase'
 import type { ExerciseEntry, HrSamples } from '@/lib/database.types'
 
+/** One day's cardio rows, oldest first: the read behind useExerciseEntries, and
+ *  the call the contract tests make (contracts/consumer/supabase.consumer.test.ts). */
+export async function fetchExerciseEntries(date: string): Promise<ExerciseEntry[]> {
+  const { data, error } = await supabase
+    .from('exercise_entries')
+    .select('*')
+    .eq('entry_date', date)
+    .order('created_at')
+  if (error) throw error
+  return (data ?? []) as ExerciseEntry[]
+}
+
 export function useExerciseEntries(date: string) {
   return useQuery({
     queryKey: ['exercise', date],
-    queryFn: async (): Promise<ExerciseEntry[]> => {
-      const { data, error } = await supabase
-        .from('exercise_entries')
-        .select('*')
-        .eq('entry_date', date)
-        .order('created_at')
-      if (error) throw error
-      return (data ?? []) as ExerciseEntry[]
-    },
+    queryFn: () => fetchExerciseEntries(date),
   })
 }
 

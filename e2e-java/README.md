@@ -238,7 +238,15 @@ stack, headless Chrome, 4 test threads.
 | Cold dev server (fresh `npm ci`) | the warm-up waits about a minute once, then the same |
 | First run ever | plus a few minutes: the wrapper downloads Maven and the dependencies |
 
-CI run time is in the pull request's checks (the `e2e-java` job).
+In CI (GitHub's `ubuntu-latest`, headless Chrome on the runner), first run on
+PR #32:
+
+| | |
+|---|---|
+| `e2e-java` job, end to end | 3 min 15 s |
+| Starting the local Supabase stack | 50 s |
+| `./mvnw test` | 109 s: a 47 s warm-up of the cold dev server, then 69 s of tests |
+| Next to the Playwright job (5 min 51 s) | runs in parallel, so it adds no time to the pipeline |
 
 ## Things worth knowing
 

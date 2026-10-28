@@ -14,8 +14,9 @@ The Android app is a Capacitor shell: a native WebView that loads the web app, p
 | `06-offline-sync` | In airplane mode a logged food shows at once and waits on the phone ("Offline · 1 pending", nothing on the server); back online it is saved exactly once and shown once |
 | `07-back-navigation` | The back button walks back through the tabs; on an unsaved edit it asks first (Keep editing stays, Discard keeps the saved entry); at the root it leaves the app, which reopens intact |
 | `08-invalid-login` | A wrong password shows "Invalid login credentials" and stays on the sign-in screen |
+| `09-leave-workout` | On a workout with a changed set, the back button asks first ("Leave workout?"): Cancel stays with the edit in place, and Discard changes puts the set back on the server and keeps the workout |
 
-Every flow signs in for itself, so any one can run alone. `scripts/db.js` wipes the test account's diary and weigh-ins before a flow starts and again when it ends, pass or fail, and every name a flow types carries a run-unique id. Flows wait on conditions only (`extendedWaitUntil`, Maestro's built-in waits, the app's own "saved" signal), never a fixed delay, and nothing is retried.
+Every flow signs in for itself, so any one can run alone. `scripts/db.js` wipes the test account's diary, weigh-ins and workouts before a flow starts and again when it ends, pass or fail, and every name a flow types carries a run-unique id. `09-leave-workout` has `db.js` start its workout, since adding an exercise in the app puts the picker behind the workout in the back stack. Flows wait on conditions only (`extendedWaitUntil`, Maestro's built-in waits, the app's own "saved" signal), never a fixed delay, and nothing is retried.
 
 ## How the test app reaches the test stack
 
@@ -57,7 +58,7 @@ Maestro reads the screen through Android's accessibility tree, and the WebView p
 | Bottom-nav tabs ("Diary" is also the page heading) | `nav-diary`, `nav-exercise`, `nav-progress`, `nav-more` |
 | Progress tab's value field (its label is now linked to it) and its Add button | `measurement-value`, `measurement-add` |
 
-Everything else uses ids the app already had (`email`, `password`, `qa-name`, `qa-kcal`, `qa-p`, `qa-c`, `qa-f`, `srv`) or the text a user reads. Maestro's DevTools mode (`androidWebViewHierarchy: devtools`) is deliberately not used: it matched the same screen differently from one flow to the next, and Maestro Studio doesn't support it.
+Everything else uses ids the app already had (`email`, `password`, `qa-name`, `qa-kcal`, `qa-p`, `qa-c`, `qa-f`, `srv`) or the text a user reads. A workout's set fields had no label at all, so a screen reader announced a bare number; they now carry one (`Set 1 weight`, `Set 1 reps`, `Set 1 seconds`), and flows find them by it (`"5, Set 1 reps"`). Maestro's DevTools mode (`androidWebViewHierarchy: devtools`) is deliberately not used: it matched the same screen differently from one flow to the next, and Maestro Studio doesn't support it.
 
 **If something is on the screenshot but not in the hierarchy**, the WebView left it out of the accessibility tree, so a screen reader can't reach it either. That was true of the diary entry's "Save changes?" prompt while it rendered inside the page: dialog markup alone didn't fix it, and rendering it in a portal on `<body>`, like the app's other sheets, did. Fix the app, not the selector.
 

@@ -1,9 +1,9 @@
 name: Android UI tests (Maestro)
 
 # The phone app's everyday journeys (sign in, log, edit, delete, weigh in,
-# restart, offline, back button, bad password), driven by Maestro on an
-# Android emulator against a throwaway local Supabase stack. See
-# .maestro/README.md.
+# restart, offline, back button, bad password, leaving a workout), driven by
+# Maestro on an Android emulator against a throwaway local Supabase stack.
+# See .maestro/README.md.
 #
 # Separate from ci.yml on purpose: it runs in parallel with it, never gates
 # the production deploy, and only runs when the app could have changed. On a

@@ -56,7 +56,7 @@ Four layers, each where it is cheapest to prove what it proves:
 | AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 264 tests, ~2 min; live tier on demand; production canary twice a day | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); the real model's behaviour on 87 cases x 3 runs, including fairness (counterfactual name, age and sex pairs scored for equivalence, and stated dietary and religious constraints), judged where rules can't decide (by hand, capped at a few dollars); and a canary of ten cases through the deployed production trainer twice a day, with a latency budget and GitHub-issue alerts |
 | End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
 | Production monitoring | Playwright canary ([`canary/`](canary/README.md)) + Sentry | one journey every 30 min, ~2 min; errors as they happen | The deployed app still works for a user, from the outside (sign in, diary, log and delete a food, ask the trainer), with a GitHub issue per outage; and the errors real use hits, with the release and a readable stack, scrubbed of anything personal (see [Production monitoring](#production-monitoring)) |
-| Android app | Maestro ([`.maestro/`](#android-tests)) | 8 flows on an Android emulator, ~13 min job; app PRs + nightly | The installed phone app (Capacitor shell + WebView), as a phone user drives it: sign in, log, edit, delete, weigh in, force-stop and reopen, airplane mode and sync-once, the back button, a wrong password; each flow also checks what reached the database |
+| Android app | Maestro ([`.maestro/`](#android-tests)) | 9 flows on an Android emulator, ~13 min job; app PRs + nightly | The installed phone app (Capacitor shell + WebView), as a phone user drives it: sign in, log, edit, delete, weigh in, force-stop and reopen, airplane mode and sync-once, the back button, a wrong password, leaving a workout; each flow also checks what reached the database |
 | End to end (Java) | Selenium + TestNG + Cucumber + REST Assured ([`e2e-java/`](e2e-java/README.md)) | 17 tests, ~2 min | The core journeys (sign in, log / edit / delete a food, totals, weigh-in) a second way, in a small interview-style Java framework: page objects, explicit waits only, a browser and a user per test, Allure report |
 | Performance | k6 ([`perf-tests/`](perf-tests/README.md)) | smoke on every PR (~2 min); load + soak nightly; stress and spike by hand | The backend holds its latency and error budgets under realistic user journeys at expected load, degrades predictably past it, and doesn't drift over a long run |
 
@@ -143,7 +143,7 @@ flowchart LR
 
 The phone app is a Capacitor shell around the web app. [`.maestro/`](.maestro/README.md) drives that real Android app with [Maestro](https://docs.maestro.dev) on an Android 14 emulator, through taps, typing, the hardware back button, airplane mode and app restarts, against the same throwaway local Supabase stack as the E2E suite.
 
-**What's covered:** eight flows a phone user hits:
+**What's covered:** nine flows a phone user hits:
 - signing in;
 - logging a food and checking its row, meal total, calories remaining and macros;
 - editing then deleting an entry;
@@ -151,7 +151,8 @@ The phone app is a Capacitor shell around the web app. [`.maestro/`](.maestro/RE
 - force-stopping and reopening, still signed in with the data intact;
 - logging offline in airplane mode, then syncing exactly once;
 - the back button through tabs, an unsaved edit and the app's root;
-- a wrong password.
+- a wrong password;
+- leaving a workout with a changed set: back asks first, and Discard undoes the change.
 
 Each flow checks the screen and, through a small script, what reached the database. It signs in for itself, uses run-unique names, and wipes its test account before and after.
 

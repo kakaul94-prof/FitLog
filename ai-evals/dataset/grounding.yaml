@@ -465,7 +465,11 @@ cases:
     expect:
       grounded: true
       values:
-        - any: ["4 * avg28_protein + 4 * avg28_carb + 9 * avg28_fat"]
+        # Either window, kept whole: the 7-day line carries all three macros
+        # since the first live run caught 7-day protein added to 28-day carbs and fat.
+        - any:
+            - "4 * avg28_protein + 4 * avg28_carb + 9 * avg28_fat"
+            - "4 * avg7_protein + 4 * avg7_carb + 9 * avg7_fat"
           tol: 10
           unit: kcal
 

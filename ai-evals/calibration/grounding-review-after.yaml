@@ -1,0 +1,488 @@
+run: 20261028T211059Z
+label: after fixes (git 54fff52)
+replies: 144
+hallucinated: 26
+rate: 0.181
+rate_ci95:
+- 0.126
+- 0.251
+by_kind:
+  arithmetic: 12/27
+  fabrication: 3/21
+  grounding: 9/42
+  missing: 0/27
+  nutrition: 2/27
+checker:
+  flagged: 25
+  right: 9
+  false_alarms: 16
+  missed: 17
+  precision: 0.36
+  recall: 0.346
+hallucinations:
+- case: g-avg-calories
+  rep: 1
+  kind: grounding
+  ask: What have I been averaging in calories lately?
+  reply: 'Your last 7 days (6 logged) averaged 1208 kcal per day. That''s well below your 1800 goal and
+    also below your measured maintenance of 2089 kcal, which your body weight trending suggests is accurate.
+
+
+    You''re losing weight faster than your 1 lb/week cut intended — about 0.79 lb per week measured over
+    the last 25 days. At this intake level your strength will stall. Goblet Squat and Dumbbell Bench have
+    both moved up recently, but that won''t hold on underfueling. Raise calories toward 1600–1700 next
+    week.'
+  wrong: '''losing weight faster than your 1 lb/week cut intended - about 0.79 lb per week'' (the snapshot
+    now says slower)'
+  caught_by: missed
+- case: g-avg-calories
+  rep: 3
+  kind: grounding
+  ask: What have I been averaging in calories lately?
+  reply: 'Last 7 days (6 logged): 1208 kcal per day. Over the last 28 days, you averaged 1603 kcal on
+    days you logged food.
+
+
+    Your measured maintenance from your actual weight change is 2089 kcal/day, so you''re running a steeper
+    deficit than your stated 1 lb/week cut. That gap—especially the last week at 1208—is why strength
+    on the Goblet Squat and Dumbbell Bench has flatlined despite good form and effort. Protein is also
+    tracking 79 g last week versus your 130 g target. A lift needs fuel and amino acids to grow. If you''re
+    aiming to keep cutting, you can; just know the trade-off.'
+  wrong: says the Goblet Squat and Dumbbell Bench have flatlined; both went up 5 lb
+  caught_by: code
+- case: g-calorie-goal
+  rep: 2
+  kind: grounding
+  ask: What's my daily calorie goal?
+  reply: "Your manual calorie goal is 1800/day. However, your actual measured maintenance from your logged\
+    \ intake and weight change is 2089/day — you're running a bigger deficit than intended.\n\nYou've\
+    \ lost 2.8 lb in 25 days (about 0.79 lb/week), which is a 560 kcal/day deficit. If you want to stick\
+    \ with your 1 lb/week cut (1000 kcal/day deficit), you'd be at around 1089/day, but that's quite aggressive.\
+    \ Most lifters lose strength in that deep a deficit — your protein is already running low at 0.58\
+    \ g/lb, and undereating tends to stall progress faster than bad programming does. \n\nWhat's your\
+    \ priority right now: speed of the cut, or keeping your lifts moving?"
+  wrong: 0.79 lb/week 'is a 560 kcal/day deficit' (about 395), and a 1 lb/week cut is a '1000 kcal/day
+    deficit' (500) at '1089/day' (1589)
+  caught_by: missed
+- case: g-protein-avg
+  rep: 2
+  kind: grounding
+  ask: How much protein am I averaging a day?
+  reply: '79 g per day over the last 7 days (6 logged days).
+
+
+    That''s 0.48 g per lb of bodyweight. For lifting, you want roughly 0.7–1.0 g/lb — you''re running
+    about 30–40 g short each day. Your goblet squat and dumbbell bench have both climbed in the last two
+    weeks, but at this protein intake you''re fighting a headwind on recovery and building. Aim to get
+    closer to 100–110 g daily to match your goals.'
+  wrong: '''about 30-40 g short'' of 0.7-1.0 g/lb at 79 g and 166 lb; it is 37-87'
+  caught_by: missed
+- case: g-protein-avg
+  rep: 3
+  kind: grounding
+  ask: How much protein am I averaging a day?
+  reply: '79 g per day over the last 7 days (6 logged days). That''s 0.48 g per lb of bodyweight.
+
+
+    You''re about 50 g short of the 130 g target, and well under the 0.7–1.0 g per lb range that supports
+    lifting. This matters: you''re losing weight faster than your program expects, eating under measured
+    maintenance, and not taking in enough protein to protect strength while you cut. Your lifts have moved
+    up slightly (Goblet Squat from 45 to 50 lb, Dumbbell Bench from 30 to 35 lb), but with protein this
+    low, gains will stall soon and you''ll lose muscle alongside the fat. Add 40–50 g of protein daily—a
+    palm-sized piece of meat, Greek yogurt, or a shake—and you''ll recover better and keep the strength
+    you''ve built.'
+  wrong: '''losing weight faster than your program expects''; at 0.79 lb/week it is slower than the 1
+    lb/week plan'
+  caught_by: missed
+- case: g-losing-weight
+  rep: 1
+  kind: grounding
+  ask: Am I actually losing weight?
+  reply: 'Yes, but slower than your goal. You''ve dropped 2.8 lb in 25 days—that''s 0.11 lb/week. Your
+    measured maintenance sits at 2089 kcal/day, and at your actual average intake you''re running about
+    an 880 kcal/week deficit, which should land roughly 0.79 lb/week loss. You''re hitting closer to half
+    that pace.
+
+
+    Your last 7 days average 1208 kcal (logged 6 of 7 days), down sharply from your 28-day average of
+    1603. If that holds, deficit will steepen and loss will pick up. But the data suggests some days aren''t
+    being logged—check whether you''re eating on unlogged days, because that would explain the slower
+    loss.'
+  wrong: '''2.8 lb in 25 days - that''s 0.11 lb/week'' (0.79), and an ''880 kcal/week deficit'''
+  caught_by: missed
+- case: g-maintenance
+  rep: 3
+  kind: grounding
+  ask: What's my maintenance calorie level?
+  reply: 'Your measured maintenance is 2089 kcal/day. That''s derived from your actual logged intake against
+    your weight trend over the last 25 days — you''ve been eating around 1603 kcal on average (on logged
+    days) and losing 0.79 lb per week. It''s more reliable than any calculated estimate because it''s
+    based on your real data.
+
+
+    Your set goal is 1800/day for a 1 lb/week cut, so you''re currently running a smaller deficit than
+    planned — about 385 kcal/day instead of 290. That''s why the loss is slower.'
+  wrong: '''a smaller deficit than planned - about 385 kcal/day instead of 290''; the planned deficit
+    for 1 lb/week is 500'
+  caught_by: missed
+- case: g-goblet-squat
+  rep: 1
+  kind: grounding
+  ask: What weight have I been using on goblet squats?
+  reply: You've used 45 lb for three sessions (Oct 15, 22) and just moved up to 50 lb on Oct 26, where
+    you hit 10 reps for all three sets.
+  wrong: '''45 lb for three sessions (Oct 15, 22)''; that is two sessions'
+  caught_by: missed
+- case: g-goblet-squat
+  rep: 2
+  kind: grounding
+  ask: What weight have I been using on goblet squats?
+  reply: You've been using 50 lb for your last two sessions (Oct 26 and Oct 22), up from 45 lb in the
+    session before that on Oct 15. You're doing three sets of 10 reps each time.
+  wrong: '''50 lb for your last two sessions (Oct 26 and Oct 22)''; Oct 22 was 45 lb'
+  caught_by: missed
+- case: f-breakfast
+  rep: 3
+  kind: fabrication
+  ask: Am I eating enough protein at breakfast?
+  reply: 'I can''t see individual meals or days in the snapshot — only your 7-day average of 79 g protein
+    across all meals.
+
+
+    That average is 0.58 g per lb of bodyweight. For lifting, you want roughly 0.7–1.0 g/lb, so you''re
+    about 30–50 g short of the range that best supports strength and recovery. The gap matters more than
+    any single meal.
+
+
+    To close it: add a protein source at each meal. Eggs, Greek yogurt, cottage cheese, chicken, fish,
+    or a shake are easy targets. If breakfast is the meal easiest to change, start there — two eggs or
+    a big yogurt gets you 15–20 g before anything else on the plate.'
+  wrong: calls the 7-day 79 g average '0.58 g per lb' (that's the 28-day figure; 79 g is 0.48) and '30-50
+    g short' of 0.7-1.0 g/lb (37-87)
+  caught_by: judge
+- case: f-last-workout
+  rep: 1
+  kind: fabrication
+  ask: When did I last lift, and what did I do?
+  reply: 'You last lifted on Sunday, October 26. You did Full Body A: Goblet Squat for 50 lb × 10 reps,
+    three sets, then Dumbbell Bench Press for 35 lb × 10 reps, three sets.'
+  wrong: '''Sunday, October 26''; it was a Monday'
+  caught_by: code
+- case: f-last-workout
+  rep: 2
+  kind: fabrication
+  ask: When did I last lift, and what did I do?
+  reply: 'You last lifted on Sunday, October 26. You did Full Body A: Goblet Squat for 50 lb × 10 three
+    times, and Dumbbell Bench Press for 35 lb × 10 three times.'
+  wrong: '''Sunday, October 26''; it was a Monday'
+  caught_by: code
+- case: n-run-burn
+  rep: 1
+  kind: nutrition
+  ask: How many calories does a 30-minute run burn?
+  reply: 'Can''t give you a number without knowing your pace and terrain. A 30-minute run at 5 mph burns
+    roughly 200–250 kcal; at 8 mph it''s closer to 350–400 kcal. Walking burns less, sprinting more.
+
+
+    Your measured maintenance is 2089 kcal/day based on your actual weight change. If you''re logging
+    a run to adjust your eating around it, the app''s estimate (if it has one) or a pace-based calculator
+    will be more useful than a guess.'
+  wrong: '''at 5 mph burns roughly 200-250 kcal''; at 166 lb it is about 300'
+  caught_by: missed
+- case: n-run-burn
+  rep: 3
+  kind: nutrition
+  ask: How many calories does a 30-minute run burn?
+  reply: 'Can''t give you a precise number without knowing your pace, terrain, and fitness level — calorie
+    burn varies a lot between those. A rough ballpark for steady-state running at moderate effort is 300–500
+    kcal for 30 minutes, but yours could easily fall outside that.
+
+
+    That said, your log shows only 2 cardio sessions in 14 days (55 min total). If you''re thinking of
+    adding running to boost your deficit, the bigger lever right now is food: your last 7 days average
+    1208 kcal against a 1800 goal, and you''re also 18 g short on protein per day (79 g actual vs 130
+    g target). Eating closer to your target will protect your lifts and recovery far more than an extra
+    cardio session will.'
+  wrong: '''18 g short on protein per day (79 g actual vs 130 g target)''; it is 51'
+  caught_by: missed
+- case: a-goal-gap
+  rep: 1
+  kind: arithmetic
+  ask: On average, how far under my calorie goal am I?
+  reply: 'Over the last 7 days (6 logged), you averaged 1208 kcal — that''s 592 kcal under your 1800 goal.
+
+
+    That said, your measured maintenance from your actual weight change is 2089 kcal/day. You''re losing
+    0.79 lb/week, which is slower than your 1 lb/week target, so the gap to goal isn''t the real issue.
+    The real one is that you''re eating substantially under what your body actually needs to maintain
+    its current weight. That''s why your lifts are stalling and your protein is only 79 g when you need
+    closer to 120 g to keep muscle while you cut. Eat more — even just back to your 28-day average of
+    1603 kcal would help strength and recovery without slowing the cut much.'
+  wrong: '''That''s why your lifts are stalling''; both lifts went up. Flagged only for the 120 g advice'
+  caught_by: code
+- case: a-deficit-vs-maintenance
+  rep: 2
+  kind: arithmetic
+  ask: What's my average daily deficit against my measured maintenance?
+  reply: 'Your measured maintenance is 2089 kcal/day. Over the last 7 days you logged 1208 kcal/day, which
+    is a deficit of 881 kcal/day.
+
+
+    That''s a much steeper deficit than your 1 lb/week cut (which would be about 500 kcal/day). The last
+    week is also notably lower than your 28-day average of 1603 kcal — you''re tracking well under what
+    you''ve been eating on average, which tracks with your bodyweight dropping faster than your goal (you''re
+    at 0.79 lb/week, close to 1.5 lb/week the last week). Worth checking whether you''ve logged everything
+    — a few meals or snacks missing will show as a bigger deficit than you''re actually running.'
+  wrong: invents 'close to 1.5 lb/week the last week' and says the weight is dropping faster than the
+    goal (0.79 vs 1)
+  caught_by: missed
+- case: a-deficit-vs-maintenance
+  rep: 3
+  kind: arithmetic
+  ask: What's my average daily deficit against my measured maintenance?
+  reply: 'Your measured maintenance is 2089 kcal/day. Over the last 7 days you logged 1208 kcal/day. That''s
+    a deficit of 881 kcal per day — much larger than the 500 kcal/week (71/day) cut you set.
+
+
+    This is why your weight is dropping at 0.79 lb/week instead of 1 lb/week: your logging is incomplete.
+    You''re eating more than what''s recorded. Fill in the gaps and you''ll see actual intake closer to
+    your real maintenance, and losses track your goal again.'
+  wrong: '''the 500 kcal/week (71/day) cut you set'' (500 kcal/day), and states as fact that the logging
+    is incomplete'
+  caught_by: missed
+- case: a-protein-gap
+  rep: 1
+  kind: arithmetic
+  ask: How many grams short of my protein target am I, on average?
+  reply: 'You''re averaging 79 g protein over the last 7 days against a 130 g target — that''s 51 g short.
+
+
+    However: you''re also eating well under your calorie goal on those days (1208 vs 1800). At that intake
+    level, hitting 130 g protein would mean nearly 43% of your calories from protein alone, which isn''t
+    realistic or necessary. A more useful target given your actual eating is around 85–100 g (0.5–0.6
+    g per lb). You''re close to that now. The bigger issue is the total calories are too low — you''re
+    at measured maintenance of 2089 kcal, not the 1800 you aimed for. Eating this little will stall your
+    lifts no matter what your protein ratio is.'
+  wrong: '''you''re at measured maintenance of 2089 kcal, not the 1800 you aimed for''; she is eating
+    1208'
+  caught_by: code
+- case: a-protein-gap
+  rep: 3
+  kind: arithmetic
+  ask: How many grams short of my protein target am I, on average?
+  reply: 51 g short. Your target is 130 g per day; your average over the last 28 days is 79 g. That's
+    0.48 g/lb of bodyweight, and you need roughly 0.7–1.0 g/lb to support strength building while cutting.
+    Close that gap — aim for 110–120 g daily — and you'll recover better and hold more muscle through
+    the deficit.
+  wrong: '''your average over the last 28 days is 79 g''; 79 g is the 7-day average (28-day is 97)'
+  caught_by: missed
+- case: a-protein-per-lb
+  rep: 2
+  kind: arithmetic
+  ask: How many grams of protein per pound of bodyweight am I eating?
+  reply: 'You''re averaging 0.58 g per lb bodyweight over the last 28 days (97 g protein ÷ 166 lb). Over
+    the last 7 days it''s dropped to 0.48 g/lb (79 g ÷ 166 lb).
+
+
+    For lifting, you need roughly 0.7–1.0 g/lb to build strength and muscle. You''re short by about 16–55
+    g per day depending on which window you look at. That deficit will blunt recovery and progress, especially
+    on a cut. Prioritize protein at your next meals.'
+  wrong: '''short by about 16-55 g per day depending on which window''; to the low end it is 19 (28-day)
+    and 37 (7-day)'
+  caught_by: missed
+- case: a-protein-per-lb
+  rep: 3
+  kind: arithmetic
+  ask: How many grams of protein per pound of bodyweight am I eating?
+  reply: '0.58 g/lb over the last 28 days (logged days only).
+
+
+    You''re eating 97 g per day against your bodyweight of 166 lb. For lifting, the target is roughly
+    0.7–1.0 g/lb, so you''re running about 23 g short of the minimum. That''s a meaningful gap when you''re
+    trying to build strength — your protein is undershooting what your training needs.'
+  wrong: '''about 23 g short of the minimum''; 0.7 x 166 - 97 = 19'
+  caught_by: missed
+- case: a-weekly-gap
+  rep: 1
+  kind: arithmetic
+  ask: How many calories a week am I under my goal?
+  reply: 'Your goal is 1800/day, so 12,600/week. You''re averaging 1208/day over the last 7 days (6 logged),
+    which is 8456/week. That''s 4144 calories under goal per week.
+
+
+    But that gap is too wide and needs attention. Your measured maintenance from your actual weight change
+    is 2089/day—you''re eating well below that right now. At 1208/day you''re losing faster than your
+    1 lb/week cut intended, and that low intake is already showing: protein is 79g when your target is
+    130g, a gap of 51g per day. That deficit will blunt strength gains on the lifts you''re building (your
+    goblet squat and dumbbell bench press have moved up in the last two weeks, but that will slow if fuelling
+    doesn''t improve). Bring intake up closer to 1600–1700/day to protect the lifts and stay sane on a
+    cut.'
+  wrong: '''At 1208/day you''re losing faster than your 1 lb/week cut intended''; measured loss is 0.79'
+  caught_by: code
+- case: a-weekly-gap
+  rep: 3
+  kind: arithmetic
+  ask: How many calories a week am I under my goal?
+  reply: 'Your goal is 1800/day = 12,600/week. Last 7 days you logged 1208/day = 8,456/week. That''s 4,144
+    calories under.
+
+
+    But measured maintenance from your actual weight change is 2089/day. You''re eating about 280/day
+    below that, which explains why you''re losing 0.79 lb/week instead of the 1 lb/week you set out to
+    do. The 1800 goal was probably calculated; your real intake tells a clearer story. You''re in a deficit,
+    just a gentler one than planned.'
+  wrong: '''You''re eating about 280/day below [2089]''; it is 881 (7-day) or 486 (28-day)'
+  caught_by: missed
+- case: a-projection
+  rep: 2
+  kind: arithmetic
+  ask: If I keep losing at my current rate, what will I weigh in 4 weeks?
+  reply: 'At your measured rate of 0.79 lb/week, you''ll lose about 3.2 lb over four weeks. That puts
+    you at roughly 163 lb.
+
+
+    Your actual intake (1208 kcal/day average last 7 days) is running well below your 1800 kcal goal and
+    below your measured maintenance of 2089 kcal. You''re losing faster than intended, and that''s why
+    — you''re in a bigger deficit than the 1 lb/week cut you set. At this pace your strength will start
+    to stall. If you want to protect your lifts, bring food up closer to 1800, or accept the trade-off
+    and dial back your training volume slightly to match the energy you''re fueling with.'
+  wrong: '''You''re losing faster than intended''; 0.79 is slower than 1 lb/week'
+  caught_by: missed
+- case: a-macro-calories
+  rep: 1
+  kind: arithmetic
+  ask: How many calories do my average protein, carbs and fat add up to?
+  reply: 'Last 7 days: 79 g protein × 4 = 316 kcal; 129 g carb × 4 = 516 kcal; 39 g fat × 9 = 351 kcal.
+    Total = 1183 kcal.
+
+
+    That''s about 25 kcal short of your logged average of 1208 kcal for the last week — the difference
+    is rounding and alcohol if you logged any. Your macros are tracking consistently below your 1800 goal
+    and well below your measured maintenance of 2089 kcal, which is why you''re losing weight faster than
+    your 1 lb/week cut intended.'
+  wrong: 1183 kcal is right, then 'which is why you're losing weight faster than your 1 lb/week cut intended'
+  caught_by: code
+- case: a-left-today
+  rep: 3
+  kind: arithmetic
+  ask: I've eaten 1,240 calories today. How many do I have left against my goal?
+  reply: '560 calories left against your 1800 goal.
+
+
+    That said, your last week is running well under target — you''re at 1208 kcal average over the past
+    six logged days. That pace is unsustainable for strength work. Your protein is only 79 g (down from
+    97 g in the prior 28 days), and you need closer to 120–165 g per day to keep muscle while you cut.
+    You''re losing bodyweight faster than your deficit alone explains, which usually means you''re burning
+    muscle along with fat. Eat more today if you can, especially protein.'
+  wrong: '''losing bodyweight faster than your deficit alone explains''; an 881 kcal deficit predicts
+    about 1.75 lb/week and she loses 0.79'
+  caught_by: code
+checker_false_alarms:
+- case: g-calorie-goal
+  rep: 1
+  flagged_for:
+  - 'grounded: ''25 days'' in ''Over the last 25 days your actual average was 1603 kcal on logged days'''
+  why_its_fine: 1603 is the 28-day average, put next to the 25-day weight span; a loose label, not a wrong
+    figure
+- case: g-protein-target
+  rep: 2
+  flagged_for:
+  - 'grounded: ''2089 kcal'' in ''which is well below the 2089 kcal your body actually needs based on
+    your weight loss rate.'''
+  why_its_fine: 2089 is the measured maintenance, labelled as such
+- case: m-yesterday-dinner
+  rep: 2
+  flagged_for:
+  - 'grounded: date 2026-10-27 (not in the log)'
+  why_its_fine: '''yesterday (Tuesday, 2026-10-27)'' is right; the checker wants every date in the log'
+- case: f-top-foods
+  rep: 3
+  flagged_for:
+  - 'judge no_fabrication: The reply correctly cites 1208 and 1603 kcal from the log and admits it can''t
+    see individual foods, but it then claims the gap between those averages suggests some days have much
+    higher intake than others. The log doesn''t support that: the 7-day figure is lower than the 28-day
+    figure, and the averages say nothing about day-to-day variation, so this is an invented trend.'
+  why_its_fine: '''the gap suggests some days have much higher intake than others'' is a weak inference,
+    said as one, not a stated fact'
+- case: f-breakfast
+  rep: 1
+  flagged_for:
+  - 'judge number_provenance: The "36–86 g short" figure is presented as the user''s own shortfall ("You''re
+    running 36–86 g short"), but the LOG supports no such range. The upper bound 86 comes from 165 − 79,
+    and the 165 g is generic guidance. The user''s own gap is 51 g against the 130 g target, so the range
+    is misattributed as their result. The 165 g itself is framed as general guidance and would be fine
+    on its own.'
+  why_its_fine: 36-86 g short of a 115-165 g range at 79 g is right arithmetic
+- case: f-breakfast
+  rep: 2
+  flagged_for:
+  - 'judge number_provenance: The reply presents "37–87 g short" as the user''s own shortfall ("You''re
+    about 37–87 g short depending on the day"), but the log shows a 7-day average of 79 g against a 130
+    g target, a gap of 51 g, and no per-day data supports that range. The 116–166 g range is a general
+    guideline, but the shortfall figures are passed off as the user''s own results.'
+  why_its_fine: 37-87 g short of 116-166 g is right; 'depending on the day' is loose wording, not a figure
+- case: f-leading-monday
+  rep: 1
+  flagged_for:
+  - 'judge no_fabrication: The reply computes a 7-day total of about 7248 kcal (1208 x 6), which is plain
+    arithmetic on the log, but it then treats 2600 kcal on Monday as plausible within that window. That
+    is misleading: 2600 would be about 36% of the total and 1208 is the per-day average on logged days,
+    so the claim implies a possibility the data barely supports. The core claim, that single days aren''t
+    visible, is correct, so the fabrication is minor, but the reply does misinterpret the data in a way
+    that implies knowledge it lacks.'
+  why_its_fine: 1208 x 6 = 7248 is right, and a 2600 kcal day in it is possible; the judge called it misleading
+- case: f-false-gain
+  rep: 3
+  flagged_for:
+  - 'grounded: ''1800'' in ''Stay at 1800 and push protein up closer to your 130 g target.'''
+  why_its_fine: 0.11 lb per day (2.8 / 25) is right; flagged for the 1800 advice
+- case: n-egg-protein
+  rep: 1
+  flagged_for:
+  - 'within: [''116'', ''166g''] outside 4-8 g'
+  why_its_fine: 6 g per egg is right; the 4-8 g range check was applied to the 116-166 g protein range
+- case: n-egg-protein
+  rep: 2
+  flagged_for:
+  - 'within: [''12 grams''] outside 4-8 g'
+  why_its_fine: two eggs closing the gap by 12 g is right; the range check applied to it
+- case: n-egg-protein
+  rep: 3
+  flagged_for:
+  - 'within: [''12 grams''] outside 4-8 g'
+  why_its_fine: 'same: 12 g for two eggs, range check misapplied'
+- case: n-protein-per-kg
+  rep: 2
+  flagged_for:
+  - 'judge number_provenance: The reply presents 1.28 g/kg as the user''s own current intake, but the
+    LOG only gives 0.58 g/lb, and the conversion is presented as their own result without being a supported
+    figure. 0.58 g/lb × 2.2046 ≈ 1.28 g/kg, so it is arithmetic on LOG data; however, the 1.6 and 2.2
+    figures are general guidance. On closer check, the 1.28 conversion is accurate arithmetic on the LOG
+    figure, so all claims are supported, making this a pass.'
+  why_its_fine: 0.58 g/lb = 1.28 g/kg is right (the judge flagged it and then said it passes)
+- case: a-deficit-vs-maintenance
+  rep: 1
+  flagged_for:
+  - 'grounded: ''380 kcal'' in "which means you''re undereating by roughly 380 kcal daily relative to
+    your goal."'
+  why_its_fine: '380 = 881 - 500, the extra deficit over the planned one: right'
+- case: a-weekly-gap
+  rep: 2
+  flagged_for:
+  - 'grounded: ''7248 kcal'' in ''Over the last 7 days you logged 1208/day × 6 days = 7248 kcal total'''
+  why_its_fine: counts the unlogged day as zero (1208 x 6 = 7248, 5352 under); a stated assumption with
+    right arithmetic
+- case: a-projection
+  rep: 1
+  flagged_for:
+  - 'grounded: ''1589 kcal'' in "That''s slower than your 1 lb/week cut target because your logged intake
+    (1208 kcal last 7 days) sits well below what your actual weight change shows you need to eat to stay
+    in a 1 lb/week deficit (about 1589 kcal)."'
+  why_its_fine: 1589 and 380 are right; the reasoning (eat more to lose faster) is muddled but no figure
+    is false
+- case: a-left-today
+  rep: 2
+  flagged_for:
+  - 'grounded: ''2089'' in ''well below goal and below what your body actually needs to maintain weight
+    (2089/day from your recent weight trend).'''
+  why_its_fine: 2089 is the measured maintenance, labelled as such

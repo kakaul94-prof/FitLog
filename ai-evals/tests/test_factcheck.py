@@ -363,6 +363,18 @@ def test_the_alcohol_case_fails_the_live_runs_wrong_answer(dataset: Dataset, ril
     assert all(r.passed for r in right), right
 
 
+def test_the_macro_case_takes_either_window_but_not_a_mix(dataset: Dataset, riley: Facts) -> None:
+    case = next(c for c in dataset.by_category("grounding") if c.id == "a-macro-calories")
+
+    def passes(total: float) -> bool:
+        results = run_rules(case.expect, reply(f"Total: {total:.0f} kcal."), facts=riley)
+        return all(r.passed for r in results if r.check == "value")
+
+    assert passes(riley.eval("4 * avg28_protein + 4 * avg28_carb + 9 * avg28_fat"))
+    assert passes(riley.eval("4 * avg7_protein + 4 * avg7_carb + 9 * avg7_fat"))
+    assert not passes(riley.eval("4 * avg7_protein + 4 * avg28_carb + 9 * avg28_fat"))
+
+
 def test_grounding_checks_refuse_to_run_without_facts() -> None:
     with pytest.raises(ValueError, match="facts"):
         run_rules(Expect(grounded=True), reply("hi"))

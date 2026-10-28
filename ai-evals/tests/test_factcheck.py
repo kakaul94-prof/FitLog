@@ -79,6 +79,8 @@ def test_ground_truth_matches_a_persona_worked_out_by_hand() -> None:
         "logged7": 3,  # days 1, 2, 6
         "avg7_kcal": 667,  # 2000 / 3
         "avg7_protein": 40,
+        "avg7_carb": 67,  # 200 / 3
+        "avg7_fat": 27,  # 80 / 3
         "weight_lb": 168,
         "weight_delta_lb": 2.0,
         "weight_span_days": 18,

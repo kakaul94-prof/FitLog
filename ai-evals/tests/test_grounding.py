@@ -68,13 +68,36 @@ def riley(dataset: Dataset) -> Persona:
     return dataset.personas["riley"]
 
 
+PACE_TOLERANCE_LB_WEEK = 0.1  # within this of the goal rate reads "on pace"
+
+
+def pace(f: Facts, p: Persona) -> str:
+    """The measured weight trend against the rate they set, as the snapshot words it."""
+    lose = p.profile.goal_type == "lose"
+    rate = f["goal_rate_lb_week"]
+    plan = f"the {rate:g} lb/week {'cut' if lose else 'gain'} they set"
+    toward = f["trend_lb_week"] * f["trend_direction"] * (-1 if lose else 1)
+    if toward <= 0:
+        return f"the opposite way to {plan}"
+    if abs(toward - rate) <= PACE_TOLERANCE_LB_WEEK + 1e-9:
+        return f"on pace with {plan}"
+    return f"{'slower' if toward < rate else 'faster'} than {plan}"
+
+
+def latest_session(f: Facts, p: Persona) -> str:
+    newest = min(p.workouts, key=lambda w: w.days_ago)
+    when = (date.fromisoformat(f.today) - timedelta(days=newest.days_ago)).isoformat()
+    lifts = ", ".join(dict.fromkeys(s.name for s in newest.sets))
+    return f"Most recent was {when} ({newest.name}: {lifts})."
+
+
 def snapshot_lines(f: Facts, p: Persona) -> list[str]:
     """What the snapshot should say about Riley, line by line, from the ground truth."""
     day = {
         w.days_ago: (date.fromisoformat(f.today) - timedelta(days=w.days_ago)).isoformat()
         for w in p.workouts
     }
-    newest = min(p.workouts, key=lambda w: w.days_ago)
+    weekday = date.fromisoformat(f.today).strftime("%A")
     micros = ", ".join(
         f"{label} {f[f'micro_{key}_pct']:.0f}%"
         for key, label in (
@@ -89,14 +112,13 @@ def snapshot_lines(f: Facts, p: Persona) -> list[str]:
         )
     )
     return [
-        f"Today is {f.today}.",
+        f"Today is {weekday}, {f.today}.",
         f"Lifter: {f['age']:.0f}y, {p.profile.sex}, {f['height_cm']:.0f} cm, "
         f"{f['weight_lb']:.0f} lb.",
         f"Bodyweight down {f['weight_delta_lb']:.1f} lb "
         f"over the last {f['weight_span_days']:.0f} days.",
         f"Lifting sessions: {f['lift_sessions_90']:.0f} in the last 90 days, "
-        f"{f['lift_sessions_14']:.0f} in the last 14. Most recent was {day[newest.days_ago]} "
-        f"({newest.name}).",
+        f"{f['lift_sessions_14']:.0f} in the last 14. {latest_session(f, p)}",
         "Program rotation: Full Body A → Full Body B.",
         f"Goblet Squat — best est 1RM {f['Goblet Squat best est 1RM']:.0f} lb",
         f"    {day[2]}: 50x10, 50x10, 50x10",
@@ -110,9 +132,10 @@ def snapshot_lines(f: Facts, p: Persona) -> list[str]:
         f"({f['protein_g_per_lb']:.2f} g/lb bodyweight), {f['avg28_carb']:.0f} g carb, "
         f"{f['avg28_fat']:.0f} g fat per day.",
         f"Last 7 days ({f['logged7']:.0f} logged): {f['avg7_kcal']:.0f} kcal, "
-        f"{f['avg7_protein']:.0f} g protein per day.",
+        f"{f['avg7_protein']:.0f} g protein, {f['avg7_carb']:.0f} g carb, "
+        f"{f['avg7_fat']:.0f} g fat per day.",
         f"Measured maintenance (from intake vs weight change): {f['tdee_kcal']:.0f} kcal/day, "
-        f"weight trending -{f['trend_lb_week']:.2f} lb/week.",
+        f"weight trending -{f['trend_lb_week']:.2f} lb/week, {pace(f, p)}.",
         f"Micronutrients, average % Daily Value on logged days: {micros}.",
         "Takes these daily supplements (logged outside the diary, so their micros are NOT in the "
         "numbers above): Vitamin D3.",
@@ -164,6 +187,78 @@ def test_the_snapshot_reaches_claude_whole_inside_its_data_block(
     system = ClaudeRequest.model_validate(claude.only_call().body).system or ""
     assert f"<training_log>\n{given.context}\n</training_log>" in system
     assert "- Works night shifts three days a week" in system
+
+
+# -- fixes for what the first live run (20261028T204942Z) caught ---------------------------
+
+
+def test_today_comes_with_its_weekday(seed: Callable[[Persona], Seeded], riley: Persona) -> None:
+    """Told only the date, the trainer called Thursday 10-22 "Tuesday" and Mon-Tue
+    "last weekend". With the weekday it can count back to the day asked about."""
+    _, given, facts = seed(riley)
+    weekday = date.fromisoformat(facts.today).strftime("%A")
+    assert given.context.startswith(f"Today is {weekday}, {facts.today}.\n"), given.context
+
+
+def test_the_latest_session_lists_only_its_own_lifts(
+    seed: Callable[[Persona], Seeded], riley: Persona
+) -> None:
+    """The lift history is grouped by lift, so the trainer put the 10-22 Romanian
+    Deadlift into the 10-26 session. The session line now says what was in it."""
+    _, given, facts = seed(riley)
+    line = next(ln for ln in given.context.splitlines() if "Most recent was" in ln)
+    assert latest_session(facts, riley) in line
+    assert "Romanian Deadlift" not in line
+
+
+@pytest.mark.parametrize(
+    ("goal_type", "rate", "words"),
+    [
+        ("lose", 1.0, "slower than the 1 lb/week cut they set"),
+        ("lose", 0.5, "faster than the 0.5 lb/week cut they set"),
+        ("lose", 0.75, "on pace with the 0.75 lb/week cut they set"),
+        ("gain", 0.5, "the opposite way to the 0.5 lb/week gain they set"),
+    ],
+)
+def test_the_weight_trend_is_read_against_the_goal(
+    seed: Callable[[Persona], Seeded], riley: Persona, goal_type: str, rate: float, words: str
+) -> None:
+    """Six replies called a 0.79 lb/week loss steeper than, or exactly, a 1 lb/week cut.
+    The comparison is now worked out in code and stated."""
+    profile = riley.profile.model_copy(
+        update={"goal_type": goal_type, "goal_rate_lb_per_week": rate}
+    )
+    persona = riley.model_copy(update={"profile": profile})
+    _, given, facts = seed(persona)
+    assert pace(facts, persona) == words
+    assert f"lb/week, {words}." in given.context, given.context
+
+
+def test_the_prompt_carries_the_grounding_rules(
+    seed: Callable[[Persona], Seeded],
+    riley: Persona,
+    functions: FunctionsClient,
+    claude: AnthropicStub,
+) -> None:
+    """The prompt fixes reach the model: averages aren't single days (it invented which
+    days were logged and what was eaten today), a gap in the snapshot isn't a gap in
+    the app, one window per sum (it added 7-day protein to 28-day carbs and fat), and
+    the reference figures it got wrong (alcohol at 9 kcal/g, g/lb swapped with g/kg)."""
+    user, given, _ = seed(riley)
+    functions.as_user(user.user.access_token).ask_trainer(
+        "How am I doing?", context=given.context, memory=given.memory
+    )
+    system = ClaudeRequest.model_validate(claude.only_call().body).system or ""
+    rules = system.split("<training_log>")[0]
+    for rule in (
+        "averages, not single days or meals",
+        "say you can't see it",
+        "never combine a last-7-days figure",
+        "alcohol 7",
+        "2.2 g per kg",
+        "3500 kcal in a pound of body fat",
+    ):
+        assert rule in rules, rule
 
 
 # -- the edges: each a small change to Riley, so one rule is tested at a time ------------

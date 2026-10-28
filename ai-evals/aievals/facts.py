@@ -291,6 +291,8 @@ def _nutrition(
         out.add(Fact("logged7", len(recent), "days"))
         out.add(Fact("avg7_kcal", js_round(avg(recent, "kcal")), "kcal"))
         out.add(Fact("avg7_protein", js_round(avg(recent, "protein")), "g"))
+        out.add(Fact("avg7_carb", js_round(avg(recent, "carb")), "g"))
+        out.add(Fact("avg7_fat", js_round(avg(recent, "fat")), "g"))
 
     # Measured maintenance: intake on days inside the weigh-in span vs the weight slope.
     # Its window is Insights' (src/features/insights/useAdaptiveTDEE.ts: weigh-ins

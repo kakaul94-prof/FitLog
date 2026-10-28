@@ -355,6 +355,30 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # The AI trainer's golden cases on promptfoo (ai-evals/promptfoo), CI subset:
+  # the ten canary cases through the real trainer function with Claude replaced
+  # by scripted streams, scored by promptfoo's rule assertions (no llm-rubric,
+  # which needs a model). Each case gets a reply that must pass and one that
+  # must fail. No key, no cost. Live promptfoo runs are manual only
+  # (npm run eval:pf). Fails the PR's checks, but is not a deploy-prod gate.
+  promptfoo-stub:
+    name: AI trainer evals, promptfoo layer (stub, no key)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ai-evals/promptfoo/package-lock.json
+      - name: Install promptfoo (its own package; the app's npm ci isn't needed)
+        run: npm ci --prefix ai-evals/promptfoo
+      - name: The layer's own instruments (ported checks, case mapping)
+        run: node --test "ai-evals/promptfoo/test/*.test.mjs"
+      - name: Rule assertions on scripted replies
+        run: node ai-evals/promptfoo/run.mjs stub
+
   # Performance smoke (perf-tests/, also `make perf-smoke`): two virtual users
   # run the real journey mix against the same disposable stack for a minute,
   # zero errors allowed, latency budgets relaxed (a shared runner's speed

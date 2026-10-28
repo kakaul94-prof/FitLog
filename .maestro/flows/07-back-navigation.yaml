@@ -1,0 +1,95 @@
+# The Android back button: walks back through tabs, guards an unsaved edit
+# (keep editing, or discard without losing the saved entry), and at the root
+# leaves the app, which then reopens with everything intact.
+appId: app.fitlog.mobile
+name: 07-back-navigation
+onFlowStart:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: reset
+onFlowComplete:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: cleanup
+---
+- runFlow: ../subflows/sign-in.yaml
+- runFlow:
+    file: ../subflows/quick-add.yaml
+    env:
+      NAME: "Pasta ${output.runId}"
+      KCAL: "100"
+
+# Back through the tabs, in the order they were opened.
+- tapOn:
+    id: "nav-progress"
+- extendedWaitUntil:
+    visible:
+      id: "measurement-value"
+    timeout: 30000
+- tapOn:
+    id: "nav-more"
+- extendedWaitUntil:
+    visible: "Food Library"
+    timeout: 30000
+- back
+- extendedWaitUntil:
+    visible:
+      id: "measurement-value"
+    timeout: 30000
+- back
+- extendedWaitUntil:
+    visible: "Pasta ${output.runId} 100"
+    timeout: 30000
+
+# An unsaved servings change: back asks first; Keep editing stays put.
+- tapOn: "Pasta ${output.runId} 100"
+- tapOn:
+    id: "srv"
+- eraseText: 10
+- inputText: "3"
+- hideKeyboard
+- back
+- extendedWaitUntil:
+    visible: "Save changes\\?"
+    timeout: 10000
+- tapOn: "Keep editing"
+# Android reads an input as its value then its label: "3, Servings".
+- assertVisible:
+    id: "srv"
+    text: "3, Servings"
+# Back again, and Discard: the saved entry is untouched.
+- back
+- extendedWaitUntil:
+    visible: "Save changes\\?"
+    timeout: 10000
+- tapOn: "Discard changes"
+- extendedWaitUntil:
+    visible: "Pasta ${output.runId} 100"
+    timeout: 30000
+- assertVisible: "1900 calories remaining"
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: food
+      NAME: "Pasta ${output.runId}"
+- assertTrue:
+    condition: ${output.foodCount == 1 && output.servings == 1}
+    label: "Discarding left the saved entry at 1 serving"
+
+# At the root of a fresh launch, back leaves the app (no crash, no data loss).
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Pasta ${output.runId} 100"
+    timeout: 60000
+- back
+- extendedWaitUntil:
+    notVisible: ".*calories remaining"
+    timeout: 15000
+- launchApp
+- extendedWaitUntil:
+    visible: "Pasta ${output.runId} 100"
+    timeout: 60000
+- assertVisible: "1900 calories remaining"

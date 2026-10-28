@@ -491,10 +491,11 @@ function BodyView() {
         <CardContent className="space-y-3 p-4">
           <div className="flex items-end gap-2">
             <div className="flex-1 space-y-1.5">
-              <label className="text-sm font-medium">
+              <label htmlFor="measurement-value" className="text-sm font-medium">
                 Log {meta.label.toLowerCase()} ({meta.unit})
               </label>
               <Input
+                id="measurement-value"
                 type="number"
                 inputMode="decimal"
                 value={val}
@@ -502,7 +503,11 @@ function BodyView() {
                 placeholder={latest != null ? String(latest) : '—'}
               />
             </div>
-            <Button onClick={add} disabled={logM.isPending || !val}>
+            <Button
+              id="measurement-add"
+              onClick={add}
+              disabled={logM.isPending || !val}
+            >
               Add
             </Button>
           </div>

@@ -56,6 +56,7 @@ Four layers, each where it is cheapest to prove what it proves:
 | AI trainer evals | pytest ([`ai-evals/`](ai-evals/README.md)) | 264 tests, ~2 min; live tier on demand; production canary twice a day | The Ask-a-trainer chat's guardrails against prompt injection, information exposure, unintended actions and a failing Claude, with Claude replaced by a stub (every push); the real model's behaviour on 87 cases x 3 runs, including fairness (counterfactual name, age and sex pairs scored for equivalence, and stated dietary and religious constraints), judged where rules can't decide (by hand, capped at a few dollars); and a canary of ten cases through the deployed production trainer twice a day, with a latency budget and GitHub-issue alerts |
 | End to end | Playwright ([`e2e/`](e2e/README.md)) | key journeys, a few minutes | The real app, in a phone-sized browser, against a real database |
 | Production monitoring | Playwright canary ([`canary/`](canary/README.md)) + Sentry | one journey every 30 min, ~2 min; errors as they happen | The deployed app still works for a user, from the outside (sign in, diary, log and delete a food, ask the trainer), with a GitHub issue per outage; and the errors real use hits, with the release and a readable stack, scrubbed of anything personal (see [Production monitoring](#production-monitoring)) |
+| Android app | Maestro ([`.maestro/`](#android-tests)) | 9 flows on an Android emulator, ~13 min job; app PRs + nightly | The installed phone app (Capacitor shell + WebView), as a phone user drives it: sign in, log, edit, delete, weigh in, force-stop and reopen, airplane mode and sync-once, the back button, a wrong password, leaving a workout; each flow also checks what reached the database |
 | End to end (Java) | Selenium + TestNG + Cucumber + REST Assured ([`e2e-java/`](e2e-java/README.md)) | 17 tests, ~2 min | The core journeys (sign in, log / edit / delete a food, totals, weigh-in) a second way, in a small interview-style Java framework: page objects, explicit waits only, a browser and a user per test, Allure report |
 | Performance | k6 ([`perf-tests/`](perf-tests/README.md)) | smoke on every PR (~2 min); load + soak nightly; stress and spike by hand | The backend holds its latency and error budgets under realistic user journeys at expected load, degrades predictably past it, and doesn't drift over a long run |
 
@@ -76,6 +77,7 @@ make test          # or, without make: bash scripts/test-all.sh test
 | `make canary-prod` | The production AI canary once, by hand: ten cases through the deployed trainer, capped at $0.25 (needs `ai-evals/.env.canary`; see `ai-evals/README.md`) |
 | `npm run canary` | The production app canary once, by hand: the user journey through the live site as the monitor account (same `ai-evals/.env.canary`; see [`canary/README.md`](canary/README.md)) |
 | `make test-e2e` | Playwright, in its container |
+| `bash .maestro/ci/run.sh` | The Android UI flows on a running emulator (`REPEAT=5` for a flake hunt; setup in [Android tests](#android-tests)) |
 | `make test-java` | The Java E2E suite (Selenium + TestNG + Cucumber + REST Assured) against the local stack, Allure results in `e2e-java/target` |
 | `make test-security` | Security scans: gitleaks, npm audit, pip-audit and an OWASP ZAP baseline scan (report only) |
 | `make report` | Builds and opens the Allure report of the last API and AI-eval runs |
@@ -136,6 +138,44 @@ flowchart LR
     Runner -- report volume --> REPORT[playwright-report/]
   end
 ```
+
+### Android tests
+
+The phone app is a Capacitor shell around the web app. [`.maestro/`](.maestro/README.md) drives that real Android app with [Maestro](https://docs.maestro.dev) on an Android 14 emulator, through taps, typing, the hardware back button, airplane mode and app restarts, against the same throwaway local Supabase stack as the E2E suite.
+
+**What's covered:** nine flows a phone user hits:
+- signing in;
+- logging a food and checking its row, meal total, calories remaining and macros;
+- editing then deleting an entry;
+- a weigh-in;
+- force-stopping and reopening, still signed in with the data intact;
+- logging offline in airplane mode, then syncing exactly once;
+- the back button through tabs, an unsaved edit and the app's root;
+- a wrong password;
+- leaving a workout with a changed set: back asks first, and Discard undoes the change.
+
+Each flow checks the screen and, through a small script, what reached the database. It signs in for itself, uses run-unique names, and wipes its test account before and after.
+
+**How it reaches the stack:** a test APK, the same native shell with `CAP_SERVER_URL` set, loads the web build from the host over `adb reverse`. The build talks to Supabase at `10.0.2.2`, the emulator's address for the host, so airplane mode really cuts it. The phone's own APK and the dev and production sites are never involved.
+
+**In CI:** [`android-ui.yml`](.github/workflows/android-ui.yml) runs on pull requests that touch the app and nightly, in parallel with `ci.yml` and outside the deploy gate, with no retries. A manual run takes a repeat count for flake hunts. The job summary lists each flow's passes and first failure.
+
+**Run it locally** with an AOSP API 34 emulator running, the [Maestro CLI](https://docs.maestro.dev) and Docker. The commands below build and serve the web app against the local stack; [`.maestro/README.md`](.maestro/README.md) covers getting the test APK.
+
+```bash
+npm run db:start && source api-tests/scripts/local-env.sh
+VITE_SUPABASE_URL=http://10.0.2.2:54321 VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY VITE_USDA_API_KEY=x npm run build
+npx vite preview --host 127.0.0.1 --port 5174 --strictPort &
+export MAESTRO_SUPABASE_URL=$SUPABASE_URL MAESTRO_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY MAESTRO_FITLOG_EMAIL=kim@e2e.test MAESTRO_FITLOG_PASSWORD=kim-password
+APK=path/to/app-debug.apk bash .maestro/ci/run.sh
+```
+
+**When a flow fails:**
+1. Read the job summary. It names the flow and its first failing step.
+2. Download the `android-ui-failure` artifact. It holds a screenshot and screen dump of the failing step, Maestro's log and the device log.
+3. Rerun that one flow locally, and use `maestro studio` to inspect the live screen.
+
+[`.maestro/README.md`](.maestro/README.md) has a table of symptoms and their likely causes.
 
 ### Performance tests
 

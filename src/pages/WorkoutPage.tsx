@@ -669,11 +669,17 @@ export function WorkoutPage() {
             }}
           >
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="leave-workout-title"
               className="mx-auto w-full max-w-md p-3"
               onClick={(ev) => ev.stopPropagation()}
             >
               <Card className="overflow-hidden">
-                <div className="border-b border-border p-3 text-center text-xs text-muted-foreground">
+                <div
+                  id="leave-workout-title"
+                  className="border-b border-border p-3 text-center text-xs text-muted-foreground"
+                >
                   Leave workout?
                 </div>
                 <button
@@ -1568,6 +1574,7 @@ function SetRow({
             className="h-9"
             type="number"
             inputMode="numeric"
+            aria-label={`Set ${index} seconds`}
             value={secs}
             onChange={(e) => setSecs(e.target.value)}
             onBlur={() => {
@@ -1582,6 +1589,7 @@ function SetRow({
               className="h-9"
               type="number"
               inputMode="decimal"
+              aria-label={`Set ${index} weight`}
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               onFocus={() => {
@@ -1601,6 +1609,7 @@ function SetRow({
               className="h-9"
               type="number"
               inputMode="numeric"
+              aria-label={`Set ${index} reps`}
               value={reps}
               onChange={(e) => setReps(e.target.value)}
               onFocus={() => {

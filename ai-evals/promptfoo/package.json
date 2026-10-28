@@ -1,0 +1,14 @@
+{
+  "name": "fitlog-ai-evals-promptfoo",
+  "private": true,
+  "description": "The AI trainer's golden cases on promptfoo, beside the custom eval suite (ai-evals/). Installed apart from the app, so the root npm ci and its lockfile stay as they are.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "dependencies": {
+    "esbuild": "0.28.2",
+    "js-yaml": "4.1.0",
+    "promptfoo": "0.125.1"
+  }
+}

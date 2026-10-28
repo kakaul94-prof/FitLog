@@ -1,0 +1,8 @@
+# Wait until every write has reached the server. The app's status pill counts
+# unsaved writes ("Syncing 1…" online, "Offline · 1 pending" offline) and
+# hides at zero, so its absence is the app's own "all saved" signal.
+appId: app.fitlog.mobile
+---
+- extendedWaitUntil:
+    notVisible: "(Syncing|Offline).*"
+    timeout: 60000

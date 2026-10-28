@@ -1,0 +1,29 @@
+# A fresh install signs in with the test account and lands on today's diary.
+appId: app.fitlog.mobile
+name: 01-sign-in
+onFlowStart:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: reset
+onFlowComplete:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: cleanup
+---
+- runFlow: ../subflows/sign-in.yaml
+# Seeded goal 2000, nothing logged yet (onFlowStart wiped the account).
+- assertVisible: "2000 calories remaining"
+- assertVisible:
+    id: "add-food-breakfast"
+- assertVisible:
+    id: "nav-diary"
+- assertVisible:
+    id: "nav-exercise"
+- assertVisible:
+    id: "nav-progress"
+- assertVisible:
+    id: "nav-more"
+- assertNotVisible:
+    id: "email"

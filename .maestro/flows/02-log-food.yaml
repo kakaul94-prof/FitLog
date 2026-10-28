@@ -1,0 +1,57 @@
+# Log a food with calories and macros; the diary row, the meal total, the
+# calories remaining and the macro totals all update, and it is saved once.
+appId: app.fitlog.mobile
+name: 02-log-food
+onFlowStart:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: reset
+onFlowComplete:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: cleanup
+---
+- runFlow: ../subflows/sign-in.yaml
+- tapOn:
+    id: "add-food-snacks"
+- tapOn: "Quick add"
+- tapOn:
+    id: "qa-name"
+- inputText: "Oats ${output.runId}"
+- tapOn:
+    id: "qa-kcal"
+- inputText: "250"
+- tapOn:
+    id: "qa-p"
+- inputText: "12"
+- tapOn:
+    id: "qa-c"
+- inputText: "30"
+- tapOn:
+    id: "qa-f"
+- inputText: "5"
+- hideKeyboard
+- tapOn: "Add to snacks"
+- tapOn: "Done"
+
+- extendedWaitUntil:
+    visible: "Oats ${output.runId} 250"
+    timeout: 30000
+- assertVisible: "Snacks 250 cal"
+- assertVisible: "1750 calories remaining"
+# Macro bars read "<eaten>/<target>g"; the targets depend on profile defaults.
+- assertVisible: "12/\\d+g"
+- assertVisible: "30/\\d+g"
+- assertVisible: "5/\\d+g"
+
+- runFlow: ../subflows/wait-saved.yaml
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: food
+      NAME: "Oats ${output.runId}"
+- assertTrue:
+    condition: ${output.foodCount == 1}
+    label: "Exactly one diary row saved"

@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# The AI trainer's golden cases (ai-evals/dataset, 87 cases) on promptfoo,
+# beside the custom suite (ai-evals/aievals), not instead of it.
+#
+# Run it through the runner, which states the cost and asks for --yes first:
+#   npm run eval:pf                 # production's model (haiku-4-5)
+#   npm run eval:pf:models          # both models, for the comparison
+#   npm run eval:pf:redteam         # the 32 security cases only
+# Running promptfoo on this file directly makes no live call: the provider
+# refuses until run.mjs has stated the cost (PF_ALLOW_LIVE).
+#
+# No key lives here: the runner puts ANTHROPIC_API_KEY_EVALS (environment, or
+# the gitignored ai-evals/.env.live) into the environment as ANTHROPIC_API_KEY,
+# which both the provider and the grader read.
+description: FitLog Ask-a-trainer, golden cases on promptfoo
+
+# The provider answers from the case's vars (question, history, log, memory)
+# through the real function; the rendered prompt is shown in the report only.
+prompts:
+  - '{{ask}}'
+
+providers:
+  # What production runs (functions/api/trainer.ts MODEL).
+  - id: file://provider.mjs
+    label: haiku-4-5
+    config: { mode: live, model: claude-haiku-4-5 }
+  # The comparison: the same function, prompt and token ceiling, another model.
+  - id: file://provider.mjs
+    label: haiku-5-5
+    config: { mode: live, model: claude-haiku-5-5 }
+
+defaultTest:
+  options:
+    # The grader for every llm-rubric: the custom judge's model and effort
+    # (aievals/judge.py), so the two graders differ in harness and prompt only.
+    provider:
+      id: anthropic:messages:claude-sonnet-5-5
+      config:
+        max_tokens: 1024
+        effort: low
+
+tests: file://tests.mjs
+
+evaluateOptions:
+  maxConcurrency: 4
+
+sharing: false

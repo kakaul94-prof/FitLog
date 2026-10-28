@@ -40,6 +40,7 @@ from typing import Any
 import anthropic
 import httpx
 
+from aievals import factcheck, hallucination
 from aievals.checks import run_rules
 from aievals.dataset import ROOT, Case, Dataset, load_dataset
 from aievals.equivalence import (
@@ -55,15 +56,16 @@ from aievals.equivalence import (
     pair_jobs,
     score_group,
 )
+from aievals.facts import Facts, ground_truth
 from aievals.harness import ClientHarness, ParsedReply, TrainerInput
-from aievals.judge import JUDGE_MODEL, NEEDS_LOG, DryJudge, Grader, Judge
+from aievals.judge import JUDGE_MODEL, NEEDS_LOG, PROVENANCE_RUBRIC, DryJudge, Grader, Judge
 from aievals.latency import Sample, report
 from aievals.personas import seed_persona, with_seed
 from aievals.pricing import Usage, cost_usd, price
 from aievals.prompt import static_rules
 from aievals.proxy import ClaudeProxy, ProxiedCall
 from aievals.report import Cost, append_history, build_summary, render_markdown
-from aievals.scoring import JudgeResult, Run, case_outcomes, category_gates
+from aievals.scoring import JudgeResult, Metric, Run, case_outcomes, category_gates
 from aievals.thresholds import LATENCY_BUDGETS_MS
 from testkit.anthropic_stub import AnthropicStub
 from testkit.auth import AdminAuth, AuthClient, SignedInUser
@@ -192,7 +194,8 @@ def prepare(
     """A seeded user for every case, and what the browser would post for them.
 
     Cases without hostile seeds share one user per persona; each seeded case gets
-    its own, so its planted text reaches no other case.
+    its own, so its planted text reaches no other case. So does each grounding
+    case: its facts are checked against exactly the rows seeded for it.
     """
 
     def make(persona: str, seed: dict[Any, str]) -> SignedInUser:
@@ -205,7 +208,7 @@ def prepare(
     shared: dict[str, SignedInUser] = {}
     owner: dict[str, SignedInUser] = {}
     for case in cases:
-        if case.seed:
+        if case.seed or case.category == "grounding":
             owner[case.id] = make(case.persona, dict(case.seed))
         else:
             if case.persona not in shared:
@@ -227,7 +230,8 @@ def upper_bound_usd(
         prompt = rules_chars + len(given.context) + sum(map(len, given.memory)) + len(case.ask)
         prompt += sum(len(t.content) for t in case.history)
         trainer += cost_usd(TRAINER_MODEL, Usage(prompt // chars_per_token, TRAINER_MAX_TOKENS))
-        for rubric in case.judge:
+        # Worst case, every grounding reply has a figure the checker hands the judge.
+        for rubric in [*case.judge, *provenance_calls(case)]:
             judged = 2_500 + len(case.ask) + TRAINER_MAX_TOKENS * 4
             judged += len(given.context) if rubric in NEEDS_LOG else 0
             judge += cost_usd(JUDGE_MODEL, Usage(judged // chars_per_token, JUDGE_MAX_TOKENS))
@@ -236,6 +240,16 @@ def upper_bound_usd(
         JUDGE_MODEL, Usage((2_500 + TRAINER_MAX_TOKENS * 8) // chars_per_token, JUDGE_MAX_TOKENS)
     )
     return (trainer + judge) * reps + pair * pair_count(cases, reps)
+
+
+def provenance_calls(case: Case) -> list[str]:
+    """The judge call a grounding reply may need, for figures code couldn't place."""
+    return [PROVENANCE_RUBRIC] if case.expect.grounded else []
+
+
+def judge_call_bound(cases: Sequence[Case], reps: int) -> int:
+    per_rep = sum(len(c.judge) + len(provenance_calls(c)) for c in cases)
+    return per_rep * reps + pair_count(cases, reps)
 
 
 def pair_count(cases: Sequence[Case], reps: int) -> int:
@@ -311,21 +325,47 @@ def judge_all(
     limit: int,
     concurrency: int,
     over_limit: str = "judge budget spent",
+    claims: dict[int, str] | None = None,
 ) -> list[list[JudgeResult]]:
-    jobs = [(i, rubric) for i, (a, _, _) in enumerate(scored) for rubric in a.case.judge]
+    """Each run's rubrics; plus number_provenance where `claims` (run index -> the
+    figures the fact checker couldn't place) has an entry."""
+    jobs = [(i, rubric, "") for i, (a, _, _) in enumerate(scored) for rubric in a.case.judge]
+    jobs += [(i, PROVENANCE_RUBRIC, text) for i, text in sorted((claims or {}).items())]
     results: list[list[JudgeResult]] = [[] for _ in scored]
 
-    def grade(job: tuple[int, str]) -> JudgeResult:
-        i, rubric = job
+    def grade(job: tuple[int, str, str]) -> JudgeResult:
+        i, rubric, focus = job
         attempt, reply, given = scored[i]
-        return grader.grade(rubric, attempt.case.ask, shown_to_judge(reply), judge_log(given))
+        return grader.grade(
+            rubric, attempt.case.ask, shown_to_judge(reply), judge_log(given), focus
+        )
 
     with ThreadPoolExecutor(concurrency) as pool:
         verdicts = list(pool.map(grade, jobs[:limit]))
-    verdicts += [JudgeResult(r, None, over_limit) for _, r in jobs[limit:]]
-    for (i, _), verdict in zip(jobs, verdicts, strict=True):
+    verdicts += [JudgeResult(r, None, over_limit) for _, r, _ in jobs[limit:]]
+    for (i, _, _), verdict in zip(jobs, verdicts, strict=True):
         results[i].append(verdict)
     return results
+
+
+def unplaced_claims(
+    scored: Sequence[tuple[Attempt, ParsedReply, TrainerInput]], facts: dict[str, Facts]
+) -> dict[int, str]:
+    """Run index -> the figures in a grounding reply that code can't attribute."""
+    out = {}
+    for i, (attempt, reply, given) in enumerate(scored):
+        case = attempt.case
+        if not case.expect.grounded or case.id not in facts:
+            continue
+        found = factcheck.check(reply.raw, facts[case.id], asked(case), given.memory)
+        if found.unclear:
+            out[i] = "\n".join(f"- {c.text!r} in: {c.clause}" for c in found.unclear)
+    return out
+
+
+def asked(case: Case) -> str:
+    """Everything the user said in the chat: the question and any earlier turns."""
+    return " ".join([*(t.content for t in case.history if t.role == "user"), case.ask])
 
 
 def run(opts: Options) -> int:
@@ -339,7 +379,7 @@ def run(opts: Options) -> int:
             "environment, or try the pipeline for free with --dry-run."
         )
     trainer_calls = len(cases) * opts.reps
-    judge_calls = sum(len(c.judge) for c in cases) * opts.reps + pair_count(cases, opts.reps)
+    judge_calls = judge_call_bound(cases, opts.reps)
     if trainer_calls > opts.max_trainer_calls or judge_calls > opts.max_judge_calls:
         print(
             f"Refusing to start: this run needs {trainer_calls} trainer calls "
@@ -362,6 +402,12 @@ def run(opts: Options) -> int:
         )
         try:
             prepared = prepare(cases, dataset, users, http, settings, harness)
+            # Seeded today, so worked out for today: what each grounding case's user holds.
+            facts = {
+                c.id: ground_truth(dataset.personas[c.persona], date.today())
+                for c in cases
+                if c.category == "grounding"
+            }
             bound = 0.0 if opts.dry_run else upper_bound_usd(cases, prepared, opts.reps)
             if bound > opts.max_usd:
                 print(
@@ -407,19 +453,38 @@ def run(opts: Options) -> int:
         0 if account_failed else opts.max_judge_calls,
         opts.concurrency,
         over_limit="skipped: the account can't answer" if account_failed else "judge budget spent",
+        claims=unplaced_claims(scored, facts),
     )
     runs = [
         Run(
             a.case,
             a.rep,
             r,
-            run_rules(a.case.expect, r, prompt_rules=rules, secrets=secrets_map),
+            run_rules(
+                a.case.expect,
+                r,
+                prompt_rules=rules,
+                secrets=secrets_map,
+                facts=facts.get(a.case.id),
+                question=asked(a.case),
+                memory=given.memory,
+            ),
             v,
             a.total_ms,
             a.first_byte_ms,
         )
-        for (a, r, _), v in zip(scored, verdicts, strict=True)
+        for (a, r, given), v in zip(scored, verdicts, strict=True)
     ]
+    grounding = hallucination.summarise(
+        [r for r in runs if r.case.category == "grounding"],
+        {
+            (r.case.id, r.rep): factcheck.check(
+                r.reply.raw, facts[r.case.id], asked(r.case), prepared[r.case.id][1].memory
+            )
+            for r in runs
+            if r.case.id in facts
+        },
+    )
     # Fairness groups: parity and same targets from the runs, equivalence from the judge.
     by_case: dict[str, list[Run]] = {}
     for r in runs:
@@ -468,7 +533,22 @@ def run(opts: Options) -> int:
         reps=opts.reps,
         dry_run=opts.dry_run,
         outcomes=outcomes,
-        gates=category_gates(runs, {"fairness": fairness_metrics(group_results, pairs)}),
+        gates=category_gates(
+            runs,
+            {
+                "fairness": fairness_metrics(group_results, pairs),
+                "grounding": [
+                    Metric(
+                        "hallucination-free",
+                        grounding.free_rate,
+                        hallucination.FREE_BAR,
+                        grounding.replies,
+                    )
+                ]
+                if grounding.replies
+                else [],
+            },
+        ),
         errors=len(errors),
         served_models=served,
         cost=cost,
@@ -481,9 +561,23 @@ def run(opts: Options) -> int:
     if group_results:
         agreed = agreements(pairs)
         summary["fairness_groups"] = [group_record(g, agreed) for g in group_results]
-    markdown = render_markdown(summary, outcomes)
+    if grounding.replies:
+        summary["grounding"] = grounding.record()
+    markdown = render_markdown(summary, outcomes) + grounding.markdown()
     logs = {cid: judge_log(given) for cid, (_, given) in prepared.items()}
     _write(out, runs, errors, calls, rules, summary, markdown, logs)
+    if grounding.findings:
+        # Every hallucination with the exact question, snapshot and reply, to reproduce it.
+        (out / "hallucinations.jsonl").write_text(
+            "".join(
+                json.dumps(
+                    {**asdict(f), "snapshot": prepared[f.case][1].context}, ensure_ascii=False
+                )
+                + "\n"
+                for f in grounding.findings
+            ),
+            encoding="utf-8",
+        )
     if pairs:
         (out / "pairs.jsonl").write_text(
             "".join(
@@ -670,9 +764,9 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
     p.add_argument("--only", nargs="*", default=[], help="case ids to run (default: all)")
     p.add_argument("--category", help="run one category only")
     p.add_argument("--reps", type=int, default=3, help="runs per case (default 3)")
-    p.add_argument("--max-trainer-calls", type=int, default=300)
-    p.add_argument("--max-judge-calls", type=int, default=300)
-    p.add_argument("--max-usd", type=float, default=6.0, help="refuse runs that could cost more")
+    p.add_argument("--max-trainer-calls", type=int, default=450)
+    p.add_argument("--max-judge-calls", type=int, default=450)
+    p.add_argument("--max-usd", type=float, default=10.0, help="refuse runs that could cost more")
     p.add_argument("--concurrency", type=int, default=4)
     p.add_argument(
         "--dry-run", action="store_true", help="the stub instead of Claude; costs nothing"

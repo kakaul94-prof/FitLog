@@ -21,6 +21,7 @@ Category = Literal[
     "unintended_actions",
     "output_quality",
     "fairness",
+    "grounding",
 ]
 CATEGORIES: tuple[Category, ...] = (
     "prompt_injection",
@@ -28,6 +29,7 @@ CATEGORIES: tuple[Category, ...] = (
     "unintended_actions",
     "output_quality",
     "fairness",
+    "grounding",
 )
 
 # Where a case's hostile text is planted. Each one is user-controlled text that
@@ -59,6 +61,8 @@ class ProfileSpec(Strict):
     activity_level: Literal["sedentary", "light", "moderate", "active", "very_active"]
     calorie_goal: int
     protein_g: int
+    goal_type: Literal["lose", "maintain", "gain"] = "maintain"
+    goal_rate_lb_per_week: float = 0
 
 
 class WeighIn(Strict):
@@ -90,6 +94,29 @@ class DiarySpec(Strict):
     carb: float
     fat: float
     iron: float | None = None
+
+
+class FoodSpec(Strict):
+    """One food's nutrients PER SERVING, as diary_entries snapshots them."""
+
+    kcal: float
+    protein: float
+    carb: float
+    fat: float
+    fiber: float | None = None
+    iron: float | None = None
+
+    def nutrients(self) -> dict[str, float]:
+        return {k: v for k, v in self.model_dump().items() if v is not None}
+
+
+class FoodLogged(Strict):
+    """One diary row: a food from the persona's `foods`, in a meal, on a day."""
+
+    days_ago: int
+    meal: Literal["breakfast", "lunch", "dinner", "snacks"]
+    food: str
+    servings: float = 1
 
 
 class PainScore(Strict):
@@ -126,12 +153,23 @@ class Persona(Strict):
     weights: list[WeighIn] = Field(default_factory=list)
     workouts: list[WorkoutSpec] = Field(default_factory=list)
     diary: DiarySpec | None = None
+    # Real meals with real food names, for the grounding cases: every day differs,
+    # so an average, a single day and an invented number can be told apart.
+    foods: dict[str, FoodSpec] = Field(default_factory=dict)
+    food_log: list[FoodLogged] = Field(default_factory=list)
     supplements: list[str] = Field(default_factory=list)
     injuries: list[InjurySpec] = Field(default_factory=list)
     cardio: list[CardioSpec] = Field(default_factory=list)
     goals: list[GoalSpec] = Field(default_factory=list)
     routines: list[str] = Field(default_factory=list)
     memory: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _logged_foods_exist(self) -> "Persona":
+        unknown = {f.food for f in self.food_log} - set(self.foods)
+        if unknown:
+            raise ValueError(f"food_log names foods not in `foods`: {sorted(unknown)}")
+        return self
 
 
 # -- cases -----------------------------------------------------------------------------
@@ -154,9 +192,42 @@ class Expect(Strict):
     remember: Literal["none"] | None = None  # no "Remember" chip at all
     remember_not_containing: list[str] = Field(default_factory=list)
     remember_containing_any: list[str] = Field(default_factory=list)
+    # Grounding (aievals/factcheck.py). These need the snapshot the model saw and
+    # the persona's ground truth (aievals/facts.py), so run_rules takes both.
+    grounded: bool = False  # every checkable claim about the user is backed by their data
+    says_missing: bool = False  # says plainly that the data asked about isn't there
+    values: list["ValueCheck"] = Field(default_factory=list)  # computed in the test
+    within: list["RangeCheck"] = Field(default_factory=list)  # general facts: plausible range
+    wrong_facts: list[str] = Field(default_factory=list)  # regexes for a known-wrong fact
+    hedges: bool = False  # signals that the figure varies (size, body weight, pace...)
 
     def is_empty(self) -> bool:
         return self == Expect()
+
+
+class ValueCheck(Strict):
+    """A number the reply must state, worked out from the seeded data.
+
+    `any` holds expressions over the persona's facts (aievals/facts.py), e.g.
+    "goal_kcal - avg28_kcal"; the reply passes if it states any one of them,
+    within `tol`. Several are allowed where two readings of the question are
+    both right (the 28-day or the 7-day average).
+    """
+
+    any: list[str]
+    tol: float = 1
+    unit: Literal["kcal", "g", "lb", "lb/week", "g/lb", "weeks"] | None = None
+
+
+class RangeCheck(Strict):
+    """Every figure in this unit that isn't the user's own data falls in [min, max]."""
+
+    unit: Literal["kcal", "kcal/g", "g", "g/kg", "%"]
+    min: float
+    max: float
+
+
+Expect.model_rebuild()
 
 
 Unit = Literal["kcal", "g", "lb"]

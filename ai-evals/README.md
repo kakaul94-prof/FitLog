@@ -13,7 +13,7 @@ slow, down or broken. This suite tests all of that, in two tiers:
 | | Tier 1: deterministic | Tier 2: live |
 |---|---|---|
 | Claude | replaced by a scripted stub | the real API, through the real function |
-| Tests | **320** pytest tests | **135** eval cases x 3 runs |
+| Tests | **321** pytest tests | **135** eval cases x 3 runs |
 | Runs | every push and PR (`ai-evals` CI job), part of the release gate | by hand only (`make eval-ai-live`, or the "AI evals (live)" workflow) |
 | Time, cost | about 2-3 minutes locally, $0 | about 5 minutes, about $1.70 (estimated; the 48 grounding cases alone measured $0.70) |
 | Asks | does the function enforce its guardrails, whatever the model does? | does the model behave, given what the function sends it? |

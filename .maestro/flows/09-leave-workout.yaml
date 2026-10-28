@@ -1,0 +1,79 @@
+# The Android back button on a workout: with a set changed it asks first
+# ("Leave workout?"); Cancel stays on the workout, and Discard changes puts
+# the set back the way it was on the server, keeping the workout.
+appId: app.fitlog.mobile
+name: 09-leave-workout
+onFlowStart:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: reset
+  # Today's workout, already in progress: Bench Press, one set of 135 x 5.
+  # Seeded rather than started in the app, because adding an exercise opens
+  # the workout again on top of the picker, so back would land on the picker.
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: seed-workout
+onFlowComplete:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: cleanup
+---
+- runFlow: ../subflows/sign-in.yaml
+- tapOn:
+    id: "nav-exercise"
+- extendedWaitUntil:
+    visible: "Continue workout"
+    timeout: 30000
+- tapOn: "Continue workout"
+# Android reads an input as its value then its label: "5, Set 1 reps".
+- extendedWaitUntil:
+    visible: "5, Set 1 reps"
+    timeout: 30000
+
+# Change the reps to 8. A set saves when its field loses focus, so move to
+# the weight field, then wait until the edit has reached the server.
+- tapOn: "5, Set 1 reps"
+- eraseText: 5
+- inputText: "8"
+- tapOn: "135, Set 1 weight"
+- hideKeyboard
+- runFlow: ../subflows/wait-saved.yaml
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: workout
+- assertTrue:
+    condition: ${output.setCount == 1 && output.reps == 8}
+    label: "The edit to 8 reps was saved before leaving"
+
+# Back asks first; Cancel stays on the workout with the edit in place.
+- back
+- extendedWaitUntil:
+    visible: "Leave workout\\?"
+    timeout: 10000
+- tapOn: "Cancel"
+- extendedWaitUntil:
+    notVisible: "Leave workout\\?"
+    timeout: 10000
+- assertVisible: "8, Set 1 reps"
+
+# Back again, and Discard changes: the set is back to 5 reps on the server,
+# and the workout is still there to continue.
+- back
+- extendedWaitUntil:
+    visible: "Leave workout\\?"
+    timeout: 10000
+- tapOn: "Discard changes"
+- extendedWaitUntil:
+    visible: "Continue workout"
+    timeout: 30000
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: workout
+- assertTrue:
+    condition: ${output.workoutCount == 1 && output.setCount == 1 && output.reps == 5}
+    label: "Discarding put the set back to 5 reps and kept the workout"

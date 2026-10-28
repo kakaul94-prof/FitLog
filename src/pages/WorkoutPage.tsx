@@ -1574,6 +1574,7 @@ function SetRow({
             className="h-9"
             type="number"
             inputMode="numeric"
+            aria-label={`Set ${index} seconds`}
             value={secs}
             onChange={(e) => setSecs(e.target.value)}
             onBlur={() => {
@@ -1588,6 +1589,7 @@ function SetRow({
               className="h-9"
               type="number"
               inputMode="decimal"
+              aria-label={`Set ${index} weight`}
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
               onFocus={() => {
@@ -1607,6 +1609,7 @@ function SetRow({
               className="h-9"
               type="number"
               inputMode="numeric"
+              aria-label={`Set ${index} reps`}
               value={reps}
               onChange={(e) => setReps(e.target.value)}
               onFocus={() => {

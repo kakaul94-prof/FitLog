@@ -14,7 +14,7 @@
 --   Heidi: entries spec (edits and deletes diary entries and weigh-ins)
 --   Ivan:  profile spec (goals and settings; also signs out, which ends every session)
 --   Judy:  resilience specs (offline queue, duplicate and lost requests, stale caches)
---   Kim:   Android UI flows (.maestro/), which wipe her diary and weigh-ins
+--   Kim:   Android UI flows (.maestro/), which wipe her diary, weigh-ins and workouts
 -- ============================================================
 
 -- auth.users + auth.identities is what GoTrue writes on a real signup.

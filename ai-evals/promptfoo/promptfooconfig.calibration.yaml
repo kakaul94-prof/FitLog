@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# promptfoo's grader on the judge's calibration set: the 15 replies the app
+# owner labelled by hand (ai-evals/calibration). Replies are replayed as
+# stored; only the grader runs, with the same model and settings as in
+# promptfooconfig.yaml. `npm run eval:pf:calibration` runs it twice per reply
+# (self-consistency), and `npm run eval:pf:compare` scores it, and the custom
+# judge, against the labels.
+description: FitLog Ask-a-trainer, llm-rubric on the hand-labelled calibration replies
+
+prompts:
+  - '{{ask}}'
+
+providers:
+  - id: file://provider.mjs
+    label: replay
+    config: { mode: replay }
+
+defaultTest:
+  options:
+    provider:
+      id: anthropic:messages:claude-sonnet-5-5
+      config:
+        max_tokens: 1024
+        effort: low
+
+tests: file://calibration-tests.mjs
+
+sharing: false

@@ -21,7 +21,17 @@
     "db:reset": "supabase db reset",
     "test:contracts": "tsc -p tsconfig.contracts.json && vitest run --config vitest.contracts.config.ts --project consumer && vitest run --config vitest.contracts.config.ts --project provider-functions",
     "test:contracts:supabase": "vitest run --config vitest.contracts.config.ts --project provider-supabase",
-    "contracts:update": "vitest run --config vitest.contracts.config.ts --project consumer --update"
+    "contracts:update": "vitest run --config vitest.contracts.config.ts --project consumer --update",
+    "eval:pf:install": "npm ci --prefix ai-evals/promptfoo",
+    "eval:pf": "node ai-evals/promptfoo/run.mjs eval",
+    "eval:pf:models": "node ai-evals/promptfoo/run.mjs eval --models",
+    "eval:pf:redteam": "node ai-evals/promptfoo/run.mjs eval --set redteam",
+    "eval:pf:calibration": "node ai-evals/promptfoo/run.mjs calibration",
+    "eval:pf:compare": "node ai-evals/promptfoo/run.mjs compare",
+    "eval:pf:stub": "node --test \"ai-evals/promptfoo/test/*.test.mjs\" && node ai-evals/promptfoo/run.mjs stub",
+    "eval:pf:replay": "node ai-evals/promptfoo/run.mjs replay",
+    "eval:pf:contexts": "node ai-evals/promptfoo/run.mjs contexts",
+    "eval:pf:view": "node ai-evals/promptfoo/run.mjs view"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

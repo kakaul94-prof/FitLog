@@ -6,6 +6,8 @@ __pycache__/
 *.egg-info/
 # The bundled Node harness (built at test start from harness/*.ts + src/lib)
 harness/dist/
+# The promptfoo layer's bundle of the trainer function (rebuilt on every run)
+promptfoo/.build/
 # The live tier's Anthropic key for local runs. Never commit it.
 .env.live
 # The production canary's target and monitor-account credentials, for runs by hand.

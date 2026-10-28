@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# The custom suite's own live runs, replayed: every raw reply Claude gave in
+# reports/ai-evals-live/<run>/, scored by promptfoo's rule assertions. No model
+# is called. `npm run eval:pf:replay -- <run dir> ...` runs it, and
+# `npm run eval:pf:compare -- <replay dir>` scores the same replies with
+# checks.py and lists any check the two implementations disagree on.
+description: FitLog Ask-a-trainer, rule assertions on replayed live replies
+
+prompts:
+  - '{{ask}}'
+
+providers:
+  - id: file://provider.mjs
+    label: replay
+    config: { mode: replay }
+
+tests: file://replay-tests.mjs
+
+sharing: false

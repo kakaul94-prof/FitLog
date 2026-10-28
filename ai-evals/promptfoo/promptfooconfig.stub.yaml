@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+#
+# The CI subset: no key, no cost, deterministic. The ten production-canary
+# cases (ai-evals/canary/cases.yaml) through the real trainer function, with
+# Claude replaced by scripted streams (stub-replies.yaml), scored by the rule
+# assertions only (no llm-rubric: that would need a model).
+#
+# Two providers, so the assertions are proven in both directions: every
+# "good" reply must pass its case, and every "bad" reply must fail it.
+# run.mjs stub runs this and checks exactly that.
+description: FitLog Ask-a-trainer, rule assertions on scripted replies (CI)
+
+prompts:
+  - '{{ask}}'
+
+providers:
+  - id: file://provider.mjs
+    label: stub-good
+    config: { mode: stub, variant: good }
+  - id: file://provider.mjs
+    label: stub-bad
+    config: { mode: stub, variant: bad }
+
+tests: file://stub-tests.mjs
+
+sharing: false

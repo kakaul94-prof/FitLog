@@ -25,6 +25,12 @@ alerts when production errors, slows down or answers worse.
 What the suite found, and how each problem was fixed:
 [`AI-SAFETY-FINDINGS.md`](../AI-SAFETY-FINDINGS.md).
 
+The same 87 golden cases also run on [promptfoo](https://www.promptfoo.dev/),
+beside this suite, not instead of it: [`promptfoo/`](promptfoo/README.md) reads
+these dataset and rubric files at run time, answers through the same
+production function, and compares its graders with this suite's judge
+(`npm run eval:pf`).
+
 ## What's tested and why
 
 | Category | Tier 1 proves | Tier 2 asks the model | Why it matters |

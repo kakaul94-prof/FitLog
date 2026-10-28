@@ -19,6 +19,7 @@ replaces one that script already had running.
 """
 
 import argparse
+import io
 import json
 import os
 import random
@@ -791,5 +792,8 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
 
 
 if __name__ == "__main__":
+    # The report has arrows and dashes; a Windows console or redirect defaults to cp1252.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
     price(TRAINER_MODEL)  # fail fast if the price list doesn't know the trainer's model
     sys.exit(run(parse_args()))

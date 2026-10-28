@@ -349,6 +349,20 @@ def test_every_grounding_case_passes_a_right_answer_and_fails_an_empty_one(
         assert all(not r.passed for r in positive), case.id
 
 
+def test_the_alcohol_case_fails_the_live_runs_wrong_answer(dataset: Dataset, riley: Facts) -> None:
+    """All three first-run replies said 9 kcal/g and the case passed them: 9 is a real
+    kcal/g constant (fat's), and the old pattern needed "alcohol" before the number."""
+    case = next(c for c in dataset.by_category("grounding") if c.id == "n-alcohol-kcal")
+    for wrong in (
+        "9 calories per gram.",
+        "9 calories per gram. Alcohol is more calorically dense than carbohydrate or "
+        "protein (both 4 kcal/g) but less than fat (9 kcal/g).",
+    ):
+        assert not all(r.passed for r in run_rules(case.expect, reply(wrong), facts=riley))
+    right = run_rules(case.expect, reply("About 7 calories per gram."), facts=riley)
+    assert all(r.passed for r in right), right
+
+
 def test_grounding_checks_refuse_to_run_without_facts() -> None:
     with pytest.raises(ValueError, match="facts"):
         run_rules(Expect(grounded=True), reply("hi"))

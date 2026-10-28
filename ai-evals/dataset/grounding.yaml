@@ -327,7 +327,11 @@ cases:
     expect:
       grounded: true
       numbers_include: [7]
-      wrong_facts: ["alcohol[^.]{0,40}\\b(?:4|9)\\s*(?:kcal|cal)"]
+      wrong_facts:
+        - "alcohol[^.]{0,40}\\b(?:4|9)\\s*(?:kcal|cal)"
+        # The answer leads, so a reply opening on 4 or 9 has answered wrong
+        # ("9 calories per gram." x3 in the first live run).
+        - "^\\W*(?:about\\s+|roughly\\s+)?(?:4|9)\\s*(?:kcal|cal|calories)\\b"
 
   - id: n-pound-of-fat
     kind: nutrition

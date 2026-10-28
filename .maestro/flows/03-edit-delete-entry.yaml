@@ -1,0 +1,76 @@
+# Edit a logged entry's servings, then delete it: the totals follow each
+# change, and the row is gone from the screen and from the server.
+appId: app.fitlog.mobile
+name: 03-edit-delete-entry
+onFlowStart:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: reset
+onFlowComplete:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: cleanup
+---
+- runFlow: ../subflows/sign-in.yaml
+- runFlow:
+    file: ../subflows/quick-add.yaml
+    env:
+      NAME: "Toast ${output.runId}"
+      KCAL: "200"
+- assertVisible: "1800 calories remaining"
+
+# Edit: 1 serving -> 2.
+- tapOn: "Toast ${output.runId} 200"
+- tapOn:
+    id: "srv"
+- eraseText: 10
+- inputText: "2"
+- hideKeyboard
+# The buttons sit under the nutrient breakdown: scroll to them, as a user does.
+- scrollUntilVisible:
+    element: "Save changes"
+    centerElement: true
+- tapOn: "Save changes"
+- extendedWaitUntil:
+    visible: "Toast ${output.runId} 400"
+    timeout: 30000
+- assertVisible: "Snacks 400 cal"
+- assertVisible: "1600 calories remaining"
+- runFlow: ../subflows/wait-saved.yaml
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: food
+      NAME: "Toast ${output.runId}"
+- assertTrue:
+    condition: ${output.foodCount == 1 && output.servings == 2}
+    label: "The edit saved 2 servings on the one row"
+
+# Delete, through the app's confirm dialog (a native Android alert).
+- tapOn: "Toast ${output.runId} 400"
+- scrollUntilVisible:
+    element: "Delete entry"
+    centerElement: true
+- tapOn: "Delete entry"
+- extendedWaitUntil:
+    visible: "Delete this entry\\?"
+    timeout: 10000
+- tapOn: "OK"
+- extendedWaitUntil:
+    notVisible: "Toast ${output.runId}.*"
+    timeout: 30000
+- assertVisible: "2000 calories remaining"
+- assertVisible:
+    id: "add-food-snacks"
+    text: "Snacks \\+ Add"
+- runFlow: ../subflows/wait-saved.yaml
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: food
+      NAME: "Toast ${output.runId}"
+- assertTrue:
+    condition: ${output.foodCount == 0}
+    label: "The row is gone from the server"

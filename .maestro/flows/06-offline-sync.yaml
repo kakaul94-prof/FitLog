@@ -1,0 +1,72 @@
+# Log a food in airplane mode: it shows at once, waits on the phone, and
+# reaches the server exactly once when the connection returns.
+#
+# The page itself comes over adb (localhost), which airplane mode doesn't cut,
+# like the cached app shell on a phone; the Supabase API goes over the
+# emulator's network (10.0.2.2), which it does. See .maestro/README.md.
+appId: app.fitlog.mobile
+name: 06-offline-sync
+onFlowStart:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: reset
+onFlowComplete:
+  # Never leave the emulator offline for the next flow, even after a failure.
+  - setAirplaneMode: disabled
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: cleanup
+---
+- runFlow: ../subflows/sign-in.yaml
+# Open the picker while online, so its data has loaded before the network goes.
+- tapOn:
+    id: "add-food-snacks"
+- extendedWaitUntil:
+    visible: "Quick add"
+    timeout: 30000
+
+- setAirplaneMode: enabled
+- extendedWaitUntil:
+    visible: "Offline"
+    timeout: 30000
+- tapOn: "Quick add"
+- tapOn:
+    id: "qa-name"
+- inputText: "Soup ${output.runId}"
+- tapOn:
+    id: "qa-kcal"
+- inputText: "150"
+- hideKeyboard
+- tapOn: "Add to snacks"
+- tapOn: "Done"
+- extendedWaitUntil:
+    visible: "Soup ${output.runId} 150"
+    timeout: 30000
+- assertVisible: "1850 calories remaining"
+- assertVisible: "Offline . 1 pending"
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: food
+      NAME: "Soup ${output.runId}"
+- assertTrue:
+    condition: ${output.foodCount == 0}
+    label: "Nothing has left the phone while offline"
+
+- setAirplaneMode: disabled
+- runFlow: ../subflows/wait-saved.yaml
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: food
+      NAME: "Soup ${output.runId}"
+- assertTrue:
+    condition: ${output.foodCount == 1}
+    label: "Synced exactly once"
+- assertVisible: "Soup ${output.runId} 150"
+- assertNotVisible:
+    text: "Soup ${output.runId} 150"
+    index: 1
+- assertVisible: "1850 calories remaining"

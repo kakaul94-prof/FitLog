@@ -1,0 +1,6 @@
+# Maestro workspace: `maestro test .maestro` runs every flow in flows/.
+# subflows/ and scripts/ are building blocks the flows call, never run alone.
+# Every flow is independent: it signs in for itself, wipes the test account's
+# diary and weigh-ins before it starts, and again when it ends, pass or fail.
+flows:
+  - "flows/*"

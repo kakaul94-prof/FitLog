@@ -445,6 +445,7 @@ export function DiaryPage() {
             return (
               <Card key={m.key} className="p-3">
                 <button
+                  id={`add-food-${m.key}`}
                   type="button"
                   disabled={selectMode}
                   onClick={() => nav(`/diary/add?date=${date}&meal=${m.key}`)}
@@ -497,6 +498,7 @@ export function DiaryPage() {
               </div>
               {!selectMode && (
                 <button
+                  id={`add-food-${m.key}`}
                   onClick={() => nav(`/diary/add?date=${date}&meal=${m.key}`)}
                   className="mt-1 flex items-center gap-1 py-1 text-[13px] font-medium text-primary active:opacity-60"
                 >

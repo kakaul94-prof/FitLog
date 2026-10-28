@@ -1,0 +1,40 @@
+# Log a weigh-in on the Progress tab: it shows in the history and is saved once.
+appId: app.fitlog.mobile
+name: 04-weigh-in
+onFlowStart:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: reset
+onFlowComplete:
+  - runScript:
+      file: ../scripts/db.js
+      env:
+        ACTION: cleanup
+---
+- runFlow: ../subflows/sign-in.yaml
+- tapOn:
+    id: "nav-progress"
+- tapOn:
+    id: "measurement-value"
+- inputText: ${output.weight}
+- hideKeyboard
+- tapOn:
+    id: "measurement-add"
+# The history list is below the trend chart: scroll down to the new row.
+# Its value and unit are separate text nodes, so find the row by its own
+# buttons' accessibility labels, which name the weigh-in.
+- scrollUntilVisible:
+    element: "Delete ${output.weight} lb"
+    centerElement: true
+    timeout: 30000
+- assertVisible: "Change date of ${output.weight} lb"
+- runFlow: ../subflows/wait-saved.yaml
+- runScript:
+    file: ../scripts/db.js
+    env:
+      ACTION: weight
+      VALUE: ${output.weight}
+- assertTrue:
+    condition: ${output.weightCount == 1}
+    label: "Exactly one weigh-in saved"

@@ -110,8 +110,13 @@ export async function buildTrainerContext(
   const cardioSince = addDaysISO(today, -CARDIO_WINDOW_DAYS)
   const painSince = addDaysISO(today, -PAIN_WINDOW_DAYS)
 
+  // The diary and weigh-ins are fetched from 28 days before today: the window
+  // Insights' adaptive TDEE uses, so the two agree on maintenance. But "the last
+  // N days" the snapshot states are today and the N-1 days before it; counting
+  // from N days back made a daily logger read "29 of the last 28 days".
   const nutritionSince = addDaysISO(today, -NUTRITION_WINDOW_DAYS)
-  const recentSince = addDaysISO(today, -RECENT_NUTRITION_DAYS)
+  const monthSince = addDaysISO(today, -(NUTRITION_WINDOW_DAYS - 1))
+  const recentSince = addDaysISO(today, -(RECENT_NUTRITION_DAYS - 1))
 
   // Pre-workout check-ins (soreness going in + the swaps it caused). Its own
   // query so a missing column (migration not run) can't sink the lift data.
@@ -485,10 +490,11 @@ export async function buildTrainerContext(
     arr.push(scaleNutrients(row.nutrients, row.servings ?? 0))
     byDay.set(row.entry_date, arr)
   }
-  const days = [...byDay.entries()]
+  const fetchedDays = [...byDay.entries()]
     .map(([date, parts]) => ({ date, totals: sumNutrients(parts) }))
     .filter((d) => (d.totals.kcal ?? 0) > 0)
     .sort((a, b) => a.date.localeCompare(b.date))
+  const days = fetchedDays.filter((d) => d.date >= monthSince)
 
   const nutrition: string[] = []
 
@@ -546,7 +552,7 @@ export async function buildTrainerContext(
     // Measured maintenance beats the calculator — it's derived from what they
     // actually ate against what their weight actually did.
     const tdee = estimateAdaptiveTDEE(
-      days.map((d) => ({ date: d.date, kcal: d.totals.kcal ?? 0 })),
+      fetchedDays.map((d) => ({ date: d.date, kcal: d.totals.kcal ?? 0 })),
       [...weights]
         .reverse()
         .filter((w) => w.measured_on >= nutritionSince)

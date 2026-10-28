@@ -81,14 +81,18 @@ export function checkFixture(cases) {
   return warnings
 }
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
 /** The snapshot as it would read if the app built it on `today` (YYYY-MM-DD). */
 export function renderContext(template, today) {
   const base = new Date(`${today}T00:00:00Z`)
-  return template.replace(/\{\{today(?:([+-])(\d+))?\}\}/g, (_, sign, days) => {
-    const d = new Date(base)
-    if (sign) d.setUTCDate(d.getUTCDate() + (sign === '-' ? -1 : 1) * Number(days))
-    return d.toISOString().slice(0, 10)
-  })
+  return template
+    .replace(/\{\{today(?:([+-])(\d+))?\}\}/g, (_, sign, days) => {
+      const d = new Date(base)
+      if (sign) d.setUTCDate(d.getUTCDate() + (sign === '-' ? -1 : 1) * Number(days))
+      return d.toISOString().slice(0, 10)
+    })
+    .replaceAll('{{weekday}}', WEEKDAYS[base.getUTCDay()])
 }
 
 /** Today in the machine's local time zone, as the app's todayISO() would give it. */

@@ -192,6 +192,14 @@ def test_dates_round_trip_through_the_template() -> None:
     )
 
 
+def test_todays_weekday_moves_with_the_date() -> None:
+    """A snapshot built on a Wednesday mustn't call another day Wednesday."""
+    template = template_snapshot("Today is Wednesday, 2026-10-28.", date(2026, 10, 28))
+
+    assert template == "Today is {{weekday}}, {{today}}."
+    assert render_snapshot(template, date(2026, 11, 2)) == "Today is Monday, 2026-11-02."
+
+
 def test_the_rules_come_from_the_functions_source() -> None:
     rules = rules_from_source()
 

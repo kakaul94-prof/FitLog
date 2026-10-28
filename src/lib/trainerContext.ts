@@ -100,6 +100,29 @@ function ageFrom(birth: string | null): number | null {
   return years > 0 && years < 120 ? Math.floor(years) : null
 }
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+/** Told only the date, the model miscounts back to "Tuesday" or "last weekend". */
+const weekdayOf = (iso: string) => WEEKDAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()]
+
+/** Within this of the goal rate, the measured trend reads "on pace". */
+const PACE_TOLERANCE_LB_WEEK = 0.1
+
+/** The measured weight trend against the rate they set, worked out here: left to
+ *  the model, a 0.79 lb/week loss came back "steeper than" a 1 lb/week cut. */
+function paceVsGoal(
+  trendLbPerWeek: number,
+  goalType: string | null | undefined,
+  rate: number | null | undefined,
+): string {
+  if ((goalType !== 'lose' && goalType !== 'gain') || !rate || rate <= 0) return ''
+  const plan = `the ${rate} lb/week ${goalType === 'lose' ? 'cut' : 'gain'} they set`
+  const toward = goalType === 'lose' ? -trendLbPerWeek : trendLbPerWeek
+  if (toward <= 0) return `, the opposite way to ${plan}`
+  if (Math.abs(toward - rate) <= PACE_TOLERANCE_LB_WEEK + 1e-9) return `, on pace with ${plan}`
+  return `, ${toward < rate ? 'slower' : 'faster'} than ${plan}`
+}
+
 export async function buildTrainerContext(
   /** `workoutId` = the chat was opened from inside a live workout, which adds a
    *  "right now" section and tells the model to keep answers short. */
@@ -220,7 +243,7 @@ export async function buildTrainerContext(
   const dateOf = new Map(workouts.map((w) => [w.id, w.workout_date] as const))
   const working = sets.filter((s) => !s.is_warmup)
 
-  const out: string[] = [`Today is ${today}.`]
+  const out: string[] = [`Today is ${weekdayOf(today)}, ${today}.`]
 
   // --- The live workout ---------------------------------------------------
   // Goes first: when the chat is opened mid-session this is the most relevant
@@ -302,10 +325,17 @@ export async function buildTrainerContext(
     const last14 = workouts.filter(
       (w) => daysBetweenISO(w.workout_date, today) <= 14,
     ).length
+    // The lift history below is grouped by lift, so say what was in the latest
+    // session here — otherwise the model files every recent lift under it.
+    const latest = workouts[0]
+    const latestLifts = [
+      ...new Set(working.filter((s) => s.workout_id === latest.id).map((s) => s.exercise_name)),
+    ]
+    const what = [latest.name, latestLifts.join(', ')].filter(Boolean).join(': ')
     out.push(
       `Lifting sessions: ${workouts.length} in the last ${LIFT_WINDOW_DAYS} days, ${last14} in the last 14. Most recent was ${
-        workouts[0].workout_date
-      }${workouts[0].name ? ` (${workouts[0].name})` : ''}.`,
+        latest.workout_date
+      }${what ? ` (${what})` : ''}.`,
     )
   } else {
     out.push('No lifting sessions logged in the last 90 days.')
@@ -546,7 +576,9 @@ export async function buildTrainerContext(
       nutrition.push(
         `Last ${RECENT_NUTRITION_DAYS} days (${recent.length} logged): ${Math.round(
           avgOf(recent, 'kcal'),
-        )} kcal, ${Math.round(avgOf(recent, 'protein'))} g protein per day.`,
+        )} kcal, ${Math.round(avgOf(recent, 'protein'))} g protein, ${Math.round(
+          avgOf(recent, 'carb'),
+        )} g carb, ${Math.round(avgOf(recent, 'fat'))} g fat per day.`,
       )
 
     // Measured maintenance beats the calculator — it's derived from what they
@@ -564,7 +596,11 @@ export async function buildTrainerContext(
           tdee.tdee,
         )} kcal/day, weight trending ${tdee.trendLbPerWeek! >= 0 ? '+' : ''}${tdee.trendLbPerWeek!.toFixed(
           2,
-        )} lb/week. This is more reliable than the calculated goal.`,
+        )} lb/week${paceVsGoal(
+          Number(tdee.trendLbPerWeek!.toFixed(2)),
+          profile?.goal_type,
+          profile?.goal_rate_lb_per_week,
+        )}. This is more reliable than the calculated goal.`,
       )
 
     if (days.length >= MIN_DAYS_FOR_MICROS) {

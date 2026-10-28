@@ -13,9 +13,9 @@ slow, down or broken. This suite tests all of that, in two tiers:
 | | Tier 1: deterministic | Tier 2: live |
 |---|---|---|
 | Claude | replaced by a scripted stub | the real API, through the real function |
-| Tests | **311** pytest tests | **135** eval cases x 3 runs |
+| Tests | **320** pytest tests | **135** eval cases x 3 runs |
 | Runs | every push and PR (`ai-evals` CI job), part of the release gate | by hand only (`make eval-ai-live`, or the "AI evals (live)" workflow) |
-| Time, cost | about 2-3 minutes locally, $0 | about 5 minutes, about $1.70 (estimated: the 48 grounding cases have not run live yet) |
+| Time, cost | about 2-3 minutes locally, $0 | about 5 minutes, about $1.70 (estimated; the 48 grounding cases alone measured $0.70) |
 | Asks | does the function enforce its guardrails, whatever the model does? | does the model behave, given what the function sends it? |
 
 A third tier runs after release: the [production canary](#production-canary-shift-right)
@@ -289,7 +289,9 @@ correct, and every number in the snapshot a seeded fact. It also checks that
 foods and single days really are absent (so the missing-data cases ask for
 something the model can't see), that the snapshot reaches Claude whole inside
 its data block, and one rule per edge: servings, a 0 kcal day, the window
-boundaries. `tests/test_factcheck.py` tests the instruments on known inputs: the
+boundaries. Fixes the live runs led to have their own tests: today's weekday,
+the latest session's lifts, the weight trend read against the goal (four
+cases), and the grounding rules reaching the prompt. `tests/test_factcheck.py` tests the instruments on known inputs: the
 ground truth against a persona worked out by hand, and the fact checker on
 replies written to be right, invented, rounded, worked out, about one day, or
 general advice, plus every case's own right answer and the empty reply.
@@ -321,6 +323,26 @@ not as a hallucination. It's reported per kind and per claim, with a 95% Wilson
 interval, and every hallucination is written to `hallucinations.jsonl` with its
 question, snapshot and reply, so it can be reproduced exactly. The gate: rule
 checks 90%, judged 90%, and hallucination-free replies 95%.
+
+**Results, read by hand.** Both live runs so far had every reply read and
+labelled (`calibration/grounding-review-before.yaml` and `-after.yaml`: each
+hallucination's exact question and answer, what was wrong, and which check
+caught it, or that none did):
+
+| Run | Hallucinated | missing | fabrication | nutrition | grounding | arithmetic |
+|---|---|---|---|---|---|---|
+| Before the fixes | 46/144, **31.9%** (CI 24.9–39.9%) | 9/27 | 9/21 | 6/27 | 11/42 | 11/27 |
+| After ([AI-18](../AI-SAFETY-FINDINGS.md#ai-18-the-trainer-guessed-at-what-the-snapshot-left-unsaid)) | 26/144, **18.1%** (CI 12.6–25.1%) | 0/27 | 3/21 | 2/27 | 9/42 | 12/27 |
+
+The hand-checked rate is the one reported, because the automatic checker isn't
+good enough to stand alone yet: against the hand labels its precision was 66%
+then 36%, its recall 50% then 35%. Its own rate on the second run (17.4%) was
+close to the hand rate only because false alarms and misses roughly cancelled.
+It is good at what it was built for (a figure that matches nothing, a date that
+doesn't exist, a wrong general fact) and blind to a real figure attached to the
+wrong thing ("6 of the last 28 days", when 6 is the 7-day count) or a wrong
+comparison ("0.79 lb/week is faster than 1"). The 288 labelled replies are a
+free regression set for improving it (E-10 in the findings).
 
 ## Latency
 

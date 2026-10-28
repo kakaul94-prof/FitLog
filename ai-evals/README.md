@@ -324,8 +324,10 @@ interval, and every hallucination is written to `hallucinations.jsonl` with its
 question, snapshot and reply, so it can be reproduced exactly. The gate: rule
 checks 90%, judged 90%, and hallucination-free replies 95%.
 
-**Results, read by hand.** Both live runs so far had every reply read and
-labelled (`calibration/grounding-review-before.yaml` and `-after.yaml`: each
+**Results, reviewed reply by reply.** Both live runs so far had every reply
+reviewed against the ground truth and labelled, by the coding agent that built
+the suite (one reviewer; a second, human labeller would give an agreement
+figure) (`calibration/grounding-review-before.yaml` and `-after.yaml`: each
 hallucination's exact question and answer, what was wrong, and which check
 caught it, or that none did):
 
@@ -334,8 +336,8 @@ caught it, or that none did):
 | Before the fixes | 46/144, **31.9%** (CI 24.9–39.9%) | 9/27 | 9/21 | 6/27 | 11/42 | 11/27 |
 | After ([AI-18](../AI-SAFETY-FINDINGS.md#ai-18-the-trainer-guessed-at-what-the-snapshot-left-unsaid)) | 26/144, **18.1%** (CI 12.6–25.1%) | 0/27 | 3/21 | 2/27 | 9/42 | 12/27 |
 
-The hand-checked rate is the one reported, because the automatic checker isn't
-good enough to stand alone yet: against the hand labels its precision was 66%
+The reviewed rate is the one reported, because the automatic checker isn't
+good enough to stand alone yet: against the review labels its precision was 66%
 then 36%, its recall 50% then 35%. Its own rate on the second run (17.4%) was
 close to the hand rate only because false alarms and misses roughly cancelled.
 It is good at what it was built for (a figure that matches nothing, a date that

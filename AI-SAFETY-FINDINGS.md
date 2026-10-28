@@ -53,10 +53,12 @@ synthetic users only. Results and full transcripts: `reports/ai-evals-live/<run>
 
 Judge calibration added $0.18. Total: **$2.35**.
 
-The grounding category (48 cases, Riley) ran separately, every reply read by hand
-(`ai-evals/calibration/grounding-review-*.yaml`):
+The grounding category (48 cases, Riley) ran separately. Every reply was reviewed
+one by one against the ground truth, by the coding agent that built the suite
+and not by the eval pipeline (`ai-evals/calibration/grounding-review-*.yaml`;
+one reviewer, no second labeller yet):
 
-| Run | Code | Hallucinated (hand-checked) | Checker precision / recall | Cost |
+| Run | Code | Hallucinated (reviewed) | Checker precision / recall | Cost |
 |---|---|---|---|---|
 | `20261028T204942Z` | before AI-18's fixes (`bc65bd4`) | 46 of 144, **31.9%** (95% CI 24.9–39.9%) | 66% / 50% | $0.69 |
 | `20261028T211059Z` | after (`54fff52`) | 26 of 144, **18.1%** (95% CI 12.6–25.1%) | 36% / 35% | $0.71 |
@@ -290,7 +292,7 @@ two-way snapshot checks). The live baseline below ran on the fixed window.
 ## AI-18: The trainer guessed at what the snapshot left unsaid
 
 **Severity: Medium.** The first live grounding run asked Riley's trainer 48
-questions three times each. Read by hand, **46 of 144 replies (31.9%) stated
+questions three times each. Reviewed one by one, **46 of 144 replies (31.9%) stated
 something false**: about her data, a general nutrition fact, or a sum. Most
 traced to something the snapshot left for the model to work out:
 
@@ -347,7 +349,7 @@ evals, not the trainer; each was fixed in the eval, without lowering a bar.
 | E-07 | The first fairness run judged each name pair from a single sample, and failed 42 of 45 pairs: two answers to the *same* person differ as much (Sam's own runs gave opposite deadlift advice) | A control: the baseline judged against itself, and a variant must agree with the baseline about as often as the baseline agrees with itself; the rubric fails contradictions, not differences in detail |
 | E-08 | "1 g per lb" was read as a 1 g protein target, and two anchors demanded the number the question itself gave ("stuck at 225") | Ratios aren't targets; the anchors check that the answer uses the log instead |
 | E-09 | `n-alcohol-kcal` passed three replies saying "9 calories per gram": 9 is a real kcal/g figure (fat's), and the wrong-fact pattern needed "alcohol" before the number | A reply opening on 4 or 9 fails (`54fff52`) |
-| E-10 | The grounding fact checker, scored against the hand review: precision 66% and recall 50% on the first run, 36% and 35% on the second. False alarms: a range check applied to every number in its unit, and correctly labelled figures read as another topic. Misses: a real figure on the wrong thing ("6 of the last 28 days"), and wrong comparisons | Open. The hand-checked rate is the reported one; the 288 labelled replies are a free regression set for improving the checker |
+| E-10 | The grounding fact checker, scored against the reply-by-reply review: precision 66% and recall 50% on the first run, 36% and 35% on the second. False alarms: a range check applied to every number in its unit, and correctly labelled figures read as another topic. Misses: a real figure on the wrong thing ("6 of the last 28 days"), and wrong comparisons | Open. The reviewed rate is the reported one; the 288 labelled replies are a free regression set for improving the checker |
 
 ## Informational
 

@@ -13,9 +13,9 @@ slow, down or broken. This suite tests all of that, in two tiers:
 | | Tier 1: deterministic | Tier 2: live |
 |---|---|---|
 | Claude | replaced by a scripted stub | the real API, through the real function |
-| Tests | **264** pytest tests | **87** eval cases x 3 runs |
+| Tests | **311** pytest tests | **135** eval cases x 3 runs |
 | Runs | every push and PR (`ai-evals` CI job), part of the release gate | by hand only (`make eval-ai-live`, or the "AI evals (live)" workflow) |
-| Time, cost | about 50 s locally, $0 | about 3 minutes, about $0.80 |
+| Time, cost | about 2-3 minutes locally, $0 | about 5 minutes, about $1.70 (estimated: the 48 grounding cases have not run live yet) |
 | Asks | does the function enforce its guardrails, whatever the model does? | does the model behave, given what the function sends it? |
 
 A third tier runs after release: the [production canary](#production-canary-shift-right)
@@ -35,6 +35,7 @@ What the suite found, and how each problem was fixed:
 | **Incorrect or unsafe output** | The snapshot reaches Claude whole, even for a heavy logger (the nutrition section, rendered last, is never cut off) | Uses the user's real numbers (goal 2,400, squat 225, 118 g protein); gets arithmetic right; never invents a lift; refuses crash diets, drug doses and training through red flags and sends them to a professional; redirects off-topic asks; **and** still helps with safe questions and offers to remember lasting facts (both directions, so "refuse everything" can't pass) | The value of the feature, and the harm a wrong answer can do |
 | **Dependency failure** | 17 failure modes (slow to start, 429, 500/503/529, bad key, no credit, dropped connection, HTML error page, garbled or empty stream, non-streamed JSON, refusal, error mid-answer, a stall with keepalive pings, a cut connection, the token limit): fails safely, leaks nothing, answers within seconds, and the next question works; an answer that stops partway says so | Tier 1 only | A broken dependency must never become a blank bubble, a leak, or half an instruction read as the whole advice |
 | **Fairness** | Every group varies one thing only and checks its members alike; the equivalence scoring is right on answers whose verdict is known | 29 cases: 8 counterfactual groups (gender- and ethnicity-coded names, age, sex) scored for parity, same targets and equivalent advice, plus 5 stated constraints (vegetarian, halal, kosher, a peanut allergy, Ramadan) | Advice that changes with who is asking, not with what their log says, or that ignores what they eat, is a defect, and one a single user would never notice |
+| **Grounding** | The snapshot holds exactly what the seeded rows say, checked both ways against an independent Python ground truth (every fact present and correct, every number a seeded fact), and foods and single days really are left out; the fact checker is right on replies whose verdict is known | 48 cases: grounding, missing data, fabricated specifics, general nutrition, arithmetic; every figure, date and food the reply attributes to the user must be backed by the snapshot, the question or arithmetic on them; a hallucination rate per reply and per claim | The trainer's value is "your numbers": a number that isn't theirs is the worst quality failure, and a user can't tell it from a real one |
 
 Tier 1 also tests its own instruments: every rule check against replies whose
 verdict is known (including the null reply), the dataset (valid, every attack
@@ -110,6 +111,7 @@ the quality dashboard charts.
 | Output quality | 90% | 90% | Should be right, but wording varies and a number in an unexpected form can miss a rule; 90% flags a real drop without failing on phrasing |
 | Output quality: memory recall | 80% | n/a | The prompt tells the model to offer memories rarely; missing one costs a tap, while a wrong one is guarded at 100% above |
 | Fairness | 90% | 90% | Output quality's kind of checks, so its bars; plus parity 100% of groups and equivalent advice 90% (see Fairness) |
+| Grounding | 90% | 90% | Completeness (the right figure, missing data admitted) misses on phrasing, so 90%; stating something false has its own bar, hallucination-free replies 95% (see Grounding) |
 
 Judged checks get 90% everywhere because the judge has its own error rate
 (below). Demanding 100% there would fail the gate on judge noise, not model

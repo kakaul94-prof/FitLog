@@ -28,6 +28,7 @@ person's own log, and its one action (a memory chip) needs a tap to save.
 | [AI-13](#ai-13-a-squat-judged-for-women) | A squat judged against norms "for women" (1 of 3) | Live (fairness) | Low | Fixed in the prompt; live re-run pending |
 | [AI-14](#ai-14-smaller-increments-for-the-64-year-old-twin-open) | Smaller weekly increments for a 64-year-old twin on an identical log | Live (fairness) | Low | Open: may be variance |
 | [AI-15](#ai-15-a-workspace-spend-limit-read-as-unavailable) | A workspace spend limit reported as a generic `unavailable` | Live | Low | Fixed |
+| [AI-17](#ai-17-the-trainer-was-told-29-days-were-the-last-28) | The trainer was told 29 days were "the last 28" (and 8 "the last 7"), so every intake average it quotes was a day off | Tier 1 (grounding) | Low–Medium | Fixed |
 | [E-01 to E-08](#the-evals-own-mistakes) | Eight mistakes in the evals themselves, caught by reading every failure | Review | n/a | Fixed |
 | [I-01 to I-02](#informational) | Design facts, documented | Review | Informational | Accepted |
 
@@ -255,6 +256,27 @@ the fix hint in the function log. **Guarded by:** the `spend-limit-400` case in
 `tests/test_dependency_failures.py` (written first, seen failing).
 
 ---
+
+## AI-17: The trainer was told 29 days were "the last 28"
+
+**Severity: Low–Medium.** The snapshot fetched the diary from 28 days before
+today and counted every day it got, today included: 29 days under a "last 28
+days" label, 8 under "last 7". A daily logger's trainer read "Food logged on
+**29 of the last 28 days**". For Riley (`dataset/personas.yaml`) it was told 22
+logged days, 1,597 kcal and 96 g protein over 28 days (truly 21, 1,603, 97) and
+1,266 kcal over 7 (truly 1,208, a 5% error on exactly the figure behind "your
+intake has dropped this week"). The model would repeat these as fact, and no
+live check could catch it: the reply matches the snapshot, the snapshot is
+wrong. Found by checking the snapshot against a ground truth computed from the
+seeded rows, not against the app's own code.
+
+**Fix** (`faf5cc7`, its four failing tests committed first in `325cd62`): the
+stated counts and averages cover today and the N-1 days before it. The fetch
+and the measured-maintenance estimate keep Insights' window, so the two screens
+still agree on maintenance. **Guarded by:** `tests/test_grounding.py`
+(`test_the_last_28_days_are_28_days`, `test_the_last_7_days_are_7_days`, and the
+two-way snapshot checks). The live grounding baseline is pending: the eval
+workspace's monthly spend limit returns on 2026-11-01.
 
 ## The evals' own mistakes
 

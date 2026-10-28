@@ -327,10 +327,11 @@ export async function buildTrainerContext(
     ).length
     // The lift history below is grouped by lift, so say what was in the latest
     // session here — otherwise the model files every recent lift under it.
+    // Sorted: the sets query has no order, so the snapshot stays the same each time.
     const latest = workouts[0]
     const latestLifts = [
       ...new Set(working.filter((s) => s.workout_id === latest.id).map((s) => s.exercise_name)),
-    ]
+    ].sort()
     const what = [latest.name, latestLifts.join(', ')].filter(Boolean).join(': ')
     out.push(
       `Lifting sessions: ${workouts.length} in the last ${LIFT_WINDOW_DAYS} days, ${last14} in the last 14. Most recent was ${

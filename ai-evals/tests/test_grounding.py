@@ -87,7 +87,7 @@ def pace(f: Facts, p: Persona) -> str:
 def latest_session(f: Facts, p: Persona) -> str:
     newest = min(p.workouts, key=lambda w: w.days_ago)
     when = (date.fromisoformat(f.today) - timedelta(days=newest.days_ago)).isoformat()
-    lifts = ", ".join(dict.fromkeys(s.name for s in newest.sets))
+    lifts = ", ".join(sorted({s.name for s in newest.sets}))
     return f"Most recent was {when} ({newest.name}: {lifts})."
 
 

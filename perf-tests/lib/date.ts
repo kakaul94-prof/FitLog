@@ -1,5 +1,7 @@
 // Calendar dates as YYYY-MM-DD, in UTC. The seed and the journeys use the same
 // helpers, so "today" is the same day on both sides whatever the host's zone.
+// The journeys don't read the clock for it: setup() fixes the run's day once
+// (SetupData.today), so a run that crosses midnight UTC stays on the seeded day.
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export function todayISO(): string {

@@ -123,7 +123,7 @@ run_k6() {
     # Inside the container: Kong by its container name, the functions through the host alias.
     export SUPABASE_URL="http://$kong:8000"
     [ -n "${FITLOG_FUNCTIONS_URL:-}" ] && export FITLOG_FUNCTIONS_URL="${FITLOG_FUNCTIONS_URL//127.0.0.1/host.docker.internal}"
-    FITLOG_FUNCTIONS_URL="${FITLOG_FUNCTIONS_URL//localhost/host.docker.internal}"
+    [ -n "${FITLOG_FUNCTIONS_URL:-}" ] && FITLOG_FUNCTIONS_URL="${FITLOG_FUNCTIONS_URL//localhost/host.docker.internal}"
     for name in "${PASS_ENV[@]}"; do [ -n "${!name:-}" ] && flags+=(-e "$name=${!name}"); done
     MSYS_NO_PATHCONV=1 docker run --rm --network "$network" --add-host host.docker.internal:host-gateway \
       ${flags[@]+"${flags[@]}"} -v "$host_root:/work" -w /work/perf-tests "$K6_IMAGE" run "$script" "$@"

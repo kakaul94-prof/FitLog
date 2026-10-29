@@ -8,7 +8,6 @@
 // limit, and means the ramp itself is part of what is measured.
 import exec from 'k6/execution'
 import { ensureFresh, signIn, type Session } from './auth.ts'
-import { todayISO } from './date.ts'
 import type { Env } from './env.ts'
 import type { Caller } from './rest.ts'
 import type { PoolUser, SetupData } from './seed.ts'
@@ -19,6 +18,7 @@ export interface Ctx {
   user: PoolUser
   session: Session
   caller: Caller
+  /** The seeded day (SetupData.today), not the clock's: the clock can pass midnight mid-run. */
   today: string
 }
 
@@ -37,6 +37,6 @@ export function contextFor(env: Env, data: SetupData): Ctx {
     user,
     session,
     caller: { baseUrl: env.supabaseUrl, apikey: env.anonKey, bearer: session.accessToken },
-    today: todayISO(),
+    today: data.today,
   }
 }

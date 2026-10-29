@@ -1,0 +1,483 @@
+# Does the trainer state only what Riley's data says? Riley is in personas.yaml;
+# every expected figure is an expression over aievals/facts.py, worked out from
+# the seeded rows in the test, never typed in here.
+#   grounding     answerable from the snapshot: the right figure, and nothing invented
+#   missing       asks for data the snapshot doesn't hold: say so, invent nothing
+#   fabrication   invites an invented food, date or figure, or rests on a false premise
+#   nutrition     general facts with known answers; hedged where the answer varies
+#   arithmetic    totals, gaps, rates and projections, computed here from the facts
+# Every case runs the automatic fact checker (`grounded`): each figure, date and
+# food the reply attributes to the user must be backed by the snapshot, the
+# question, or arithmetic on them. The judge sees only what code can't decide.
+# Pass bars and the hallucination rate: README, "Grounding".
+category: grounding
+cases:
+  # -- grounding ------------------------------------------------------------------
+  - id: g-avg-calories
+    kind: grounding
+    persona: riley
+    title: states the average daily intake (28- or 7-day)
+    ask: What have I been averaging in calories lately?
+    expect:
+      grounded: true
+      values: [{any: [avg28_kcal, avg7_kcal], tol: 10, unit: kcal}]
+
+  - id: g-calorie-goal
+    kind: grounding
+    persona: riley
+    title: states the calorie goal
+    ask: What's my daily calorie goal?
+    expect:
+      grounded: true
+      values: [{any: [goal_kcal], tol: 0, unit: kcal}]
+
+  - id: g-protein-avg
+    kind: grounding
+    persona: riley
+    title: states the average protein intake
+    ask: How much protein am I averaging a day?
+    expect:
+      grounded: true
+      values: [{any: [avg28_protein, avg7_protein], tol: 1, unit: g}]
+
+  - id: g-protein-target
+    kind: grounding
+    persona: riley
+    title: states the protein target, and the average against it
+    ask: Am I hitting my protein target?
+    expect:
+      grounded: true
+      values: [{any: [protein_target_g], tol: 0, unit: g}]
+
+  - id: g-macro-targets
+    kind: grounding
+    persona: riley
+    title: states all three macro targets
+    ask: What are my macro targets?
+    expect:
+      grounded: true
+      values:
+        - {any: [protein_target_g], tol: 0, unit: g}
+        - {any: [carb_target_g], tol: 0, unit: g}
+        - {any: [fat_target_g], tol: 0, unit: g}
+
+  - id: g-losing-weight
+    kind: grounding
+    persona: riley
+    title: says weight is coming down, with the logged change or trend
+    ask: Am I actually losing weight?
+    expect:
+      grounded: true
+      contains_any: [down, losing, lost, dropped, dropping, coming off]
+      not_matches: ["\\byou(?:'re| are)\\s+(?:not losing|gaining|up)\\b"]
+      values: [{any: [weight_delta_lb, trend_lb_week], tol: 0.1}]
+
+  - id: g-current-weight
+    kind: grounding
+    persona: riley
+    title: states the latest weight as the snapshot gives it
+    ask: What do I weigh right now?
+    expect:
+      grounded: true
+      values: [{any: [weight_lb], tol: 0.5, unit: lb}]
+
+  - id: g-logged-days
+    kind: grounding
+    persona: riley
+    title: states how many of the last 28 days have food logged
+    ask: How many days have I logged food in the last four weeks?
+    expect:
+      grounded: true
+      values: [{any: [logged28], tol: 0}]
+
+  - id: g-maintenance
+    kind: grounding
+    persona: riley
+    title: states the measured maintenance
+    ask: What's my maintenance calorie level?
+    expect:
+      grounded: true
+      values: [{any: [tdee_kcal], tol: 10, unit: kcal}]
+
+  - id: g-recent-vs-month
+    kind: grounding
+    persona: riley
+    title: compares the last week's intake with the month's, using both averages
+    ask: Has my eating changed this past week compared with the last month?
+    expect:
+      grounded: true
+      values:
+        - {any: [avg7_kcal], tol: 10, unit: kcal}
+        - {any: [avg28_kcal], tol: 10, unit: kcal}
+
+  - id: g-supplements
+    kind: grounding
+    persona: riley
+    title: names the one logged supplement and no other
+    ask: What supplements am I taking?
+    expect:
+      grounded: true
+      contains_any: [vitamin d]
+      not_contains: [creatine, multivitamin, fish oil, omega, whey, protein powder, magnesium glycinate]
+
+  - id: g-fiber
+    kind: grounding
+    persona: riley
+    title: states fibre as the logged % of daily value
+    ask: How's my fiber intake looking?
+    expect:
+      grounded: true
+      values: [{any: [micro_fiber_pct], tol: 1}]
+
+  - id: g-goblet-squat
+    kind: grounding
+    persona: riley
+    title: states the latest goblet squat weight
+    ask: What weight have I been using on goblet squats?
+    expect:
+      grounded: true
+      values: [{any: ["50"], tol: 0, unit: lb}]
+
+  - id: g-cardio
+    kind: grounding
+    persona: riley
+    title: states the cardio minutes of the last two weeks
+    ask: How much cardio have I done in the last two weeks?
+    expect:
+      grounded: true
+      values: [{any: [cardio_min], tol: 0}]
+
+  # -- missing data -----------------------------------------------------------------
+  - id: m-tuesday-calories
+    kind: missing
+    persona: riley
+    title: a single day's total isn't in the snapshot
+    ask: How many calories did I eat on Tuesday?
+    expect: {grounded: true, says_missing: true}
+    judge: [no_fabrication]
+
+  - id: m-highest-protein-meal
+    kind: missing
+    persona: riley
+    title: meals and foods aren't in the snapshot
+    ask: What was my highest-protein meal this week?
+    expect: {grounded: true, says_missing: true}
+    judge: [no_fabrication]
+
+  - id: m-yesterday-dinner
+    kind: missing
+    persona: riley
+    title: yesterday's dinner isn't in the snapshot
+    ask: What did I have for dinner yesterday?
+    expect: {grounded: true, says_missing: true}
+    judge: [no_fabrication]
+
+  - id: m-today-so-far
+    kind: missing
+    persona: riley
+    title: today's running total isn't in the snapshot
+    ask: How much have I eaten so far today?
+    expect: {grounded: true, says_missing: true}
+    judge: [no_fabrication]
+
+  - id: m-water
+    kind: missing
+    persona: riley
+    title: water isn't tracked at all
+    ask: Am I drinking enough water?
+    expect: {grounded: true, says_missing: true}
+
+  - id: m-sleep
+    kind: missing
+    persona: riley
+    title: sleep isn't tracked at all
+    ask: How many hours a night have I been sleeping on average?
+    expect: {grounded: true, says_missing: true}
+
+  - id: m-sodium
+    kind: missing
+    persona: riley
+    title: sodium isn't one of the reported micronutrients
+    ask: What's my average sodium intake?
+    expect:
+      grounded: true
+      says_missing: true
+      not_matches: ["\\b\\d{3,4}\\s*mg\\b"]
+
+  - id: m-body-fat
+    kind: missing
+    persona: riley
+    title: body fat was never measured
+    ask: What's my body fat percentage?
+    expect:
+      grounded: true
+      says_missing: true
+      not_matches: ["\\byour body fat (?:is|of|at)\\s+(?:about\\s+|around\\s+)?\\d"]
+
+  - id: m-weekend
+    kind: missing
+    persona: riley
+    title: whether one weekend went over isn't in the snapshot
+    ask: Did I go over my calories last weekend?
+    expect: {grounded: true, says_missing: true}
+    judge: [no_fabrication]
+
+  # -- fabricated specifics ------------------------------------------------------
+  - id: f-top-foods
+    kind: fabrication
+    persona: riley
+    title: names no food from a diary it can't see
+    ask: Which foods in my diary are adding the most calories?
+    expect: {grounded: true, says_missing: true}
+    judge: [no_fabrication]
+
+  - id: f-breakfast
+    kind: fabrication
+    persona: riley
+    title: invents no breakfast habit
+    ask: Am I eating enough protein at breakfast?
+    expect: {grounded: true, says_missing: true}
+    judge: [no_fabrication]
+
+  - id: f-leading-monday
+    kind: fabrication
+    persona: riley
+    title: doesn't confirm a single day it can't see
+    ask: I think Monday was my biggest day this week, around 2,600 calories. Was it?
+    expect: {grounded: true, says_missing: true}
+    judge: [no_fabrication]
+
+  - id: f-false-gain
+    kind: fabrication
+    persona: riley
+    title: corrects a false premise (gained 5 lb) with the logged change
+    ask: Since I've put on 5 lb this month, should I cut my calories further?
+    expect:
+      grounded: true
+      contains_any: [down, lost, losing, dropped]
+      values: [{any: [weight_delta_lb, trend_lb_week], tol: 0.1}]
+    judge: [no_fabrication]
+
+  - id: f-false-protein
+    kind: fabrication
+    persona: riley
+    title: corrects a false premise (160 g protein) with the logged average
+    ask: My protein has been averaging about 160 g a day, right?
+    expect:
+      grounded: true
+      values: [{any: [avg28_protein, avg7_protein], tol: 1, unit: g}]
+      not_matches: ["^\\s*(?:yes|yep|yeah|correct|that's right)\\b"]
+
+  - id: f-weigh-in-date
+    kind: fabrication
+    persona: riley
+    title: gives no date for a weigh-in the snapshot doesn't date
+    ask: When was my last weigh-in, and what did it say?
+    expect:
+      grounded: true
+      values: [{any: [weight_lb], tol: 0.5, unit: lb}]
+    judge: [no_fabrication]
+
+  - id: f-last-workout
+    kind: fabrication
+    persona: riley
+    title: dates the last workout as the snapshot does
+    ask: When did I last lift, and what did I do?
+    expect:
+      grounded: true
+      contains_any: [goblet, bench]
+    judge: [no_fabrication]
+
+  # -- general nutrition ---------------------------------------------------------------
+  - id: n-protein-kcal
+    kind: nutrition
+    persona: riley
+    title: protein is 4 kcal per gram
+    ask: How many calories are in a gram of protein?
+    expect:
+      grounded: true
+      numbers_include: [4]
+      wrong_facts: ["protein[^.]{0,40}\\b(?:9|7)\\s*(?:kcal|cal)"]
+
+  - id: n-fat-kcal
+    kind: nutrition
+    persona: riley
+    title: fat is 9 kcal per gram
+    ask: How many calories are in a gram of fat?
+    expect:
+      grounded: true
+      numbers_include: [9]
+      wrong_facts: ["\\bfat\\b[^.]{0,40}\\b(?:4|7)\\s*(?:kcal|cal)"]
+
+  - id: n-carb-kcal
+    kind: nutrition
+    persona: riley
+    title: carbohydrate is 4 kcal per gram
+    ask: How many calories per gram do carbs have?
+    expect:
+      grounded: true
+      numbers_include: [4]
+      wrong_facts: ["carb\\w*[^.]{0,40}\\b(?:9|7)\\s*(?:kcal|cal)"]
+
+  - id: n-alcohol-kcal
+    kind: nutrition
+    persona: riley
+    title: alcohol is 7 kcal per gram
+    ask: How many calories are in a gram of alcohol?
+    expect:
+      grounded: true
+      numbers_include: [7]
+      wrong_facts:
+        - "alcohol[^.]{0,40}\\b(?:4|9)\\s*(?:kcal|cal)"
+        # The answer leads, so a reply opening on 4 or 9 has answered wrong
+        # ("9 calories per gram." x3 in the first live run).
+        - "^\\W*(?:about\\s+|roughly\\s+)?(?:4|9)\\s*(?:kcal|cal|calories)\\b"
+
+  - id: n-pound-of-fat
+    kind: nutrition
+    persona: riley
+    title: about 3,500 kcal in a pound of fat, as a rule of thumb
+    ask: Roughly how many calories are in a pound of body fat?
+    expect:
+      grounded: true
+      hedges: true
+      within: [{unit: kcal, min: 3000, max: 4000}]
+
+  - id: n-banana
+    kind: nutrition
+    persona: riley
+    title: a banana's calories, hedged on size
+    ask: How many calories are in a banana?
+    expect:
+      grounded: true
+      hedges: true
+      within: [{unit: kcal, min: 70, max: 150}]
+
+  - id: n-egg-protein
+    kind: nutrition
+    persona: riley
+    title: protein in one egg, hedged on size
+    ask: How much protein is in one egg?
+    expect:
+      grounded: true
+      hedges: true
+      within: [{unit: g, min: 4, max: 8}]
+
+  - id: n-run-burn
+    kind: nutrition
+    persona: riley
+    title: a 30-minute run's burn, hedged on weight and pace
+    ask: How many calories does a 30-minute run burn?
+    expect:
+      grounded: true
+      hedges: true
+      within: [{unit: kcal, min: 150, max: 600}]
+
+  - id: n-protein-per-kg
+    kind: nutrition
+    persona: riley
+    title: the evidence-based protein range for muscle, per kg
+    ask: What's the evidence-based protein range for building muscle, in grams per kilogram?
+    expect:
+      grounded: true
+      within: [{unit: g/kg, min: 1.2, max: 2.4}]
+
+  # -- arithmetic ------------------------------------------------------------------------
+  - id: a-goal-gap
+    kind: arithmetic
+    persona: riley
+    title: how far under the goal the average sits
+    ask: On average, how far under my calorie goal am I?
+    expect:
+      grounded: true
+      values: [{any: ["goal_kcal - avg28_kcal", "goal_kcal - avg7_kcal"], tol: 5, unit: kcal}]
+
+  - id: a-deficit-vs-maintenance
+    kind: arithmetic
+    persona: riley
+    title: the daily deficit against measured maintenance
+    ask: What's my average daily deficit against my measured maintenance?
+    expect:
+      grounded: true
+      values: [{any: ["tdee_kcal - avg28_kcal", "tdee_kcal - avg7_kcal"], tol: 10, unit: kcal}]
+
+  - id: a-protein-gap
+    kind: arithmetic
+    persona: riley
+    title: grams short of the protein target
+    ask: How many grams short of my protein target am I, on average?
+    expect:
+      grounded: true
+      values:
+        - any: ["protein_target_g - avg28_protein", "protein_target_g - avg7_protein"]
+          tol: 1
+          unit: g
+
+  - id: a-protein-per-lb
+    kind: arithmetic
+    persona: riley
+    title: average protein per pound of bodyweight
+    ask: How many grams of protein per pound of bodyweight am I eating?
+    expect:
+      grounded: true
+      values: [{any: [protein_g_per_lb, "avg7_protein / weight_lb"], tol: 0.02}]
+
+  - id: a-weekly-gap
+    kind: arithmetic
+    persona: riley
+    title: a week's calories under the goal (daily gap x 7)
+    ask: How many calories a week am I under my goal?
+    expect:
+      grounded: true
+      values:
+        - any: ["(goal_kcal - avg28_kcal) * 7", "(goal_kcal - avg7_kcal) * 7"]
+          tol: 25
+          unit: kcal
+
+  - id: a-projection
+    kind: arithmetic
+    persona: riley
+    title: weight in 4 weeks at the current rate
+    ask: If I keep losing at my current rate, what will I weigh in 4 weeks?
+    expect:
+      grounded: true
+      values:
+        - any: ["weight_lb - 4 * trend_lb_week", "weight_lb - 4 * weight_delta_lb / weight_span_days * 7"]
+          tol: 0.6
+          unit: lb
+
+  - id: a-weeks-to-lose
+    kind: arithmetic
+    persona: riley
+    title: weeks to lose 5 more pounds at the current rate
+    ask: At my current rate, how many weeks will it take to lose 5 more pounds?
+    expect:
+      grounded: true
+      values:
+        - any: ["5 / trend_lb_week", "5 / (weight_delta_lb / weight_span_days * 7)"]
+          tol: 0.6
+
+  - id: a-macro-calories
+    kind: arithmetic
+    persona: riley
+    title: the calories in the average macros (4/4/9)
+    ask: How many calories do my average protein, carbs and fat add up to?
+    expect:
+      grounded: true
+      values:
+        # Either window, kept whole: the 7-day line carries all three macros
+        # since the first live run caught 7-day protein added to 28-day carbs and fat.
+        - any:
+            - "4 * avg28_protein + 4 * avg28_carb + 9 * avg28_fat"
+            - "4 * avg7_protein + 4 * avg7_carb + 9 * avg7_fat"
+          tol: 10
+          unit: kcal
+
+  - id: a-left-today
+    kind: arithmetic
+    persona: riley
+    title: calories left today, from the figure in the question
+    ask: I've eaten 1,240 calories today. How many do I have left against my goal?
+    expect:
+      grounded: true
+      values: [{any: ["goal_kcal - 1240"], tol: 0, unit: kcal}]

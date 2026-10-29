@@ -7,7 +7,7 @@
 # workspace with a monthly spend limit, so an eval can never drain the balance
 # the app's own AI features use. Hard limits per run: the call caps below
 # (enforced again by the proxy), and live.py refuses any run whose worst case
-# costs more than $6 (every reply at its token ceiling; real runs cost far
+# costs more than $10 (every reply at its token ceiling; real runs cost far
 # less). Every user is synthetic and seeded into a throwaway local stack.
 #
 # GitHub only offers "Run workflow" once this file is on the default branch.
@@ -26,7 +26,7 @@ on:
         required: false
       max_trainer_calls:
         description: Hard cap on calls to Claude
-        default: '300'
+        default: '450'
         required: true
 
 concurrency:

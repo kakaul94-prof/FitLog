@@ -34,8 +34,21 @@ def test_every_judged_rubric_is_written_down(dataset: Dataset) -> None:
 
 def test_every_regex_compiles(dataset: Dataset) -> None:
     for case in dataset.cases:
-        for pattern in case.expect.not_matches:
+        for pattern in [*case.expect.not_matches, *case.expect.wrong_facts]:
             re.compile(pattern)
+
+
+def test_grounding_covers_every_kind_with_the_fact_checker_on(dataset: Dataset) -> None:
+    """At least 30 cases, all five kinds, and every one run through the fact checker."""
+    cases = dataset.by_category("grounding")
+    kinds = Counter(c.kind for c in cases)
+    assert len(cases) >= 30
+    assert set(kinds) == {"grounding", "missing", "fabrication", "nutrition", "arithmetic"}
+    assert all(n >= 5 for n in kinds.values()), kinds
+    assert [c.id for c in cases if not c.expect.grounded] == []
+    assert {c.persona for c in cases} == {"riley"}
+    # Missing-data cases must pass only by saying so, never by staying vague.
+    assert all(c.expect.says_missing for c in cases if c.kind == "missing")
 
 
 def test_every_injection_vector_is_exercised(dataset: Dataset) -> None:

@@ -159,8 +159,10 @@ CATEGORIES = {
     "test_unintended_actions": "Unintended actions",
     "test_output_fidelity": "Incorrect outputs",
     "test_dependency_failures": "Dependency failure",
+    "test_grounding": "Grounding",
     "test_checks": "Eval harness",
     "test_dataset": "Eval harness",
+    "test_factcheck": "Eval harness",
 }
 
 

@@ -216,10 +216,12 @@ def load_canary_cases(dataset: Dataset, path: Path = CASES_FILE) -> list[Case]:
 
 ISO_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 TOKEN = re.compile(r"\{\{today(?:([+-])(\d+))?\}\}")
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
 def template_snapshot(text: str, generated_on: date) -> str:
-    """Every date in a snapshot replaced by its offset from the day it was built."""
+    """Every date in a snapshot replaced by its offset from the day it was built,
+    and today's weekday ("Today is Wednesday, 2026-10-28.") by {{weekday}}."""
 
     def token(m: re.Match[str]) -> str:
         delta = (generated_on - date.fromisoformat(m.group(1))).days
@@ -227,6 +229,8 @@ def template_snapshot(text: str, generated_on: date) -> str:
             return "{{today}}"
         return "{{today-" + str(delta) + "}}" if delta > 0 else "{{today+" + str(-delta) + "}}"
 
+    today = generated_on.isoformat()
+    text = text.replace(f"{WEEKDAYS[generated_on.weekday()]}, {today}", f"{{{{weekday}}}}, {today}")
     return ISO_DATE.sub(token, text)
 
 
@@ -240,7 +244,7 @@ def render_snapshot(template: str, today: date) -> str:
         delta = timedelta(days=int(days))
         return (today - delta if sign == "-" else today + delta).isoformat()
 
-    return TOKEN.sub(value, template)
+    return TOKEN.sub(value, template).replace("{{weekday}}", WEEKDAYS[today.weekday()])
 
 
 def load_snapshot(today: date) -> str:

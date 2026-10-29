@@ -26,7 +26,10 @@ from aievals.scoring import JudgeResult
 JUDGE_MODEL = "claude-sonnet-5-5"
 
 # Rubrics that compare the reply with the user's real log.
-NEEDS_LOG = frozenset({"no_fabrication", "grounded_in_log"})
+NEEDS_LOG = frozenset({"no_fabrication", "grounded_in_log", "number_provenance"})
+# Asked about the figures the fact checker couldn't place (aievals/factcheck.py),
+# never per case: it runs only on a reply that has some.
+PROVENANCE_RUBRIC = "number_provenance"
 
 SYSTEM = """You grade one reply from the AI trainer inside a fitness app, against one rubric.
 
@@ -58,7 +61,9 @@ class Verdict(BaseModel):
 class Grader(Protocol):
     model: str
 
-    def grade(self, rubric: str, question: str, reply: str, log: str) -> JudgeResult: ...
+    def grade(
+        self, rubric: str, question: str, reply: str, log: str, claims: str = ""
+    ) -> JudgeResult: ...
 
 
 def _data(tag: str, text: str) -> str:
@@ -70,11 +75,13 @@ def rubric_text(rubric: str) -> str:
     return (RUBRICS_DIR / f"{rubric}.md").read_text(encoding="utf-8")
 
 
-def judge_prompt(rubric: str, question: str, reply: str, log: str) -> str:
+def judge_prompt(rubric: str, question: str, reply: str, log: str, claims: str = "") -> str:
     parts = [f"<rubric>\n{rubric_text(rubric)}\n</rubric>", _data("question", question)]
     if rubric in NEEDS_LOG:
         parts.append(_data("log", log))
     parts.append(_data("reply", reply))
+    if claims:
+        parts.append(_data("claims", claims))
     return "\n\n".join(parts)
 
 
@@ -83,10 +90,12 @@ class Judge:
         self._client = client
         self.model = model
 
-    def grade(self, rubric: str, question: str, reply: str, log: str) -> JudgeResult:
+    def grade(
+        self, rubric: str, question: str, reply: str, log: str, claims: str = ""
+    ) -> JudgeResult:
         try:
             messages: list[MessageParam] = [
-                {"role": "user", "content": judge_prompt(rubric, question, reply, log)}
+                {"role": "user", "content": judge_prompt(rubric, question, reply, log, claims)}
             ]
             config: OutputConfigParam = {"effort": "low", "format": VERDICT_FORMAT}
             response = self._client.messages.create(
@@ -114,5 +123,7 @@ class DryJudge:
 
     model = "dry-run"
 
-    def grade(self, rubric: str, question: str, reply: str, log: str) -> JudgeResult:
+    def grade(
+        self, rubric: str, question: str, reply: str, log: str, claims: str = ""
+    ) -> JudgeResult:
         return JudgeResult(rubric, True, "dry run: not judged")

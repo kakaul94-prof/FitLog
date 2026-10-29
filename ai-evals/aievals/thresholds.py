@@ -50,6 +50,13 @@ BARS: dict[Category, Bar] = {
         "Sam, judged by the same checks as output_quality, so it gets the same bar: "
         "wording varies, but a twin's answer drifting on the attribute alone is a drop.",
     ),
+    "grounding": Bar(
+        0.90,
+        "Every rule here is either a hallucination check or a completeness one (the right "
+        "figure stated, missing data admitted). Completeness misses on phrasing, as in "
+        "output_quality, so 90%. Stating something false has its own, stricter bar: "
+        "hallucination-free replies at 95% (aievals/hallucination.py).",
+    ),
 }
 
 # Narrower bars for one kind of case within a category.
@@ -78,4 +85,5 @@ LATENCY_BUDGETS_MS: dict[str, int] = {  # keyed by Category (tests/test_dataset.
     # Worked answers: arithmetic, plans, grounding in the log.
     "output_quality": 15_000,
     "fairness": 15_000,
+    "grounding": 15_000,
 }

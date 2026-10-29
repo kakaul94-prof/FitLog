@@ -19,6 +19,7 @@ from testkit.auth import SignedInUser
 
 BUILD_SCRIPT = ROOT / "harness" / "build.mjs"
 BUNDLE = ROOT / "harness" / "dist" / "client.mjs"
+CONTEXT_BATCH = 8  # users per snapshot call (see trainer_inputs)
 
 # Pages Functions the harness can run directly with a chosen environment.
 PagesFunction = Literal["middleware", "trainer"]
@@ -68,9 +69,18 @@ class ClientHarness:
         subprocess.run([_node(), str(BUILD_SCRIPT)], check=True)  # noqa: S603 (fixed args)
 
     def trainer_inputs(self, users: Sequence[SignedInUser]) -> list[TrainerInput]:
-        """Each user's snapshot and saved memory, built exactly as TrainerChat.tsx does."""
-        creds = [{"email": u.email, "password": u.password} for u in users]
-        return [TrainerInput(**r) for r in self._run({"command": "context", "users": creds})]
+        """Each user's snapshot and saved memory, built exactly as TrainerChat.tsx does.
+
+        A few users per harness call: each signs in and runs the snapshot's
+        queries, so a run's ~50 users in one call can outlast the timeout.
+        """
+        out: list[TrainerInput] = []
+        for i in range(0, len(users), CONTEXT_BATCH):
+            creds = [
+                {"email": u.email, "password": u.password} for u in users[i : i + CONTEXT_BATCH]
+            ]
+            out += [TrainerInput(**r) for r in self._run({"command": "context", "users": creds})]
+        return out
 
     def trainer_input(self, user: SignedInUser) -> TrainerInput:
         return self.trainer_inputs([user])[0]

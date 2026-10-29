@@ -193,8 +193,8 @@ class PersonaWriter:
             "birth_date": date(self._today.year - p.age, 1, 1).isoformat(),
             "height_cm": p.height_cm,
             "activity_level": p.activity_level,
-            "goal_type": "maintain",
-            "goal_rate_lb_per_week": 0,
+            "goal_type": p.goal_type,
+            "goal_rate_lb_per_week": p.goal_rate_lb_per_week,
             "calorie_goal_mode": "manual",
             "manual_calorie_goal": p.calorie_goal,
             "macro_targets": {
@@ -239,6 +239,20 @@ class PersonaWriter:
         )
 
     def _write_diary(self, persona: Persona) -> None:
+        self._insert(
+            "diary_entries",
+            [
+                {
+                    "entry_date": self._day(f.days_ago),
+                    "meal": f.meal,
+                    "food_name": f.food,
+                    "servings": f.servings,
+                    "nutrients": persona.foods[f.food].nutrients(),
+                    "position": i,
+                }
+                for i, f in enumerate(persona.food_log)
+            ],
+        )
         d = persona.diary
         if d is None:
             return

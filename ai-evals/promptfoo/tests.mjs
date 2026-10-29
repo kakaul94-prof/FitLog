@@ -46,12 +46,16 @@ const EXPECT_KEYS = new Set([
   'remember_containing_any',
 ])
 
+// Checked against facts computed from the seeded user's rows (aievals/facts.py
+// and factcheck.py), which this layer doesn't port; they run in the custom suite.
+const NOT_PORTED = new Set(['personas.yaml', 'grounding.yaml'])
+
 /** Every case in dataset/*.yaml, in the custom loader's order (files sorted by name). */
 export function loadCases() {
   const dir = `${AI_EVALS}dataset/`
   const cases = []
   for (const name of readdirSync(dir).filter((n) => n.endsWith('.yaml')).sort()) {
-    if (name === 'personas.yaml') continue
+    if (NOT_PORTED.has(name)) continue
     const doc = yaml.load(readFileSync(dir + name, 'utf8'))
     for (const raw of doc.cases) cases.push({ persona: 'sam', ...raw, category: doc.category })
   }

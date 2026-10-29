@@ -5,10 +5,13 @@ and fail a wrong one, including the null answer: an empty reply must never
 satisfy a check that asks for something to be present.
 """
 
+from datetime import date
+
 import pytest
 
 from aievals.checks import numbers_in, run_rules
 from aievals.dataset import Dataset, Expect
+from aievals.facts import ground_truth
 from aievals.harness import ParsedReply
 
 RULES = (
@@ -105,7 +108,11 @@ def test_every_numeric_case_passes_its_reference_answer(dataset: Dataset) -> Non
             continue
         nums = ", ".join(f"{n:,.0f}" for n in case.expect.numbers_include)
         anchor = " ".join(case.expect.contains_any[:1])
-        assert verdict(case.expect, reply(f"That works out to {nums}. {anchor}")), case.id
+        answer = reply(f"That works out to {nums}. {anchor}")
+        # Grounding cases also run the fact checker, which needs their persona's facts.
+        facts = ground_truth(dataset.personas[case.persona], date.today())
+        results = run_rules(case.expect, answer, prompt_rules=RULES, facts=facts)
+        assert all(c.passed for c in results), (case.id, [c for c in results if not c.passed])
 
 
 def test_failures_say_what_was_found() -> None:

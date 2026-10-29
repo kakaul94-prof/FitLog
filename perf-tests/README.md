@@ -170,7 +170,8 @@ rest(ctx.caller).from('routines').select('*').order('name').get('routines.list')
 ```
 
 **A journey**: a function that takes a `Ctx` (the signed-in user, their `caller` and
-`today`) and makes requests through `rest(...)` (one at a time) or `batch([...prepare()])`
+`today`, the seeded day, fixed for the whole run: date anything that must match the seed
+from it, never from the clock, or a run crossing midnight UTC misses its data) and makes requests through `rest(...)` (one at a time) or `batch([...prepare()])`
 (together, as a page does), with `think()` between steps and `expect*()` checks from
 `lib/checks.ts`. Then one line in `journeys/index.ts` with its weight. See
 `journeys/logWeight.ts` for the smallest example.

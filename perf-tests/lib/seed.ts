@@ -32,6 +32,9 @@ export interface SetupData {
   seededAt: string
   setupMs: number
   rows: Record<string, number>
+  /** The day the history runs up to (YYYY-MM-DD, UTC), and every journey's "today" for the
+   * whole run: a run that crosses midnight UTC keeps reading the day it seeded. */
+  today: string
   /** When the VUs start (ms since epoch): the phase clock (lib/phase.ts). */
   runStartedAt: number
 }
@@ -169,7 +172,8 @@ export function seedPool(env: Env, profile: Profile): SetupData {
     password: `pw-${randomId(12)}`,
   }))
   const users = createUsers(env, credentials)
-  const rows = seedHistory(env, users, profile.seedDays)
+  const today = todayISO()
+  const rows = seedHistory(env, users, profile.seedDays, today)
   return {
     runId,
     users: users.map(({ id, email, password }) => ({ id, email, password })),
@@ -177,12 +181,12 @@ export function seedPool(env: Env, profile: Profile): SetupData {
     seededAt: new Date().toISOString(),
     setupMs: Date.now() - started,
     rows,
+    today,
     runStartedAt: Date.now(), // the scenario resets this after its pre-flight
   }
 }
 
-function seedHistory(env: Env, users: CreatedUser[], days: number): Record<string, number> {
-  const today = todayISO()
+function seedHistory(env: Env, users: CreatedUser[], days: number, today: string): Record<string, number> {
   const day = (offset: number) => addDaysISO(today, -offset)
   const counts: Record<string, number> = {}
   const insert = (table: string, rows: Row[], select?: string): Row[] => {

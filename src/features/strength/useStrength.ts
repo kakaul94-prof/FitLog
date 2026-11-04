@@ -410,8 +410,10 @@ export function useAddExercise() {
         (s) => s.workout_id !== workoutId,
       )
 
-      // If this lift has a strength goal, prefill the suggested weight/reps for
-      // the upcoming session (instead of the usual blank "match last time").
+      // If this lift has a strength goal, lay out the suggested number of sets
+      // for the upcoming session (instead of "match last time"). The rows stay
+      // BLANK — the card shows the suggested weight/reps as placeholder hints.
+      // Saving them as real values made untouched rows look (and count) as done.
       const goal = goalRow as StrengthGoal | null
       let suggested:
         | { weightLb: number | null; reps: number | null }[]
@@ -440,14 +442,14 @@ export function useAddExercise() {
 
       let rows
       if (suggested) {
-        rows = suggested.map((s, i) => ({
+        rows = suggested.map((_, i) => ({
           workout_id: workoutId,
           workout_exercise_id: (we as WorkoutExercise).id,
           exercise_key: key,
           exercise_name: name,
           set_number: i + 1,
-          reps: s.reps,
-          weight_lb: s.weightLb,
+          reps: null,
+          weight_lb: null,
         }))
       } else if (prior.length) {
         const wid = prior[0].workout_id

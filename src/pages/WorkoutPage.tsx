@@ -1160,12 +1160,11 @@ function ExerciseCard({
         stamp({ started_at: new Date().toISOString() })
     })
 
-  // Which rows have been filled in during this visit. A goal'd lift's set rows
-  // arrive PRE-FILLED with the next-session suggestion (see useAddExercise), so
-  // "has weight + reps" can't tell a set you performed from an untouched
-  // prefill — the feedback strip and the coach only follow a row you've typed
-  // in. Reopening the workout clears this, so they stay quiet until the next
-  // set is logged rather than re-asking about old ones.
+  // Which rows have been filled in during this visit — the feedback strip and
+  // the coach only follow a row you've typed in (or rated). Reopening the
+  // workout clears this, so they stay quiet until the next set is logged
+  // rather than re-asking about old ones. (Goal'd lifts used to arrive with
+  // the suggestion saved into the rows; they now arrive blank with hints.)
   const [touched, setTouched] = useState<Set<string>>(new Set())
   const markLogged = useCallback((id: string) => {
     setTouched((t) => (t.has(id) ? t : new Set(t).add(id)))
@@ -1383,6 +1382,7 @@ function ExerciseCard({
             onWeightEntered={autoStart}
             onLogged={markLogged}
             feedback={i === lastDoneIdx}
+            hint={done ? undefined : plan?.sug?.sets[i]}
           />
         ))}
         <button
@@ -1512,9 +1512,13 @@ function SetRow({
   onWeightEntered,
   onLogged,
   feedback,
+  hint,
 }: {
   set: WorkoutSet
   index: number
+  // Goal-suggested weight/reps for this set, shown as grey placeholders in
+  // blank boxes. Rating a blank row fills them in (accepting the suggestion).
+  hint?: { weightLb: number | null; reps: number | null }
   workoutId: string
   // Hold exercises (stretches, planks) log seconds in place of lb × reps.
   hold: boolean
@@ -1591,6 +1595,7 @@ function SetRow({
               inputMode="decimal"
               aria-label={`Set ${index} weight`}
               value={weight}
+              placeholder={hint?.weightLb != null ? String(hint.weightLb) : undefined}
               onChange={(e) => setWeight(e.target.value)}
               onFocus={() => {
                 wFocus.current = true
@@ -1611,6 +1616,7 @@ function SetRow({
               inputMode="numeric"
               aria-label={`Set ${index} reps`}
               value={reps}
+              placeholder={hint?.reps != null ? String(hint.reps) : undefined}
               onChange={(e) => setReps(e.target.value)}
               onFocus={() => {
                 rFocus.current = true
@@ -1628,10 +1634,22 @@ function SetRow({
           className="h-9 px-1"
           value={set.effort != null ? String(set.effort) : ''}
           onChange={(e) => {
-            save({ effort: e.target.value ? parseInt(e.target.value) : null })
-            // Rating a prefilled row is often the only edit a goal'd lift needs,
-            // so it counts as logging the set.
-            if (e.target.value) onLogged(set.id)
+            const effort = e.target.value ? parseInt(e.target.value) : null
+            // Rating a blank row that has a goal hint accepts the hint — the
+            // one-tap way to log a set done exactly as suggested. Boxes you've
+            // typed into (even unsaved) are left alone.
+            const fill =
+              effort != null && hint && !hold
+                ? {
+                    ...(!weight && hint.weightLb != null
+                      ? { weight_lb: hint.weightLb }
+                      : {}),
+                    ...(!reps && hint.reps != null ? { reps: hint.reps } : {}),
+                  }
+                : {}
+            save({ effort, ...fill })
+            if ('weight_lb' in fill) onWeightEntered()
+            if (effort != null) onLogged(set.id)
           }}
         >
           <option value="">–</option>

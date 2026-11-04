@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import {
@@ -24,6 +32,7 @@ import {
   Brain,
   ArrowLeftRight,
   LayoutTemplate,
+  GripVertical,
 } from 'lucide-react'
 import { useUndoSwap } from '@/features/strength/useCheckin'
 import { flagsLabel } from '@/lib/checkin'
@@ -49,6 +58,7 @@ import {
   useRestoreWorkout,
   useDeleteWorkout,
   useExerciseBests,
+  useReorderExercises,
   type WorkoutSnapshot,
 } from '@/features/strength/useStrength'
 import { useRegisterRestTimer } from '@/components/strength/RestTimerProvider'
@@ -104,6 +114,7 @@ import { useRehab } from '@/features/rehab/useRehab'
 import { useCustomExercises } from '@/features/strength/useCustomExercises'
 import { dateLabel, timeLabel, todayISO } from '@/lib/date'
 import { cn } from '@/lib/utils'
+import { reorderMoves } from '@/lib/reorder'
 import type {
   RoutineExercise,
   WorkoutExercise,
@@ -468,6 +479,276 @@ export function WorkoutPage() {
   const activeBlocks = blocks.filter((b) => !blockDone(b))
   const completedBlocks = blocks.filter(blockDone)
 
+  // --- Hold-to-drag reorder (same mechanics as RoutineEditPage) --------------
+  // Hold an exercise's header (or a superset's label) ~450 ms to pick up its
+  // block; a superset moves as one unit. Only the active list is draggable —
+  // finished blocks sit in "Completed" and keep their slots. Cards move by
+  // transform mid-drag; the new order is written once, on release.
+  const reorder = useReorderExercises()
+  const blockKey = (b: { group: number | null; exercises: WorkoutExercise[] }) =>
+    b.group != null && b.exercises.length > 1 ? `sg-${b.group}` : b.exercises[0].id
+  const listRef = useRef<HTMLDivElement>(null)
+  const [dragKey, setDragKey] = useState<string | null>(null)
+  const dragKeyRef = useRef<string | null>(null)
+  const pressRef = useRef<{ x: number; y: number } | null>(null)
+  const holdRef = useRef<number | null>(null)
+  // Block layout captured at pickup, in page coords so mid-drag scrolling is OK.
+  const dragRef = useRef<{
+    els: HTMLElement[]
+    keys: string[]
+    tops: number[]
+    centers: number[]
+    heights: number[]
+    d: number
+    gap: number
+    startPageY: number
+    order: string[]
+    insert: number
+  } | null>(null)
+  // Handoff to the drop glide once the re-sorted list renders.
+  const dropRef = useRef<{ key: string; fromTop: number } | null>(null)
+  const clearHold = () => {
+    if (holdRef.current != null) clearTimeout(holdRef.current)
+    holdRef.current = null
+  }
+  const EASE = 'transform 200ms cubic-bezier(0.2, 0, 0, 1)'
+
+  // Write a new active-block order (finished blocks keep their slots — see
+  // reorderMoves). Read via a ref so the drag effect sees the latest list.
+  // False = nothing to save.
+  const commitOrderRef = useRef<(order: string[]) => boolean>(() => false)
+  commitOrderRef.current = (order) => {
+    const moves = reorderMoves(
+      blocks.map((b) => ({
+        key: blockKey(b),
+        done: blockDone(b),
+        exercises: b.exercises,
+      })),
+      order,
+    )
+    if (!moves || moves.length === 0 || !id) return false
+    reorder.mutate(
+      { workout_id: id, moves },
+      {
+        onError: () =>
+          alert("Couldn't save the new order — check your connection and try again."),
+      },
+    )
+    return true
+  }
+
+  // The held block tracks the finger; the rest slide to the slots they'd take
+  // with it inserted at the computed index (heights differ, so slots are summed).
+  const layoutDrag = (clientY: number) => {
+    const st = dragRef.current
+    if (!st) return
+    const delta = clientY + window.scrollY - st.startPageY
+    const draggedCenter = st.centers[st.d] + delta
+    const ndKeys: string[] = []
+    const ndCenters: number[] = []
+    for (let i = 0; i < st.keys.length; i++)
+      if (i !== st.d) {
+        ndKeys.push(st.keys[i])
+        ndCenters.push(st.centers[i])
+      }
+    // Hysteresis so hovering a tall neighbour's midpoint doesn't flicker.
+    const H = 16
+    let ins = st.insert
+    while (ins < ndCenters.length && ndCenters[ins] + H < draggedCenter) ins++
+    while (ins > 0 && ndCenters[ins - 1] - H > draggedCenter) ins--
+    st.insert = ins
+    const order = ndKeys.slice()
+    order.splice(ins, 0, st.keys[st.d])
+    st.order = order
+    const targetTop = new Map<string, number>()
+    let y = st.tops[0]
+    for (const k of order) {
+      targetTop.set(k, y)
+      y += st.heights[st.keys.indexOf(k)] + st.gap
+    }
+    st.els.forEach((el, i) => {
+      el.style.transform =
+        i === st.d
+          ? `translateY(${delta}px) scale(1.03)`
+          : `translateY(${targetTop.get(st.keys[i])! - st.tops[i]}px)`
+    })
+  }
+
+  // Only the header row (name) or a superset's label arms a drag, so holding a
+  // set row, an input or the remove button behaves exactly as before.
+  const startPress = (key: string) => (e: ReactPointerEvent) => {
+    const t = e.target as HTMLElement
+    if (!t.closest('[data-drag-handle]')) return
+    if (t.closest('input, textarea, select, [data-no-drag]')) return
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    pressRef.current = { x: e.clientX, y: e.clientY }
+    clearHold()
+    holdRef.current = window.setTimeout(() => {
+      dragKeyRef.current = key
+      setDragKey(key)
+      navigator.vibrate?.(30)
+    }, 450)
+  }
+  const movePress = (e: ReactPointerEvent) => {
+    if (dragKeyRef.current) return
+    const p = pressRef.current
+    if (p && (Math.abs(e.clientX - p.x) > 10 || Math.abs(e.clientY - p.y) > 10))
+      clearHold() // moved before the hold elapsed → it's a scroll, not a drag
+  }
+  const endPress = () => {
+    clearHold()
+    if (!dragKeyRef.current) pressRef.current = null
+  }
+
+  // Measure every block the instant one is picked up, then lift it.
+  useLayoutEffect(() => {
+    if (dragKey == null) return
+    const cont = listRef.current
+    if (!cont) return
+    const els = Array.from(cont.querySelectorAll<HTMLElement>('[data-block]'))
+    const keys = els.map((el) => el.dataset.block!)
+    const d = keys.indexOf(dragKey)
+    if (d < 0) return
+    const sY = window.scrollY
+    const rects = els.map((el) => el.getBoundingClientRect())
+    const gap = rects.length > 1 ? Math.max(0, rects[1].top - rects[0].bottom) : 16
+    dragRef.current = {
+      els,
+      keys,
+      tops: rects.map((r) => r.top + sY),
+      centers: rects.map((r) => r.top + sY + r.height / 2),
+      heights: rects.map((r) => r.height),
+      d,
+      gap,
+      startPageY: (pressRef.current?.y ?? rects[d].top) + sY,
+      order: keys.slice(),
+      insert: d,
+    }
+    els.forEach((el, i) => {
+      el.style.willChange = 'transform'
+      el.style.transition = i === d ? 'none' : EASE
+      el.style.transform = i === d ? 'translateY(0px) scale(1.03)' : 'translateY(0px)'
+    })
+  }, [dragKey])
+
+  // Pointer move/up + edge auto-scroll while a block is held.
+  useEffect(() => {
+    if (dragKey == null) return
+    let lastY = pressRef.current?.y ?? window.innerHeight / 2
+    let raf = 0
+    const autoScroll = () => {
+      const EDGE = 70
+      const MAX = 8
+      const h = window.innerHeight
+      let dy = 0
+      if (lastY < EDGE) dy = -Math.ceil(((EDGE - lastY) / EDGE) * MAX)
+      else if (lastY > h - EDGE) dy = Math.ceil(((lastY - (h - EDGE)) / EDGE) * MAX)
+      if (dy !== 0) {
+        window.scrollBy(0, dy)
+        layoutDrag(lastY)
+      }
+      raf = requestAnimationFrame(autoScroll)
+    }
+    const onMove = (e: PointerEvent) => {
+      lastY = e.clientY
+      layoutDrag(e.clientY)
+    }
+    const onUp = () => {
+      const st = dragRef.current
+      if (st) {
+        const moved = st.order.some((k, i) => k !== st.keys[i])
+        dropRef.current = {
+          key: st.keys[st.d],
+          fromTop: st.els[st.d].getBoundingClientRect().top,
+        }
+        if (!moved || !commitOrderRef.current(st.order)) {
+          // Dropped where it started (or nothing to save): glide back to rest.
+          dropRef.current = null
+          const els = st.els
+          els.forEach((el) => {
+            el.style.transition = EASE
+            el.style.transform = ''
+          })
+          setTimeout(() => {
+            els.forEach((el) => {
+              el.style.transition = ''
+              el.style.willChange = ''
+            })
+          }, 260)
+        }
+      }
+      dragRef.current = null
+      dragKeyRef.current = null
+      pressRef.current = null
+      setDragKey(null)
+      // Swallow the click that fires after a held press (e.g. on the name).
+      const swallow = (ev: MouseEvent) => {
+        ev.stopPropagation()
+        ev.preventDefault()
+        window.removeEventListener('click', swallow, true)
+      }
+      window.addEventListener('click', swallow, true)
+      setTimeout(() => window.removeEventListener('click', swallow, true), 350)
+    }
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    document.addEventListener('pointercancel', onUp)
+    raf = requestAnimationFrame(autoScroll)
+    return () => {
+      cancelAnimationFrame(raf)
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.removeEventListener('pointercancel', onUp)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragKey])
+
+  // Once the re-sorted list renders, drop the transforms and glide the dragged
+  // block from where the finger let go into its settled slot.
+  useLayoutEffect(() => {
+    const drop = dropRef.current
+    if (!drop) return
+    dropRef.current = null
+    const cont = listRef.current
+    if (!cont) return
+    const els = Array.from(cont.querySelectorAll<HTMLElement>('[data-block]'))
+    els.forEach((el) => {
+      el.style.transition = 'none'
+      el.style.transform = ''
+      el.style.willChange = ''
+    })
+    const el = els.find((e) => e.dataset.block === drop.key)
+    if (!el) return
+    const dy = drop.fromTop - el.getBoundingClientRect().top
+    if (Math.abs(dy) < 1) return
+    el.style.zIndex = '20'
+    el.style.transform = `translateY(${dy}px) scale(1.03)`
+    requestAnimationFrame(() => {
+      el.style.transition = EASE
+      el.style.transform = ''
+      const done = () => {
+        el.style.transition = ''
+        el.style.zIndex = ''
+        el.removeEventListener('transitionend', done)
+      }
+      el.addEventListener('transitionend', done, { once: true })
+      setTimeout(done, 260)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercises])
+
+  // Block native scroll / pull-to-refresh only while a block is held. Lives for
+  // the page's lifetime on purpose: a non-passive touchmove listener added
+  // after the gesture starts is too late — Chrome claims the touch as a scroll,
+  // cancels the pointer (the drag dies) and pulls to refresh.
+  useEffect(() => {
+    const onTouchMove = (e: TouchEvent) => {
+      if (dragKeyRef.current != null) e.preventDefault()
+    }
+    document.addEventListener('touchmove', onTouchMove, { passive: false })
+    return () => document.removeEventListener('touchmove', onTouchMove)
+  }, [])
+
   const renderBlock = (b: {
     group: number | null
     exercises: WorkoutExercise[]
@@ -551,7 +832,33 @@ export function WorkoutPage() {
             drills={warmupDrills}
           />
         )}
-        {activeBlocks.map(renderBlock)}
+        <div ref={listRef} className="space-y-4 empty:hidden">
+          {activeBlocks.map((b) => {
+            const key = blockKey(b)
+            const dragging = dragKey === key
+            return (
+              <div
+                key={key}
+                data-block={key}
+                data-dragging={dragging || undefined}
+                onPointerDown={startPress(key)}
+                onPointerMove={movePress}
+                onPointerUp={endPress}
+                onPointerCancel={endPress}
+                onContextMenu={(e) => {
+                  if ((e.target as HTMLElement).closest('[data-drag-handle]'))
+                    e.preventDefault()
+                }}
+                className={cn(
+                  'group/drag relative',
+                  dragging && 'z-10 rounded-xl opacity-95 shadow-xl ring-2 ring-primary',
+                )}
+              >
+                {renderBlock(b)}
+              </div>
+            )
+          })}
+        </div>
 
         {completedBlocks.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-border">
@@ -950,7 +1257,11 @@ function SupersetBlock({
 
   return (
     <div className="space-y-2 rounded-xl border-2 border-primary/30 p-2">
-      <div className="px-1 text-xs font-semibold uppercase tracking-wide text-primary">
+      <div
+        data-drag-handle
+        className="flex select-none items-center gap-1 px-1 text-xs font-semibold uppercase tracking-wide text-primary [-webkit-touch-callout:none]"
+      >
+        <GripVertical className="h-4 w-4 text-primary/40" />
         Superset
       </div>
       <TimingRow
@@ -1219,7 +1530,11 @@ function ExerciseCard({
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-border p-3">
+      <div
+        data-drag-handle
+        className="flex select-none items-center gap-2 border-b border-border p-3 [-webkit-touch-callout:none]"
+      >
+        <GripVertical className="hidden h-4 w-4 shrink-0 text-primary group-data-[dragging]/drag:block" />
         {label && (
           <span className="flex h-5 w-5 items-center justify-center rounded bg-primary/15 text-xs font-bold text-primary">
             {label}
@@ -1237,6 +1552,7 @@ function ExerciseCard({
           </span>
         )}
         <button
+          data-no-drag
           onClick={() => {
             if (confirm(`Remove ${ex.exercise_name}?`))
               delEx.mutate({ id: ex.id, workoutId })

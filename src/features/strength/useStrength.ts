@@ -690,6 +690,47 @@ export function useDeleteSet() {
   })
 }
 
+/**
+ * Drag-to-reorder on the workout page: write the new `position` of every
+ * exercise that moved. The cached workout is re-sorted at once so the cards
+ * stay where they were dropped; it shares the set-write key so a refetch from
+ * one write can't land mid-way through another and briefly undo it.
+ */
+export function useReorderExercises() {
+  const qc = useQueryClient()
+  return useMutation<
+    void,
+    Error,
+    { workout_id: string; moves: { id: string; position: number }[] },
+    SetWriteCtx
+  >({
+    mutationKey: SET_WRITE_KEY,
+    mutationFn: async ({ moves }) => {
+      const results = await Promise.all(
+        moves.map((m) =>
+          supabase
+            .from('workout_exercises')
+            .update({ position: m.position })
+            .eq('id', m.id),
+        ),
+      )
+      const failed = results.find((r) => r.error)
+      if (failed?.error) throw failed.error
+    },
+    onMutate: ({ workout_id, moves }) => {
+      const pos = new Map(moves.map((m) => [m.id, m.position]))
+      return patchWorkoutCache(qc, workout_id, (d) => ({
+        ...d,
+        exercises: d.exercises
+          .map((e) => (pos.has(e.id) ? { ...e, position: pos.get(e.id)! } : e))
+          .sort((a, b) => a.position - b.position),
+      }))
+    },
+    onError: (_e, v, ctx) => rollbackWorkout(qc, v.workout_id, ctx),
+    onSettled: (_d, _e, v) => settleWorkout(qc, v.workout_id),
+  })
+}
+
 export function useLastExerciseNote(key: string, excludeWorkoutId: string) {
   return useQuery({
     queryKey: ['lastNote', key, excludeWorkoutId],

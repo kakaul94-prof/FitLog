@@ -20,15 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      # Supabase's ports 54320-54329 sit in Linux's ephemeral range, so any outbound connection
+      # can land on 54322. Reserve them before a step opens one: a port already taken stays taken.
+      - name: Reserve Supabase ports
+        run: sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
           version: 2.118.0
       - name: Start test database
-        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
-        run: |
-          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
-          supabase start
+        run: supabase start
 
       # Same container as CI; only the Playwright arguments change. The input
       # goes through an env var rather than being pasted into the script.

@@ -1,6 +1,7 @@
 import { estimated1RM } from './calc'
 import { addDaysISO, daysBetweenISO } from './date'
 import type { ProgressionMethod, StrengthGoal } from './database.types'
+import { effortText, type EffortScale } from './effort'
 
 // A past set for one exercise. Sessions are arrays of these, newest session
 // first; weight/reps may be null (blank prefill rows are filtered out here).
@@ -184,11 +185,12 @@ function suggest531(
  * Suggest the next session for a goal'd lift from its history (newest first).
  * linear & double share one engine (linear = a single rep target); 5/3/1 waves
  * off a training max. Returns `action: 'start'` with no sets when there's no
- * history to work from.
+ * history to work from. `scale` only words the rationale (RPE vs RIR).
  */
 export function suggestNext(
   goal: StrengthGoal,
   sessions: PriorSet[][],
+  scale: EffortScale = 'rpe',
 ): Suggestion {
   const source = PROGRESSION_SOURCE[goal.method]
   if (goal.method === '531') return suggest531(goal, sessions, source)
@@ -237,14 +239,14 @@ export function suggestNext(
       weight = last.topWeight
       reps = targetReps
       action = 'repeat'
-      rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb but it was max effort (RPE ${e}) — hold here to consolidate before adding load.`
+      rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb but it was max effort (${effortText(e, scale)}) — hold here to consolidate before adding load.`
       usedRpe = true
     } else if (e != null && e <= 6) {
       const bigInc = round5(inc * 1.5)
       weight = round5(last.topWeight + bigInc)
       reps = bottomReps
       action = 'increase'
-      rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb and it felt easy (RPE ${e}) — bigger jump (+${bigInc} lb).`
+      rationale = `You hit ${last.count}×${last.reps} at ${last.topWeight} lb and it felt easy (${effortText(e, scale)}) — bigger jump (+${bigInc} lb).`
       usedRpe = true
     } else {
       weight = round5(last.topWeight + inc)
@@ -340,6 +342,8 @@ export interface NextSetContext {
   fallbackReps?: number | null
   /** Sets already logged for this exercise (the 1-based position of `last`). */
   setsDone?: number
+  /** Words the rationale in RPE or RIR; the rules always read RPE. */
+  scale?: EffortScale
 }
 
 const COACH_SOURCE = 'RPE autoregulation — Helms et al., RTS'
@@ -405,6 +409,7 @@ export function suggestNextSet(
       : goal.rep_low
     : Math.max(1, ctx.fallbackReps ?? reps)
   const e = last.effort ?? null
+  const eff = (rpe: number) => effortText(rpe, ctx.scale ?? 'rpe')
   const missedBy = Math.max(0, target - reps)
   // Bodyweight work logs no load, so there's nothing to add or shave.
   const bw = weight <= 0
@@ -444,7 +449,7 @@ export function suggestNextSet(
 
   // An RPE-10 set overrides even a 5/3/1 prescription.
   if (e != null && e >= 10)
-    return backoff(0.1, 'That was everything you had (RPE 10)')
+    return backoff(0.1, `That was everything you had (${eff(10)})`)
 
   // A readable 5/3/1 wave (training max set, position known) IS the plan — its
   // three sets and then nothing. Without those we can't index the wave, so the
@@ -454,7 +459,7 @@ export function suggestNextSet(
 
   if (missedBy >= 2)
     return backoff(0.1, `${missedBy} reps short of ${target}`)
-  if (e === 9) return backoff(0.05, 'RPE 9 — one rep from failure')
+  if (e === 9) return backoff(0.05, `${eff(9)} — one rep from failure`)
   if (missedBy === 1) return backoff(0.05, `A rep short of ${target}`)
 
   if (last.feel === 'off') {
@@ -481,8 +486,8 @@ export function suggestNextSet(
       action: 'increase',
       headline: headlineFor(weightLb, r),
       rationale: bw
-        ? `RPE ${e} and the reps were there — add a rep.`
-        : `RPE ${e} and the reps were there — add ${inc} lb.`,
+        ? `${eff(e)} and the reps were there — add a rep.`
+        : `${eff(e)} and the reps were there — add ${inc} lb.`,
       source: COACH_SOURCE,
     }
   }
@@ -496,7 +501,7 @@ export function suggestNextSet(
     headline: headlineFor(weightLb, r),
     rationale:
       e != null
-        ? `RPE ${e} at ${reps} reps — right in the pocket, run it back.`
+        ? `${eff(e)} at ${reps} reps — right in the pocket, run it back.`
         : `${headlineFor(bw ? null : weight, reps)} logged — run it back.`,
     source: COACH_SOURCE,
   }

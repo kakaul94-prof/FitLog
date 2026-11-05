@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useRehab } from '@/features/rehab/useRehab'
 import { usePainFlags } from '@/features/rehab/usePainFlags'
-import { useCoachEnabled } from '@/features/profile/useProfile'
 import {
   PAIN_SITES,
   activeInjuries,
@@ -32,7 +31,6 @@ export function RehabPage() {
   const today = todayISO()
   const { state, addInjury, isSaving, ready } = useRehab()
   const { data: flags } = usePainFlags(90)
-  const coachEnabled = useCoachEnabled()
   const [adding, setAdding] = useState(false)
 
   const active = activeInjuries(state)
@@ -116,12 +114,7 @@ export function RehabPage() {
             </h2>
             <span className="text-xs text-muted-foreground">90 days</span>
           </div>
-          {!coachEnabled ? (
-            <Card className="p-4 text-sm text-muted-foreground">
-              Pain is only recorded while the Coach pill is on in a workout.
-              Turn it on and the sites you flag mid-set collect here.
-            </Card>
-          ) : flags === undefined ? (
+          {flags === undefined ? (
             <Card className="p-4 text-sm text-muted-foreground">Loading…</Card>
           ) : sites.length === 0 ? (
             <Card className="p-4 text-sm text-muted-foreground">

@@ -115,6 +115,17 @@ describe('suggestNextSet — within-session coach', () => {
     })!
     expect(s.action).toBe('backoff')
     expect(s.weightLb).toBe(190)
+    expect(s.rationale).toContain('RPE 9')
+  })
+
+  it('words the same advice in RIR without changing it', () => {
+    const set = { weight_lb: 200, reps: 5, effort: 9 }
+    const rpe = suggestNextSet(set, { goal: makeGoal() })!
+    const rir = suggestNextSet(set, { goal: makeGoal(), scale: 'rir' })!
+    expect(rir.weightLb).toBe(rpe.weightLb)
+    expect(rir.action).toBe(rpe.action)
+    expect(rir.rationale).toContain('1 RIR — one rep from failure')
+    expect(rir.rationale).not.toContain('RPE')
   })
 
   it('backs off ~5% when a single rep is missed', () => {

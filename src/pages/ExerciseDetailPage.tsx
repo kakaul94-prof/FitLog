@@ -64,7 +64,8 @@ import {
 import { EXERCISES } from '@/data/exercises'
 import { getExerciseForm } from '@/data/exerciseForm'
 import { builtinKeyForName } from '@/data/exerciseAliases'
-import { useCoachEnabled } from '@/features/profile/useProfile'
+import { useEffortScale } from '@/features/profile/useProfile'
+import { effortText } from '@/lib/effort'
 
 const METRICS = [
   { key: 'e1rm', label: 'Est. 1RM' },
@@ -245,6 +246,7 @@ function RecordsCard({ sessions }: { sessions: ExerciseSession[] }) {
 function HistoryTab({ exerciseKey }: { exerciseKey: string | undefined }) {
   const { data: sessions, isLoading } = useExerciseSessions(exerciseKey)
   const rows = sessions ?? []
+  const scale = useEffortScale()
 
   if (isLoading)
     return (
@@ -295,7 +297,7 @@ function HistoryTab({ exerciseKey }: { exerciseKey: string | undefined }) {
                   </span>
                   {x.effort != null && (
                     <span className="ml-auto text-xs text-muted-foreground">
-                      RPE {x.effort}
+                      {effortText(x.effort, scale)}
                     </span>
                   )}
                 </div>
@@ -1104,9 +1106,7 @@ function GoalCard({
   const update = useUpdateStrengthGoal()
   const del = useDeleteStrengthGoal()
   const [editing, setEditing] = useState(false)
-  // The last-session pain/form heads-up belongs to the coach, so it follows the
-  // same switch as the workout page — the two surfaces can't disagree.
-  const coachEnabled = useCoachEnabled()
+  const scale = useEffortScale()
 
   const priorSessions = (sessions ?? []).map((s) =>
     s.sets.map((x) => ({
@@ -1143,7 +1143,7 @@ function GoalCard({
       </Card>
     )
 
-  const sug = suggestNext(goal, priorSessions)
+  const sug = suggestNext(goal, priorSessions, scale)
   const pct = Math.min(
     100,
     Math.max(0, Math.round((current / goal.target_1rm_lb) * 100)) || 0,
@@ -1296,7 +1296,7 @@ function GoalCard({
           </>
         )}
 
-        {coachEnabled && sug.warning && (
+        {sug.warning && (
           <div className="mt-2 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
             <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
             <span>{sug.warning}</span>

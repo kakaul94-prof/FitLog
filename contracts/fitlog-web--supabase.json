@@ -1167,6 +1167,10 @@
               "coach_enabled": {
                 "type": "boolean"
               },
+              "effort_scale": {
+                "type": "string",
+                "minLength": 1
+              },
               "rehab": {
                 "type": [
                   "object",
@@ -1239,6 +1243,7 @@
               "weekly_cardio_min_target",
               "cardio_goal",
               "coach_enabled",
+              "effort_scale",
               "rehab",
               "trainer_memory",
               "fuel_timing",
@@ -1291,6 +1296,7 @@
             "weekly_cardio_min_target": null,
             "cardio_goal": null,
             "coach_enabled": false,
+            "effort_scale": "rpe",
             "rehab": null,
             "trainer_memory": [],
             "fuel_timing": null,
@@ -1576,6 +1582,10 @@
             "coach_enabled": {
               "type": "boolean"
             },
+            "effort_scale": {
+              "type": "string",
+              "minLength": 1
+            },
             "rehab": {
               "type": [
                 "object",
@@ -1648,6 +1658,7 @@
             "weekly_cardio_min_target",
             "cardio_goal",
             "coach_enabled",
+            "effort_scale",
             "rehab",
             "trainer_memory",
             "fuel_timing",
@@ -1698,6 +1709,7 @@
           "weekly_cardio_min_target": null,
           "cardio_goal": null,
           "coach_enabled": false,
+          "effort_scale": "rpe",
           "rehab": null,
           "trainer_memory": [],
           "fuel_timing": null,

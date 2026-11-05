@@ -163,6 +163,29 @@ export interface FuelFeedback {
   kcal: number
 }
 
+// How a pre-workout drink felt at the start of the workout. 'not-yet' = the
+// kick hadn't arrived (drank too late); 'fading' = it had passed (too early).
+export type DrinkHit = 'not-yet' | 'right' | 'fading'
+
+/** The drink you usually take, remembered between days. */
+export interface FuelDrinkPrefs {
+  on: boolean
+  caffeineMg: number
+  carbG: number
+}
+
+/** The drink timed with the last meal. */
+export interface FuelDrink {
+  /** When you drank it; null = planned, not taken yet. */
+  at: string | null
+  caffeineMg: number
+  carbG: number
+  /** Minutes from drinking to the kick, as advised when it was saved. */
+  leadMin: number
+  /** True once the workout-page "how did it hit" question is answered. */
+  rated?: boolean
+}
+
 export interface FuelMeal {
   ateAt: string
   /** Diary entries picked, so the card can redraw the window + reasons. */
@@ -170,9 +193,14 @@ export interface FuelMeal {
   kcal: number
   earliestMin: number
   latestMin: number
+  /** Pre-workout drink timed alongside this meal, if any. */
+  drink?: FuelDrink | null
+  /** True once the stomach question is answered (the drink one may still be open). */
+  mealRated?: boolean
 }
 
-// Window math lives in lib/fuel.ts.
+// Window math lives in lib/fuel.ts. The drink fields are optional so rows
+// saved before the drink existed still read fine (no migration).
 export interface FuelTimingState {
   /** Personal shift applied to every window, minutes; clamped ±60. */
   offsetMin: number
@@ -180,6 +208,10 @@ export interface FuelTimingState {
   last: FuelMeal | null
   /** Recent feedback, newest last; pruned to 30. */
   log: FuelFeedback[]
+  /** Your usual pre-workout drink. */
+  drink?: FuelDrinkPrefs
+  /** Personal shift to the drink's lead time, minutes; clamped ±30. */
+  drinkOffsetMin?: number
 }
 
 // Weekly cardio goal, in one of two granularities. 'simple' targets light

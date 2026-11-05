@@ -1,5 +1,7 @@
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -28,7 +30,6 @@ import {
   TrendingDown,
   Minus,
   Target,
-  Sparkles,
   Brain,
   ArrowLeftRight,
   LayoutTemplate,
@@ -80,7 +81,14 @@ import {
 } from '@/lib/templateDiff'
 import { WarmupChecklist } from '@/components/strength/WarmupChecklist'
 import { isWarmupKey, warmupDrillKey } from '@/lib/warmup'
-import { useCoachEnabled, useUpdateProfile } from '@/features/profile/useProfile'
+import { useEffortScale } from '@/features/profile/useProfile'
+import {
+  effortName,
+  effortOptionValue,
+  effortOptions,
+  effortText,
+  type EffortScale,
+} from '@/lib/effort'
 import { FuelFeedbackPrompt } from '@/components/PreWorkoutFuel'
 import { useExerciseEntries } from '@/features/exercise/useExercise'
 import { useCustomActivities } from '@/features/exercise/useCustomActivities'
@@ -181,6 +189,13 @@ export function WorkoutPage() {
   // workout underneath stays mounted — asking a question between sets must not
   // cost you your scroll position or a half-typed set.
   const [askOpen, setAskOpen] = useState(false)
+  // A coach card's "Ask why" opens the chat with its question typed in (not
+  // sent — nothing is spent until you tap send); the header button opens it blank.
+  const [askDraft, setAskDraft] = useState<string>()
+  const openAsk = useCallback((draft?: string) => {
+    setAskDraft(draft)
+    setAskOpen(true)
+  }, [])
   const updateWorkout = useUpdateWorkout()
   const { data } = useWorkout(id)
   const workout = data?.workout
@@ -221,17 +236,11 @@ export function WorkoutPage() {
     .map((e) => warmupDrillKey(e.exercise_key))
   // Today's plan + last session's warnings for the lifts in this workout,
   // computed from PRIOR sessions only (one batched query, not one per card).
-  // Skipped entirely with the coach off — passing no workout id disables it.
   const liftKeys = useMemo(
     () => [...new Set(exercises.map((e) => e.exercise_key))],
     [exercises],
   )
-  const coachEnabled = useCoachEnabled()
-  const updateProfile = useUpdateProfile()
-  const { data: plans } = useSessionPlans(
-    coachEnabled ? workout?.id : undefined,
-    liftKeys,
-  )
+  const { data: plans } = useSessionPlans(workout?.id, liftKeys)
 
   // The template's rep targets, for the next-set coach on lifts with no
   // strength goal to take a rep range from.
@@ -780,6 +789,7 @@ export function WorkoutPage() {
     )
 
   return (
+    <AskTrainerContext.Provider value={openAsk}>
     <div className="mx-auto min-h-svh w-full max-w-md bg-background pb-[env(safe-area-inset-bottom)]">
       <PageHeader
         title={workout?.name || 'Workout'}
@@ -790,28 +800,13 @@ export function WorkoutPage() {
           </Button>
         }
         action={
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setAskOpen(true)}
-              aria-label="Ask a trainer"
-              className="flex items-center justify-center rounded-full border border-border p-1.5 text-muted-foreground"
-            >
-              <Brain className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => updateProfile.mutate({ coach_enabled: !coachEnabled })}
-              aria-pressed={coachEnabled}
-              className={cn(
-                'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold',
-                coachEnabled
-                  ? 'border-primary/40 bg-primary/15 text-primary'
-                  : 'border-border text-muted-foreground',
-              )}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              Coach
-            </button>
-          </div>
+          <button
+            onClick={() => openAsk()}
+            aria-label="Ask a trainer"
+            className="flex items-center justify-center rounded-full border border-border p-1.5 text-muted-foreground"
+          >
+            <Brain className="h-4 w-4" />
+          </button>
         }
       />
       <div className="space-y-4 p-4 pb-32">
@@ -963,7 +958,11 @@ export function WorkoutPage() {
               action={id && <NewChatButton thread={workoutThread(id)} />}
             />
             {/* Saved per workout: close to log a set, reopen, it's all there. */}
-            <TrainerChat workoutId={workout?.id} thread={id ? workoutThread(id) : undefined} />
+            <TrainerChat
+              workoutId={workout?.id}
+              thread={id ? workoutThread(id) : undefined}
+              initialDraft={askDraft}
+            />
           </div>,
           document.body,
         )}
@@ -1029,8 +1028,14 @@ export function WorkoutPage() {
           document.body,
         )}
     </div>
+    </AskTrainerContext.Provider>
   )
 }
+
+// Lets any exercise card (standalone or inside a superset block) open the
+// workout's trainer chat with a question pre-filled, without threading a prop
+// through SupersetBlock.
+const AskTrainerContext = createContext<(draft?: string) => void>(() => {})
 
 // Start/Done control + clock window, shared by a standalone exercise and a
 // whole superset block. Start stamps the begin time; Done (toggle) stamps/clears
@@ -1437,10 +1442,8 @@ function ExerciseCard({
     })
   }
 
-  // Open injuries that name this lift as aggravating. Deliberately NOT gated on
-  // coach_enabled like the progression warning above it: an injury you're
-  // actively rehabbing matters whether or not you've opted into the coach.
-  // Reads the cached profile, so this costs no round trip.
+  // Open injuries that name this lift as aggravating. Reads the cached profile,
+  // so this costs no round trip.
   const { state: rehabState } = useRehab()
   const rehabWarn = useMemo(
     () => injuriesWarningFor(rehabState, ex.exercise_key),
@@ -1482,11 +1485,9 @@ function ExerciseCard({
   }, [])
 
   // Post-set feedback asks on the most recently completed set; earlier rows keep
-  // their chips only once an answer is saved. With the coach off there is no
-  // "current" set, which silences the strip and the card in one place.
-  const coachEnabled = useCoachEnabled()
+  // their chips only once an answer is saved.
   let lastDoneIdx = -1
-  if (!hold && coachEnabled)
+  if (!hold)
     sets.forEach((s, i) => {
       if (s.weight_lb != null && s.reps != null && touched.has(s.id))
         lastDoneIdx = i
@@ -1495,6 +1496,8 @@ function ExerciseCard({
   // The next-set coach reads that set (RPE + feel/pain) and says what to do on
   // the next one. Hidden on hold exercises and once the exercise is done.
   const { data: goalMap } = useStrengthGoalMap()
+  const scale = useEffortScale()
+  const openAsk = useContext(AskTrainerContext)
   const lastDone = lastDoneIdx >= 0 ? sets[lastDoneIdx] : null
   const coach =
     lastDone && !done
@@ -1503,8 +1506,17 @@ function ExerciseCard({
           fallbackReps:
             routineTargets?.get(ex.exercise_key) ?? sets[0]?.reps ?? null,
           setsDone: lastDoneIdx + 1,
+          scale,
         })
       : null
+  // "Ask why" only where the advice changes course — a back-off, a stop, or a
+  // form hold. Routine holds and load increases stay quiet.
+  const askWhy =
+    coach &&
+    lastDone &&
+    (coach.action === 'backoff' || coach.action === 'stop' || coach.caution)
+      ? () => openAsk(askWhyDraft(ex.exercise_name, lastDone, coach, scale))
+      : undefined
 
   // Load the suggestion into the next row: the first empty one after the set it
   // read, or a fresh row when every row is filled.
@@ -1685,7 +1697,7 @@ function ExerciseCard({
               <span>Reps</span>
             </>
           )}
-          <span className="text-center">RPE</span>
+          <span className="text-center">{effortName(scale)}</span>
           <span />
         </div>
         {sets.map((s, i) => (
@@ -1699,6 +1711,7 @@ function ExerciseCard({
             onLogged={markLogged}
             feedback={i === lastDoneIdx}
             hint={done ? undefined : plan?.sug?.sets[i]}
+            scale={scale}
           />
         ))}
         <button
@@ -1712,6 +1725,7 @@ function ExerciseCard({
             s={coach}
             onUse={applyCoach}
             onEnd={() => stamp({ ended_at: new Date().toISOString() })}
+            onAsk={askWhy}
           />
         )}
         <textarea
@@ -1761,10 +1775,13 @@ function CoachCard({
   s,
   onUse,
   onEnd,
+  onAsk,
 }: {
   s: NextSetSuggestion
   onUse: () => void
   onEnd: () => void
+  // Opens the trainer with this suggestion's "why" typed in; absent = no link.
+  onAsk?: () => void
 }) {
   const alarm = s.action === 'stop'
   const warn = s.action === 'backoff' || s.caution
@@ -1797,7 +1814,7 @@ function CoachCard({
         )}
       </div>
       <p className="mt-1 text-xs opacity-90">{s.rationale}</p>
-      <div className="mt-2 flex gap-1.5">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {alarm && (
           <button
             onClick={onEnd}
@@ -1812,10 +1829,40 @@ function CoachCard({
         >
           {alarm ? `Keep going light · ${target}` : `Use ${target}`}
         </button>
+        {onAsk && (
+          <button
+            onClick={onAsk}
+            className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium active:opacity-80"
+          >
+            <Brain className="h-3.5 w-3.5" />
+            Ask why
+          </button>
+        )}
       </div>
       <p className="mt-1.5 text-[10px] opacity-70">{s.source}</p>
     </div>
   )
+}
+
+// The question "Ask why" types into the trainer: the set just logged (in your
+// effort scale) and the advice it led to. The trainer already sees today's
+// sets — this says which one you mean.
+function askWhyDraft(
+  name: string,
+  last: WorkoutSet,
+  s: NextSetSuggestion,
+  scale: EffortScale,
+): string {
+  let set = last.weight_lb ? `${last.weight_lb} × ${last.reps}` : `${last.reps} reps`
+  if (last.effort != null) set += ` at ${effortText(last.effort, scale)}`
+  const flags = [
+    last.feel === 'off' ? 'form off' : '',
+    last.pain ? `${last.pain} pain` : '',
+  ].filter(Boolean)
+  if (flags.length) set += ` with ${flags.join(' and ')}`
+  return s.action === 'stop'
+    ? `Why should I stop ${name} for today after ${set}?`
+    : `Why is my next ${name} set ${s.headline} after ${set}?`
 }
 
 // Pain-site options for the post-set feedback strip (stored lowercase on
@@ -1829,6 +1876,7 @@ function SetRow({
   onLogged,
   feedback,
   hint,
+  scale,
 }: {
   set: WorkoutSet
   index: number
@@ -1845,6 +1893,8 @@ function SetRow({
   onLogged: (id: string) => void
   // Show the "how was it?" strip (the exercise's most recently completed set).
   feedback: boolean
+  // RPE or RIR for the effort picker; the stored value is RPE either way.
+  scale: EffortScale
 }) {
   const [weight, setWeight] = useState(
     set.weight_lb != null ? String(set.weight_lb) : '',
@@ -1861,9 +1911,6 @@ function SetRow({
   // null = closed, 'sites' = choosing a site, a site string = that paired
   // joint is chosen and we're asking which side.
   const [painPick, setPainPick] = useState<null | string>(null)
-  // Answers already saved on this set stay hidden while the coach is off; the
-  // rows themselves are untouched, so turning it back on brings them back.
-  const coachEnabled = useCoachEnabled()
 
   // Weight/reps can now be written from outside the row (the coach's "Use"
   // fills the next set), so mirror prop changes into the inputs — but never
@@ -1948,7 +1995,10 @@ function SetRow({
         )}
         <Select
           className="h-9 px-1"
-          value={set.effort != null ? String(set.effort) : ''}
+          aria-label={effortName(scale)}
+          value={
+            set.effort != null ? String(effortOptionValue(set.effort, scale)) : ''
+          }
           onChange={(e) => {
             const effort = e.target.value ? parseInt(e.target.value) : null
             // Rating a blank row that has a goal hint accepts the hint — the
@@ -1969,9 +2019,9 @@ function SetRow({
           }}
         >
           <option value="">–</option>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-            <option key={n} value={n}>
-              {n}
+          {effortOptions(scale).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
             </option>
           ))}
         </Select>
@@ -1984,7 +2034,6 @@ function SetRow({
         </button>
       </div>
       {!hold &&
-        coachEnabled &&
         (feedback || set.feel != null || set.pain != null) && (
         <div className="mt-1 pl-10 pr-7">
           <div className="flex flex-wrap items-center gap-1">

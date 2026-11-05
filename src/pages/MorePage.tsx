@@ -18,7 +18,10 @@ import {
   HeartPulse,
   Fingerprint,
   Sparkles,
+  Gauge,
 } from 'lucide-react'
+import { useEffortScale, useUpdateProfile } from '@/features/profile/useProfile'
+import type { EffortScale } from '@/lib/effort'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -75,6 +78,8 @@ export function MorePage() {
   const [exportMsg, setExportMsg] = useState<string | null>(null)
   const [theme, setTheme] = useTheme()
   const [chime, setChimeOn] = useState(getChime)
+  const effortScale = useEffortScale()
+  const updateProfile = useUpdateProfile()
   const [notify, setNotifyOn] = useState(() =>
     isNativeApp()
       ? getNotify()
@@ -280,6 +285,40 @@ export function MorePage() {
               onClick={toggleChime}
               label="Rest timer chime"
             />
+          </div>
+          <div className="flex items-center gap-3 p-4">
+            <Gauge className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Effort scale</p>
+              <p className="text-xs text-muted-foreground">
+                {effortScale === 'rir'
+                  ? 'Reps left before failure, with good form'
+                  : 'Rate each set 1 (easy) to 10 (max)'}
+              </p>
+            </div>
+            <div
+              role="group"
+              aria-label="Effort scale"
+              className="flex shrink-0 rounded-full bg-muted p-0.5"
+            >
+              {(['rpe', 'rir'] as EffortScale[]).map((s) => (
+                <button
+                  key={s}
+                  aria-pressed={effortScale === s}
+                  onClick={() =>
+                    s !== effortScale && updateProfile.mutate({ effort_scale: s })
+                  }
+                  className={cn(
+                    'rounded-full px-3 py-1 text-xs font-medium',
+                    effortScale === s
+                      ? 'bg-card text-primary shadow-sm'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  {s.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
           {(isNativeApp() || notifySupported()) && (
             <div className="flex items-center gap-3 p-4">

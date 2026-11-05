@@ -134,10 +134,12 @@ export interface Profile {
   // Per-intensity weekly cardio minutes goal (see CardioGoal). null = unset,
   // in which case weekly_cardio_min_target still applies.
   cardio_goal: CardioGoal | null
-  // Next-set coach opt-in (Coach pill on the workout page). false = the feedback
-  // chips, today's plan line, the last-session warning and the coach card are
-  // all hidden; saved feel/pain rows stay in the database either way.
+  // Legacy: the Coach pill that toggled this is gone and the coach is always on.
+  // The column stays (prod rows carry it) but nothing reads it any more.
   coach_enabled: boolean
+  // How set effort is shown and picked — RPE (1–10) or reps in reserve. Sets
+  // always store RPE; see lib/effort.ts.
+  effort_scale: 'rpe' | 'rir'
   // Rehab centre: open/resolved injuries, their plans, the rehab log and pain
   // check-ins (see RehabState). null/absent = nothing set up yet.
   rehab: RehabState | null

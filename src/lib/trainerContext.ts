@@ -306,6 +306,11 @@ export async function buildTrainerContext(
   const latestWeight = weights[0]
   if (latestWeight) bio.push(`${Math.round(latestWeight.value)} ${latestWeight.unit}`)
   if (bio.length) out.push(`Lifter: ${bio.join(', ')}.`)
+  // Sets below always carry RPE; an RIR user should hear their own scale back.
+  if (profile?.effort_scale === 'rir')
+    out.push(
+      'They rate effort in RIR (reps in reserve; RIR = 10 − RPE). Sets here show RPE — when you talk about effort, say it in RIR.',
+    )
 
   // Bodyweight direction over the logged window — one line, not 30 readings.
   if (weights.length >= 3) {

@@ -67,8 +67,11 @@ alter table public.profiles add column if not exists weekly_cardio_min_target in
 alter table public.profiles add column if not exists cardio_goal jsonb;
 -- Daily step goal (see migration_step_goal.sql). null = unset.
 alter table public.profiles add column if not exists step_goal integer;
--- Next-set coach opt-in (see migration_coach_enabled.sql). Off by default.
+-- Next-set coach opt-in (see migration_coach_enabled.sql). Legacy: the app no
+-- longer reads it — the coach is always on.
 alter table public.profiles add column if not exists coach_enabled boolean not null default false;
+-- Effort shown as RPE or RIR (see migration_effort_scale.sql). Sets store RPE.
+alter table public.profiles add column if not exists effort_scale text not null default 'rpe' check (effort_scale in ('rpe', 'rir'));
 -- Trainer chat memory (see migration_trainer_memory.sql). [] = nothing saved.
 alter table public.profiles add column if not exists trainer_memory jsonb not null default '[]'::jsonb;
 -- Pre-workout fuel timing (see migration_fuel_timing.sql). null = never used.

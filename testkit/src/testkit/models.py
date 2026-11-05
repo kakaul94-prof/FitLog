@@ -53,6 +53,7 @@ class Profile(Contract):
     cardio_goal: Json | None
     step_goal: int | None
     coach_enabled: bool
+    effort_scale: Literal["rpe", "rir"]
     trainer_memory: list[Json]
     fuel_timing: Json | None
     rehab: dict[str, Json]

@@ -1,4 +1,4 @@
-import type { FuelFeel, FuelTimingState, Nutrients } from './database.types'
+import type { DrinkHit, FuelDrink, FuelDrinkPrefs, FuelFeel, FuelTimingState, Nutrients } from './database.types'
 import { scaleNutrients, sumNutrients } from './nutrients'
 
 // Pre-workout fuel window: how long after eating to train, for COMFORT.
@@ -133,19 +133,36 @@ export function nextOffset(
   return clamp(offsetMin + step, -MAX_OFFSET_MIN, MAX_OFFSET_MIN)
 }
 
+/**
+ * Save the timed meal. `prefs` (your usual drink) is remembered whenever given;
+ * `drink` is today's drink with this meal, or null for none.
+ */
 export function rememberFuelMeal(
   state: FuelTimingState | null,
   ateAt: string,
   entryIds: string[],
   w: FuelWindow,
+  prefs?: FuelDrinkPrefs,
+  drink?: FuelDrink | null,
 ): FuelTimingState {
   return {
+    ...(state ?? {}),
     offsetMin: state?.offsetMin ?? 0,
     log: state?.log ?? [],
-    last: { ateAt, entryIds, kcal: Math.round(w.kcal), earliestMin: w.earliestMin, latestMin: w.latestMin },
+    ...(prefs ? { drink: prefs } : {}),
+    last: {
+      ateAt,
+      entryIds,
+      kcal: Math.round(w.kcal),
+      earliestMin: w.earliestMin,
+      latestMin: w.latestMin,
+      ...(drink ? { drink } : {}),
+    },
   }
 }
 
+// The meal stays pending while a drink you actually took is still unrated,
+// so both questions can be answered in either order.
 export function recordFuelFeedback(
   state: FuelTimingState | null,
   feel: FuelFeel,
@@ -153,9 +170,181 @@ export function recordFuelFeedback(
   date: string,
 ): FuelTimingState | null {
   if (!state?.last) return state
+  const drinkOpen = !!state.last.drink?.at && !state.last.drink.rated
   return {
+    ...state,
     offsetMin: nextOffset(state.offsetMin, feel, gapMin, state.last),
-    last: null,
+    last: drinkOpen ? { ...state.last, mealRated: true } : null,
     log: [...state.log, { date, feel, gapMin: Math.round(gapMin), kcal: state.last.kcal }].slice(-LOG_CAP),
+  }
+}
+
+// ── Pre-workout drink ────────────────────────────────────────────────────────
+// Caffeine peaks in the blood ~30–60 min after drinking. Food in the stomach
+// slows absorption (same total, later and flatter peak), so the lead grows
+// with how much of the meal is still there. Caffeine barely changes how fast
+// the meal empties, so the meal window itself is left alone. Liquid carbs
+// clear fast and top you up, so with enough of them the meal window's late
+// ("hungry/flat") end stops mattering. A stim plus a big drink on a still-full
+// stomach is a common nausea trigger: the plan never puts the drink there,
+// and a drink you actually took there gets a warning. Like the meal window,
+// these are comfort estimates, not a performance prescription.
+
+export const DRINK_LEAD_EMPTY_MIN = 25
+export const DRINK_LEAD_FED_MIN = 45
+/** How long the kick is treated as "on" once it lands. */
+export const KICK_SPAN_MIN = 45
+export const DRINK_STEP_MIN = 10
+export const MAX_DRINK_OFFSET_MIN = 30
+const DRINK_LEAD_FLOOR_MIN = 15
+const DRINK_LEAD_CAP_MIN = 75
+/** Past this share of the meal still in the stomach, it counts as full. */
+export const FULL_STOMACH_SHARE = 0.5
+export const CARB_TOPUP_G = 15
+/** Caffeine from this hour on gets the sleep note. */
+export const LATE_CAFFEINE_HOUR = 16
+export const CAFFEINE_HALF_LIFE_H = 5
+const MIN_OVERLAP_MIN = 10
+
+type WindowEdges = Pick<FuelWindow, 'earliestMin' | 'latestMin'>
+
+/**
+ * Share of the meal still in the stomach `min` minutes after eating (0–1):
+ * all of it at 0, half when the window opens, none when it closes, so it
+ * agrees with the window shown. Before the meal there's nothing there.
+ */
+export function stomachShare(w: WindowEdges, min: number): number {
+  if (min < 0) return 0
+  const { earliestMin: e, latestMin: l } = w
+  if (min <= e) return 1 - (0.5 * min) / e
+  return Math.max(0, 0.5 * (1 - (min - e) / (l - e)))
+}
+
+/** Minutes after eating when the stomach share falls to `share`. */
+function minAtShare(w: WindowEdges, share: number): number {
+  const { earliestMin: e, latestMin: l } = w
+  return share >= 0.5 ? (e * (1 - share)) / 0.5 : e + (l - e) * (1 - share / 0.5)
+}
+
+/** Drink → kick lead for a given stomach share, plus your personal offset. */
+export function drinkLead(share: number, offsetMin = 0): number {
+  const fed = Math.min(1, share / FULL_STOMACH_SHARE)
+  const base = round5(DRINK_LEAD_EMPTY_MIN + (DRINK_LEAD_FED_MIN - DRINK_LEAD_EMPTY_MIN) * fed)
+  return clamp(base + offsetMin, DRINK_LEAD_FLOOR_MIN, DRINK_LEAD_CAP_MIN)
+}
+
+export interface DrinkInput {
+  caffeineMg: number
+  carbG: number
+}
+
+export interface DrinkPlan {
+  /** All times in minutes after the meal. */
+  drinkMin: number
+  leadMin: number
+  kickStartMin: number
+  kickEndMin: number
+  /** Share of the meal still in the stomach at drink time, 0–1. */
+  stomachShare: number
+  /** Drank on a stomach more than half full. */
+  fullStomach: boolean
+  /** Enough carbs that training past the meal window is fine. */
+  topsUp: boolean
+  /** When to start: the kick, inside the meal window. null when they miss. */
+  startMin: [number, number] | null
+  /** Which way the kick misses the meal window, when it does. */
+  miss: 'early' | 'late' | null
+  reasons: string[]
+}
+
+/**
+ * Time the drink against the meal window `w`. With `drankMin` it's the drink
+ * you took; without, it's planned so the kick lands at the window's best time,
+ * but never on a still-full stomach or before `notBeforeMin` (now).
+ */
+export function drinkPlan(
+  w: FuelWindow,
+  drink: DrinkInput,
+  opts: { drankMin?: number | null; notBeforeMin?: number; offsetMin?: number } = {},
+): DrinkPlan {
+  const offset = opts.offsetMin ?? 0
+  const leadAt = (m: number) => drinkLead(stomachShare(w, m), offset)
+  let drinkMin: number
+  if (opts.drankMin != null) {
+    drinkMin = opts.drankMin
+  } else {
+    // The lead depends on when you drink, which depends on the lead: two
+    // passes settle it to the nearest 5 min.
+    const guess = w.bestMin - leadAt(w.bestMin - DRINK_LEAD_FED_MIN)
+    const aim = w.bestMin - leadAt(guess)
+    const floor = Math.max(minAtShare(w, FULL_STOMACH_SHARE), opts.notBeforeMin ?? -Infinity)
+    drinkMin = Math.ceil(Math.max(aim, floor) / 5) * 5
+  }
+  const share = stomachShare(w, drinkMin)
+  const leadMin = leadAt(drinkMin)
+  const kickStartMin = drinkMin + leadMin
+  const kickEndMin = kickStartMin + KICK_SPAN_MIN
+  const topsUp = drink.carbG >= CARB_TOPUP_G
+  const lo = Math.max(w.earliestMin, kickStartMin)
+  const hi = Math.min(topsUp ? kickEndMin : w.latestMin, kickEndMin)
+  const startMin: [number, number] | null = hi - lo >= MIN_OVERLAP_MIN ? [lo, hi] : null
+  const miss = startMin ? null : kickEndMin < w.earliestMin + MIN_OVERLAP_MIN ? 'early' : 'late'
+
+  const pct = Math.round(share * 100)
+  const reasons: string[] = []
+  if (share >= 0.4) {
+    reasons.push(`Meal still digesting (~${pct}% left), so it kicks in after ~${leadMin} min (empty stomach: ${DRINK_LEAD_EMPTY_MIN})`)
+  } else if (share > 0.1) {
+    reasons.push(`Meal mostly digested (~${pct}% left), so it kicks in after ~${leadMin} min`)
+  } else {
+    reasons.push(`Stomach about empty, so it kicks in fast: ~${leadMin} min`)
+  }
+  if (offset) reasons.push(`Drink timing tuned to your feedback: ${offset > 0 ? '+' : '−'}${Math.abs(offset)} min`)
+  if (drink.carbG > 0) {
+    reasons.push(
+      topsUp
+        ? `${Math.round(drink.carbG)} g carbs in the drink top you up, so training past the meal window is fine`
+        : `${Math.round(drink.carbG)} g carbs in the drink: a small top-up`,
+    )
+  }
+  return { drinkMin, leadMin, kickStartMin, kickEndMin, stomachShare: share, fullStomach: share > FULL_STOMACH_SHARE, topsUp, startMin, miss, reasons }
+}
+
+/** When to drink for a gentler stomach: once the meal is half gone. */
+export function gentleDrinkMin(w: WindowEdges): number {
+  return minAtShare(w, FULL_STOMACH_SHARE)
+}
+
+/**
+ * For caffeine from 4 pm on: when half of it is still in you (one half-life
+ * later), for the sleep note. null for earlier or caffeine-free drinks.
+ */
+export function lateCaffeine(drinkAt: Date, caffeineMg: number): Date | null {
+  if (caffeineMg <= 0 || drinkAt.getHours() < LATE_CAFFEINE_HOUR) return null
+  return new Date(drinkAt.getTime() + CAFFEINE_HALF_LIFE_H * 3_600_000)
+}
+
+// Only feedback that contradicts the lead moves it: "not yet" after waiting
+// the full lead = your kick comes slower; "fading" while it should still be
+// on = it comes faster.
+export function nextDrinkOffset(offsetMin: number, hit: DrinkHit, gapMin: number, leadMin: number): number {
+  let step = 0
+  if (hit === 'not-yet' && gapMin >= leadMin) step = DRINK_STEP_MIN
+  else if (hit === 'fading' && gapMin <= leadMin + KICK_SPAN_MIN) step = -DRINK_STEP_MIN
+  return clamp(offsetMin + step, -MAX_DRINK_OFFSET_MIN, MAX_DRINK_OFFSET_MIN)
+}
+
+/** Answer "how did the pre-workout hit"; `gapMin` = drink → workout start. */
+export function recordDrinkFeedback(
+  state: FuelTimingState | null,
+  hit: DrinkHit,
+  gapMin: number,
+): FuelTimingState | null {
+  const d = state?.last?.drink
+  if (!state?.last || !d?.at || d.rated) return state
+  return {
+    ...state,
+    drinkOffsetMin: nextDrinkOffset(state.drinkOffsetMin ?? 0, hit, gapMin, d.leadMin),
+    last: state.last.mealRated ? null : { ...state.last, drink: { ...d, rated: true } },
   }
 }

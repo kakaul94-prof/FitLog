@@ -42,6 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # Supabase's ports 54320-54329 sit in Linux's ephemeral range, so any outbound connection
+      # can land on 54322. Reserve them before a step opens one: a port already taken stays taken.
+      - name: Reserve Supabase ports
+        run: sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
       - name: Check the key is configured
         env:
           KEY: ${{ secrets.ANTHROPIC_API_KEY_EVALS }}
@@ -72,10 +76,7 @@ jobs:
         with:
           version: 2.118.0
       - name: Start test database
-        # Supabase ports 54320-54329 sit in Linux's ephemeral range; reserve them so an outbound socket can't take 54322 first.
-        run: |
-          sudo sysctl -w net.ipv4.ip_local_reserved_ports=54320-54329
-          supabase start
+        run: supabase start
       - name: Point the evals at the local stack
         run: bash api-tests/scripts/local-env.sh
 

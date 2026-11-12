@@ -8,6 +8,7 @@ import {
   requiredPace,
   sessionWarning,
   suggestNext,
+  nextSetTarget,
   suggestNextSet,
   weightForReps,
   workoutDurationMin,
@@ -100,12 +101,32 @@ describe('suggestNextSet — within-session coach', () => {
     expect(s.weightLb).toBe(180)
   })
 
+  // 195 × 13 at RPE 10 against an 8-rep template used to come out 175 × 8:
+  // a 10% load cut AND a 5-rep cut, which left the next set far too easy.
+  it('keeps the reps just done when a back-off set beat its target', () => {
+    const s = suggestNextSet(
+      { weight_lb: 195, reps: 13, effort: 10 },
+      { fallbackReps: 8 },
+    )!
+    expect(s).toMatchObject({ action: 'backoff', weightLb: 175, reps: 13 })
+    expect(s.headline).toBe('175 × 13')
+  })
+
+  it('keeps the reps on an RPE 9 back-off past the top of a goal range', () => {
+    const s = suggestNextSet({ weight_lb: 100, reps: 12, effort: 9 }, {
+      goal: makeGoal({ method: 'double' }),
+    })!
+    expect(s).toMatchObject({ action: 'backoff', weightLb: 95, reps: 12 })
+  })
+
   it('backs off ~10% when reps fall 2+ short', () => {
     const s = suggestNextSet({ weight_lb: 200, reps: 3, effort: 8 }, {
       goal: makeGoal(),
     })!
     expect(s.action).toBe('backoff')
     expect(s.weightLb).toBe(180)
+    // Short of the target, so it still aims for the target, not the 3 done.
+    expect(s.reps).toBe(5)
     expect(s.rationale).toContain('2 reps short')
   })
 
@@ -162,6 +183,31 @@ describe('suggestNextSet — within-session coach', () => {
     })!
     expect(s.action).toBe('increase')
     expect(s).toMatchObject({ weightLb: 105, reps: 5 })
+  })
+
+  it('runs back the reps just done when a held set beat its target', () => {
+    const s = suggestNextSet(
+      { weight_lb: 195, reps: 13, effort: 8 },
+      { fallbackReps: 8 },
+    )!
+    expect(s).toMatchObject({ action: 'hold', weightLb: 195, reps: 13 })
+    expect(s.headline).toBe('195 × 13')
+  })
+
+  it('keeps the reps on a form-off hold past the target', () => {
+    const s = suggestNextSet(
+      { weight_lb: 195, reps: 13, effort: 7, feel: 'off' },
+      { fallbackReps: 8 },
+    )!
+    expect(s).toMatchObject({ action: 'hold', weightLb: 195, reps: 13, caution: true })
+  })
+
+  it('still resets to the target when it adds weight', () => {
+    const s = suggestNextSet(
+      { weight_lb: 195, reps: 13, effort: 6 },
+      { fallbackReps: 8 },
+    )!
+    expect(s).toMatchObject({ action: 'increase', weightLb: 200, reps: 8 })
   })
 
   it('holds an RPE 7–8 set that hit its reps', () => {
@@ -543,5 +589,18 @@ describe('estimateRoutineMinutes', () => {
   })
   it('is null with neither history nor template sets', () => {
     expect(estimateRoutineMinutes([], [])).toBeNull()
+  })
+})
+
+describe('nextSetTarget', () => {
+  it('reads the top of a double-progression range, the bottom otherwise', () => {
+    expect(nextSetTarget(13, { goal: makeGoal({ method: 'double' }) })).toBe(8)
+    expect(nextSetTarget(13, { goal: makeGoal() })).toBe(5)
+  })
+
+  it('prefers a goal over the template, then the template over the set', () => {
+    expect(nextSetTarget(13, { goal: makeGoal(), fallbackReps: 10 })).toBe(5)
+    expect(nextSetTarget(13, { fallbackReps: 8 })).toBe(8)
+    expect(nextSetTarget(13)).toBe(13)
   })
 })

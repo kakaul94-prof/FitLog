@@ -346,6 +346,32 @@ export interface NextSetContext {
   scale?: EffortScale
 }
 
+/**
+ * The rep count the next-set rules measure a set against. Double progression
+ * chases the top of the goal's range before adding load; linear (and 5/3/1's
+ * fallback) works off the bottom. No goal → `fallbackReps` (the template's
+ * target), else the reps just done.
+ */
+export function nextSetTarget(reps: number, ctx: NextSetContext = {}): number {
+  const goal = ctx.goal ?? null
+  if (goal) return goal.method === 'double' ? goal.rep_high : goal.rep_low
+  return Math.max(1, ctx.fallbackReps ?? reps)
+}
+
+/**
+ * `suggestNextSet`'s rules in words, for the trainer when you tap "Ask why" —
+ * so it explains the rule that fired instead of guessing at one. Keep in step
+ * with the function below.
+ */
+export const NEXT_SET_RULES =
+  'first match wins — pain: stop the exercise (or ~30% lighter to continue); ' +
+  'RPE 10: ~10% lighter; 2+ reps short of the target: ~10% lighter; ' +
+  'RPE 9 or 1 rep short: ~5% lighter; form off: hold the load; ' +
+  'RPE 6 or easier with the target hit: add the increment; otherwise hold. ' +
+  'Back-offs and holds keep the reps just done when they beat the target, else aim for the target; ' +
+  'adding weight resets to the target. ' +
+  'A 5/3/1 goal follows its wave instead; only pain and RPE 10 interrupt it.'
+
 const COACH_SOURCE = 'RPE autoregulation — Helms et al., RTS'
 // Pain isn't a training signal to autoregulate around, so its rule cites itself.
 const PAIN_SOURCE = 'Pain flag — train around it, not through it'
@@ -401,13 +427,7 @@ export function suggestNextSet(
 
   const goal = ctx.goal ?? null
   const inc = goal?.increment_lb ?? 5
-  // Double progression chases the top of the range before adding load; linear
-  // (and 5/3/1's fallback) works off the bottom. No goal → the template's target.
-  const target = goal
-    ? goal.method === 'double'
-      ? goal.rep_high
-      : goal.rep_low
-    : Math.max(1, ctx.fallbackReps ?? reps)
+  const target = nextSetTarget(reps, ctx)
   const e = last.effort ?? null
   const eff = (rpe: number) => effortText(rpe, ctx.scale ?? 'rpe')
   const missedBy = Math.max(0, target - reps)
@@ -418,7 +438,10 @@ export function suggestNextSet(
 
   const backoff = (pct: number, why: string): NextSetSuggestion => {
     const weightLb = bw ? null : lighter(pct)
-    const r = bw ? fewer(pct >= 0.1 ? 2 : 1) : target
+    // Keep the reps you just did when they beat the target — the lighter load
+    // IS the back-off. Dropping to the target as well stacked two cuts: 195 × 13
+    // at RPE 10 against an 8-rep template came out 175 × 8.
+    const r = bw ? fewer(pct >= 0.1 ? 2 : 1) : Math.max(target, reps)
     return {
       weightLb,
       reps: r,
@@ -464,11 +487,13 @@ export function suggestNextSet(
 
   if (last.feel === 'off') {
     const weightLb = bw ? null : weight
+    // A hold repeats the set — the reps you did, not a lower target.
+    const r = bw ? reps : Math.max(target, reps)
     return {
       weightLb,
-      reps: bw ? reps : target,
+      reps: r,
       action: 'hold',
-      headline: headlineFor(weightLb, bw ? reps : target),
+      headline: headlineFor(weightLb, r),
       rationale: bw
         ? 'Form went off on that set — hold these reps until it feels clean.'
         : `Form went off on that set — hold ${weight} lb, no added load until it's clean.`,
@@ -493,7 +518,9 @@ export function suggestNextSet(
   }
 
   const weightLb = bw ? null : weight
-  const r = bw ? reps : target
+  // "Run it back" means the same set: 195 × 13 at RPE 8 against an 8-rep
+  // template used to come out 195 × 8.
+  const r = bw ? reps : Math.max(target, reps)
   return {
     weightLb,
     reps: r,

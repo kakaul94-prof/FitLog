@@ -8,6 +8,7 @@ import {
   EXERCISE_OVERRIDE,
   TAG_CONTRIB,
   NAME_CONTRIB,
+  NAME_PATTERNS,
   DEFAULT_GOALS,
   contribForTag,
   resolveGoals,
@@ -112,7 +113,8 @@ describe('muscle-volume mapping', () => {
   })
 
   it('uses only valid region ids with positive weights', () => {
-    const maps = { TAG_CONTRIB, EXERCISE_OVERRIDE, NAME_CONTRIB }
+    const PATTERNS = Object.fromEntries(NAME_PATTERNS.map(([re, c]) => [re.source, c]))
+    const maps = { TAG_CONTRIB, EXERCISE_OVERRIDE, NAME_CONTRIB, PATTERNS }
     for (const [mapName, map] of Object.entries(maps)) {
       for (const [entry, contrib] of Object.entries(map)) {
         for (const [region, weight] of Object.entries(contrib)) {
@@ -148,6 +150,36 @@ describe('muscle-volume mapping', () => {
         resolveContrib(e.key, e.name, new Map()),
         `${e.key} (${e.muscle})`,
       ).toBeUndefined()
+  })
+
+  // Any chin-up spelling counts lats + biceps as primary and upper back as ½,
+  // even a custom tagged only "Biceps" (the MyFitnessPal import's label).
+  it('maps every chin-up name to lats + biceps, upper back ½', () => {
+    const chinUp = { lats: 1, biceps: 1, upper_back: 0.5 }
+    const tags = new Map([['custom:x', 'Biceps']])
+    expect(resolveContrib('chin_up', 'Chin-Up', new Map())).toEqual(chinUp)
+    for (const name of [
+      'Chin Up (Biceps)',
+      'Chin Ups',
+      'Chin-ups',
+      'Chinups',
+      'Weighted Chin-Up',
+      'Band Assisted Chin Up (Back)',
+      'Neutral Grip Chin Ups',
+    ])
+      expect(resolveContrib('custom:x', name, tags), name).toEqual(chinUp)
+    // Not a chin-up: tag fallback still applies.
+    expect(resolveContrib('custom:x', 'Chinese Curl', tags)).toEqual(TAG_CONTRIB.Biceps)
+  })
+
+  it('credits rear delts on cable/chest-supported rows, no hams on back squat', () => {
+    const row = { upper_back: 1, lats: 0.5, biceps: 0.5, rear_delts: 0.5 }
+    expect(resolveContrib('seated_cable_row', 'Seated Cable Row', new Map())).toEqual(row)
+    expect(resolveContrib('seated_cable_row', 'Low Row (Back)', new Map())).toEqual(row)
+    expect(resolveContrib('chest_supported_row', 'Chest-Supported Row', new Map())).toEqual(row)
+    const squat = { quads: 1, glutes: 0.5 }
+    expect(resolveContrib('back_squat', 'Back Squat', new Map())).toEqual(squat)
+    expect(resolveContrib('back_squat', 'Squat', new Map())).toEqual(squat)
   })
 
   it('resolves muscle tags tolerant of synonyms and casing', () => {

@@ -149,6 +149,19 @@ export function contribForTag(
   return canonical ? TAG_CONTRIB[canonical] : undefined
 }
 
+// Chin-up: lats + biceps lead, upper back assists. Surface EMG (Youdas et al.
+// 2010, J Strength Cond Res 24(12):3404-14, PMID 21068680): lats highest at
+// 117-130 %MVIC, biceps next at 78-96 % and higher than in the pull-up.
+const CHIN_UP: Partial<Record<RegionId, number>> = { lats: 1, biceps: 1, upper_back: 0.5 }
+
+// Name patterns for lifts logged under many spellings ("Chin Up (Biceps)",
+// "Weighted Chin-Ups", "Band Assisted Chin Up", "Chinups"), matched on the
+// normalized name. Checked after EXERCISE_OVERRIDE and before NAME_CONTRIB, so
+// any name containing the lift wins over a coarse muscle tag.
+export const NAME_PATTERNS: [RegExp, Partial<Record<RegionId, number>>][] = [
+  [/\bchin ?ups?\b/, CHIN_UP],
+]
+
 // Per-exercise overrides keyed by built-in exercise_key (takes priority over
 // the tag). Covers built-ins + the many imported lifts that alias to a built-in
 // key (see scripts/import-workouts.mjs BUILTIN_ALIASES).
@@ -158,18 +171,20 @@ export const EXERCISE_OVERRIDE: Record<string, Partial<Record<RegionId, number>>
   dip: { chest: 1, triceps: 1, shoulders: 0.5 },
   // back — pulls
   pull_up: { lats: 1, biceps: 0.5, upper_back: 0.5 },
-  chin_up: { lats: 1, biceps: 1 },
+  chin_up: CHIN_UP,
   lat_pulldown: { lats: 1, biceps: 0.5 },
   barbell_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
   db_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
-  seated_cable_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
-  chest_supported_row: { upper_back: 1, lats: 0.5, biceps: 0.5 },
+  seated_cable_row: { upper_back: 1, lats: 0.5, biceps: 0.5, rear_delts: 0.5 },
+  chest_supported_row: { upper_back: 1, lats: 0.5, biceps: 0.5, rear_delts: 0.5 },
   face_pull: { rear_delts: 1, upper_back: 0.5 },
   // posterior chain
   deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5, upper_back: 0.5 },
   romanian_deadlift: { hams: 1, glutes: 1, erector_spinae: 0.5 },
   cable_pull_through: { glutes: 1, hams: 0.5 },
-  // legs
+  // legs — squats barely load the hamstrings, so no hams credit (the "Legs"
+  // tag would add hams ½)
+  back_squat: { quads: 1, glutes: 0.5 },
   front_squat: { quads: 1, glutes: 0.5 },
   belt_squat: { quads: 1, glutes: 0.5 },
   goblet_squat: { quads: 1, glutes: 0.5 },
@@ -205,7 +220,6 @@ export const NAME_CONTRIB: Record<string, Partial<Record<RegionId, number>>> = {
   'neutral grip pull ups': { lats: 1, biceps: 0.5, upper_back: 0.5, forearm: 0.5, rear_delts: 0.5 },
   'band assisted pull up': { lats: 1, biceps: 0.5, upper_back: 0.5 },
   'assisted pull ups': { lats: 1, biceps: 0.5, upper_back: 0.5 },
-  'band assisted chin up': { lats: 1, biceps: 1 },
   'underhand lat pull down': { lats: 1, biceps: 0.5 },
   'wide grip lat pulldown': { lats: 1, upper_back: 0.5 },
   'straight arm pull down': { lats: 1 },
@@ -380,10 +394,10 @@ export function volumeStatus(sets: number, goal: number): string {
 }
 
 /** Resolve one exercise's fractional muscle-region contribution, in priority
- *  order: per-key override → normalized-name match → tag (a built-in's muscle,
- *  or a custom exercise's `muscle`). undefined = unmapped. Shared by logged
- *  volume (useMuscleVolume) and planned volume (the program). `customTag` maps
- *  `custom:<id>` → its muscle. */
+ *  order: per-key override → name pattern → normalized-name match → tag (a
+ *  built-in's muscle, or a custom exercise's `muscle`). undefined = unmapped.
+ *  Shared by logged volume (useMuscleVolume) and planned volume (the program).
+ *  `customTag` maps `custom:<id>` → its muscle. */
 export function resolveContrib(
   exerciseKey: string,
   exerciseName: string | null,
@@ -393,8 +407,9 @@ export function resolveContrib(
   const tag = exerciseKey.startsWith('custom:')
     ? customTag.get(exerciseKey) ?? null
     : BUILTIN_TAG[exerciseKey] ?? null
-  const nameContrib = exerciseName
-    ? NAME_CONTRIB[normalizeExerciseName(exerciseName)]
+  const norm = exerciseName ? normalizeExerciseName(exerciseName) : null
+  const nameContrib = norm
+    ? NAME_PATTERNS.find(([re]) => re.test(norm))?.[1] ?? NAME_CONTRIB[norm]
     : undefined
   return EXERCISE_OVERRIDE[exerciseKey] ?? nameContrib ?? contribForTag(tag)
 }

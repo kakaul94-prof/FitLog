@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { Check, RotateCcw, SwitchCamera, X } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { useBlocker, useNavigate, useParams } from 'react-router-dom'
+import { Check, SwitchCamera, Trash2, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import {
   MAX_CLIPS,
@@ -68,6 +71,13 @@ export function FormRecordPage() {
   const recRef = useRef<MediaRecorder | null>(null)
   const timerRef = useRef<number | null>(null)
   const startRef = useRef(0)
+
+  // An unsaved take lives only in memory, so ✕, Android back and Discard all
+  // confirm before throwing it away. skipGuard lets save-and-exit through.
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const skipGuard = useRef(false)
+  const hasTake = phase === 'recording' || (phase === 'review' && !!clip)
+  const blocker = useBlocker(() => hasTake && !upload.isPending && !skipGuard.current)
 
   const clearTimer = () => {
     if (timerRef.current != null) window.clearInterval(timerRef.current)
@@ -177,6 +187,11 @@ export function FormRecordPage() {
     if (recRef.current?.state === 'recording') recRef.current.stop()
   }
 
+  // Leaving mid-recording: stop first so "Keep video" lands on the review.
+  useEffect(() => {
+    if (blocker.state === 'blocked' && phase === 'recording') stopRecording()
+  }, [blocker.state, phase])
+
   const onShutter = () => {
     if (phase === 'recording') return stopRecording()
     if (phase === 'countdown') {
@@ -195,7 +210,9 @@ export function FormRecordPage() {
     }, 1000)
   }
 
-  const retake = () => {
+  const discard = () => {
+    setConfirmDiscard(false)
+    setReplacing(false)
     setClip(null)
     upload.reset()
     setPhase('ready')
@@ -206,9 +223,47 @@ export function FormRecordPage() {
     if (!replace_id && clips.length >= MAX_CLIPS) return setReplacing(true)
     upload.mutate(
       { exercise_key: key, file: clip.file, duration_sec: clip.sec, replace_id },
-      { onSuccess: () => nav(-1) },
+      {
+        onSuccess: () => {
+          skipGuard.current = true
+          nav(-1)
+        },
+      },
     )
   }
+
+  const leaving = blocker.state === 'blocked'
+  const discardPrompt = (leaving || confirmDiscard) && createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-6">
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="discard-title"
+        className="w-full max-w-xs"
+      >
+        <CardContent className="space-y-3 p-4">
+          <p id="discard-title" className="text-sm font-medium">
+            Discard this video?
+          </p>
+          <p className="text-xs text-muted-foreground">It hasn't been saved.</p>
+          <Button
+            className="w-full"
+            onClick={() => (leaving ? blocker.reset() : setConfirmDiscard(false))}
+          >
+            Keep video
+          </Button>
+          <Button
+            variant="destructive"
+            className="w-full"
+            onClick={() => (leaving ? blocker.proceed() : discard())}
+          >
+            <Trash2 className="h-4 w-4" /> Discard
+          </Button>
+        </CardContent>
+      </Card>
+    </div>,
+    document.body,
+  )
 
   const fmt = (s: number) => `0:${String(s).padStart(2, '0')}`
 
@@ -274,11 +329,11 @@ export function FormRecordPage() {
         <div className="space-y-2 px-3 pt-4 pb-5">
           <div className="grid grid-cols-2 gap-3">
             <button
-              className="flex items-center justify-center gap-2 rounded-lg border border-white/30 py-2.5"
-              onClick={retake}
+              className="flex items-center justify-center gap-2 rounded-lg border border-white/30 py-2.5 disabled:opacity-60"
+              onClick={() => setConfirmDiscard(true)}
               disabled={upload.isPending}
             >
-              <RotateCcw className="h-4 w-4" /> Retake
+              <Trash2 className="h-4 w-4" /> Discard
             </button>
             <button
               className="flex items-center justify-center gap-2 rounded-lg bg-primary py-2.5 font-medium text-primary-foreground disabled:opacity-60"
@@ -339,6 +394,7 @@ export function FormRecordPage() {
           </div>
         </div>
       )}
+      {discardPrompt}
     </div>
   )
 }

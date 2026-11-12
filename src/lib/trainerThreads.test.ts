@@ -49,11 +49,22 @@ describe('asHistory', () => {
       { role: 'assistant', content: 'yo' },
     ])
   })
+
+  it("never resends a question's coach-card tag", () => {
+    const asked: ChatBubble = { ...q('why?'), attachment: 'Coach card: Row → 175 × 13' }
+    expect(asHistory([asked])).toEqual([{ role: 'user', content: 'why?' }])
+  })
 })
 
 describe('parseThreads', () => {
   it('round-trips saved threads', () => {
     const threads = { general: { bubbles: [q('hi'), a('yo')], updatedAt: 5 } }
+    expect(parseThreads(JSON.stringify(threads))).toEqual(threads)
+  })
+
+  it('keeps the coach-card tag on a reopened question', () => {
+    const asked: ChatBubble = { ...q('why?'), attachment: 'Coach card: Row → 175 × 13' }
+    const threads = { 'workout:w1': { bubbles: [asked, a('because')], updatedAt: 5 } }
     expect(parseThreads(JSON.stringify(threads))).toEqual(threads)
   })
 

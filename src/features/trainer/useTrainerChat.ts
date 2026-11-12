@@ -94,7 +94,12 @@ export function useTrainerThread(key: string): ThreadState {
 export async function askInThread(
   key: string,
   question: string,
-  opts: { getContext: () => Promise<string>; memory: string[] },
+  opts: {
+    getContext: () => Promise<string>
+    memory: string[]
+    /** Tag shown above this question (see ChatBubble.attachment). */
+    attachment?: string
+  },
 ) {
   const text = question.trim()
   const thread = getThread(key)
@@ -106,7 +111,11 @@ export async function askInThread(
   ].slice(-MAX_SENT_TURNS)
   update(key, (t) => ({
     busy: true,
-    bubbles: [...t.bubbles, { role: 'user', content: text }, { role: 'assistant', content: '' }],
+    bubbles: [
+      ...t.bubbles,
+      { role: 'user', content: text, ...(opts.attachment && { attachment: opts.attachment }) },
+      { role: 'assistant', content: '' },
+    ],
   }))
 
   const controller = new AbortController()

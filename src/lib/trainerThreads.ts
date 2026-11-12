@@ -10,6 +10,9 @@ export interface ChatBubble extends TrainerTurn {
   remember?: string | null
   /** Assistant turn that failed — shown as a warning, never saved or resent. */
   error?: boolean
+  /** User turn sent with a coach card ("Ask why"): the tag shown above it,
+   *  e.g. "Coach card: Seated Row → 175 × 13". Display only — never resent. */
+  attachment?: string
 }
 
 export interface StoredThread {

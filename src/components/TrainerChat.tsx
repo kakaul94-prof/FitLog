@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Brain, Plus, Send, Square, SquarePen } from 'lucide-react'
+import { Brain, Paperclip, Plus, Send, Square, SquarePen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { buildTrainerContext } from '@/lib/trainerContext'
 import { useAddTrainerFact, useTrainerMemory } from '@/features/trainer/useTrainerMemory'
@@ -44,12 +44,16 @@ export function TrainerChat({
   workoutId,
   thread,
   initialDraft,
+  coachCard,
 }: {
   workoutId?: string
   /** Saved conversation to show and add to (see useTrainerChat for keys). */
   thread?: string
   /** Pre-filled question (the pre-workout check-in's "Ask trainer"). */
   initialDraft?: string
+  /** The coach card behind an "Ask why": `note` goes into the snapshot, and
+   *  `label` tags the question it's sent with, so you can see it was shared. */
+  coachCard?: CoachCardRef
 }) {
   const memory = useTrainerMemory()
   const { add: addFact } = useAddTrainerFact()
@@ -59,6 +63,9 @@ export function TrainerChat({
   const { bubbles, busy } = useTrainerThread(key)
   const [draft, setDraft] = useState(initialDraft ?? '')
   const [saved, setSaved] = useState<string | null>(null)
+  // The coach card's tag waits above the composer until the first question
+  // goes, then rides on that question. It stays in the snapshot after that.
+  const [cardPending, setCardPending] = useState(!!coachCard)
 
   // The training snapshot is a handful of queries, built on the first question
   // after each open — so a reopened workout chat sees the sets logged since.
@@ -79,12 +86,17 @@ export function TrainerChat({
   const send = (question: string) => {
     if (!question.trim() || busy) return
     setDraft('')
+    setCardPending(false)
     void askInThread(key, question, {
       memory: memory.map((f) => f.text),
+      attachment: cardPending ? coachCard?.label : undefined,
       getContext: async () => {
         if (contextRef.current == null) {
           try {
-            contextRef.current = await buildTrainerContext({ workoutId })
+            contextRef.current = await buildTrainerContext({
+              workoutId,
+              coachCard: coachCard?.note,
+            })
           } catch {
             // A failed snapshot shouldn't block the question — the endpoint
             // says so in the prompt and answers generally.
@@ -138,6 +150,7 @@ export function TrainerChat({
           <div className="flex flex-col gap-3">
             {bubbles.map((b, i) => (
               <div key={i}>
+                {b.attachment && <CardTag label={b.attachment} className="mb-1 justify-end" />}
                 <div
                   className={cn(
                     'w-fit max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm',
@@ -178,6 +191,9 @@ export function TrainerChat({
       </div>
 
       <div className="border-t border-border bg-background px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+        {cardPending && coachCard && (
+          <CardTag label={coachCard.label} className="mb-2" />
+        )}
         <div className="flex items-end gap-2">
           <textarea
             rows={1}
@@ -241,6 +257,24 @@ export function NewChatButton({ thread }: { thread: string }) {
     >
       <SquarePen className="h-5 w-5" />
     </Button>
+  )
+}
+
+/** What an "Ask why" hands the chat: the snapshot note and its one-line tag. */
+export interface CoachCardRef {
+  note: string
+  label: string
+}
+
+/** Paperclip + "Coach card: Seated Row → 175 × 13": the trainer was given it. */
+function CardTag({ label, className }: { label: string; className?: string }) {
+  return (
+    <div
+      className={cn('flex items-center gap-1 text-[11px] text-muted-foreground', className)}
+    >
+      <Paperclip className="h-3 w-3 shrink-0" aria-hidden />
+      <span>{label}</span>
+    </div>
   )
 }
 

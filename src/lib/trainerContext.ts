@@ -125,8 +125,10 @@ function paceVsGoal(
 
 export async function buildTrainerContext(
   /** `workoutId` = the chat was opened from inside a live workout, which adds a
-   *  "right now" section and tells the model to keep answers short. */
-  opts: { workoutId?: string } = {},
+   *  "right now" section and tells the model to keep answers short.
+   *  `coachCard` = the next-set coach card behind an "Ask why" (its advice,
+   *  reason and rules), placed right after that section. */
+  opts: { workoutId?: string; coachCard?: string } = {},
 ): Promise<string> {
   const today = todayISO()
   const liftSince = addDaysISO(today, -LIFT_WINDOW_DAYS)
@@ -251,16 +253,63 @@ export async function buildTrainerContext(
   // the endpoint's context cap.
   if (opts.workoutId) {
     const current = workouts.find((w) => w.id === opts.workoutId)
-    const { data: wexData } = await supabase
-      .from('workout_exercises')
-      .select('exercise_key,exercise_name,position')
-      .eq('workout_id', opts.workoutId)
-      .order('position')
+    const [{ data: wexData }, { data: srcData }] = await Promise.all([
+      supabase
+        .from('workout_exercises')
+        .select('exercise_key,exercise_name,position')
+        .eq('workout_id', opts.workoutId)
+        .order('position'),
+      supabase
+        .from('workouts')
+        .select('source_routine_id')
+        .eq('id', opts.workoutId)
+        .maybeSingle(),
+    ])
     const planned = (wexData ?? []) as {
       exercise_key: string
       exercise_name: string
       position: number
     }[]
+
+    // The template's sets × reps for each lift, so "should I add a set?" and
+    // the coach's rep target have something to stand on. Its own query: a
+    // workout started blank has no template, and a failure just drops targets.
+    const targetByKey = new Map<string, string>()
+    const routineId = (srcData as { source_routine_id: string | null } | null)
+      ?.source_routine_id
+    if (routineId) {
+      const { data } = await supabase
+        .from('routine_exercises')
+        .select('exercise_key,target_sets,target_reps')
+        .eq('routine_id', routineId)
+      for (const r of (data ?? []) as {
+        exercise_key: string
+        target_sets: number | null
+        target_reps: number | null
+      }[])
+        if (r.target_reps != null)
+          targetByKey.set(
+            r.exercise_key,
+            r.target_sets ? `${r.target_sets}x${r.target_reps}` : `${r.target_reps} reps`,
+          )
+    }
+    const goalByKey = new Map(
+      goals.filter((g) => !g.achieved_at).map((g) => [g.exercise_key, g] as const),
+    )
+    // "[template 3x8; goal 8-12 reps]" — what today's plan asks of a lift.
+    const planFor = (key: string): string => {
+      const parts: string[] = []
+      const t = targetByKey.get(key)
+      if (t) parts.push(`template ${t}`)
+      const g = goalByKey.get(key)
+      if (g)
+        parts.push(
+          g.rep_low === g.rep_high
+            ? `goal ${g.rep_low} reps`
+            : `goal ${g.rep_low}-${g.rep_high} reps`,
+        )
+      return parts.length ? ` [${parts.join('; ')}]` : ''
+    }
 
     const todaySets = working.filter((s) => s.workout_id === opts.workoutId)
     const doneByKey = new Map<string, SetRow[]>()
@@ -285,8 +334,10 @@ export async function buildTrainerContext(
     const todo: string[] = []
     for (const ex of order) {
       const rows = doneByKey.get(ex.exercise_key)
-      if (rows?.length) done.push(`    ${ex.exercise_name}: ${describeSets(rows)}`)
-      else todo.push(ex.exercise_name)
+      const plan = planFor(ex.exercise_key)
+      if (rows?.length)
+        done.push(`    ${ex.exercise_name}${plan}: ${describeSets(rows)}`)
+      else todo.push(`${ex.exercise_name}${plan}`)
     }
     lines.push(
       done.length
@@ -296,6 +347,8 @@ export async function buildTrainerContext(
     if (todo.length) lines.push(`Still to do on today's list: ${todo.join(', ')}.`)
     out.push(lines.join('\n'))
   }
+  // Right behind the live workout: it's what the question is about.
+  if (opts.coachCard) out.push(opts.coachCard)
 
   // --- Who they are -------------------------------------------------------
   const bio: string[] = []

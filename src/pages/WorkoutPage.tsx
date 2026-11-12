@@ -40,7 +40,7 @@ import { flagsLabel } from '@/lib/checkin'
 import { lastActivity, recoveryPingAt } from '@/lib/recovery'
 import { scheduleRecoveryCheck } from '@/lib/reminders'
 import { PageHeader } from '@/components/layout/PageHeader'
-import { NewChatButton, TrainerChat } from '@/components/TrainerChat'
+import { NewChatButton, TrainerChat, type CoachCardRef } from '@/components/TrainerChat'
 import { workoutThread } from '@/features/trainer/useTrainerChat'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -103,7 +103,9 @@ import {
 import { zoneColor } from '@/data/zones'
 import { estimated1RM, warmupRamp } from '@/lib/calc'
 import {
+  NEXT_SET_RULES,
   PROGRESSION_LABEL,
+  nextSetTarget,
   suggestNextSet,
   type NextSetSuggestion,
   type Suggestion,
@@ -125,6 +127,7 @@ import { cn } from '@/lib/utils'
 import { reorderMoves } from '@/lib/reorder'
 import type {
   RoutineExercise,
+  StrengthGoal,
   WorkoutExercise,
   WorkoutSet,
 } from '@/lib/database.types'
@@ -192,8 +195,13 @@ export function WorkoutPage() {
   // A coach card's "Ask why" opens the chat with its question typed in (not
   // sent — nothing is spent until you tap send); the header button opens it blank.
   const [askDraft, setAskDraft] = useState<string>()
-  const openAsk = useCallback((draft?: string) => {
+  // ...and hands the trainer what that card said and why, in its data snapshot
+  // (a one-line tag on the question shows it went), so it explains the coach's
+  // rule instead of guessing.
+  const [askCard, setAskCard] = useState<CoachCardRef>()
+  const openAsk = useCallback((draft?: string, card?: CoachCardRef) => {
     setAskDraft(draft)
+    setAskCard(card)
     setAskOpen(true)
   }, [])
   const updateWorkout = useUpdateWorkout()
@@ -962,6 +970,7 @@ export function WorkoutPage() {
               workoutId={workout?.id}
               thread={id ? workoutThread(id) : undefined}
               initialDraft={askDraft}
+              coachCard={askCard}
             />
           </div>,
           document.body,
@@ -1035,7 +1044,9 @@ export function WorkoutPage() {
 // Lets any exercise card (standalone or inside a superset block) open the
 // workout's trainer chat with a question pre-filled, without threading a prop
 // through SupersetBlock.
-const AskTrainerContext = createContext<(draft?: string) => void>(() => {})
+const AskTrainerContext = createContext<
+  (draft?: string, card?: CoachCardRef) => void
+>(() => {})
 
 // Start/Done control + clock window, shared by a standalone exercise and a
 // whole superset block. Start stamps the begin time; Done (toggle) stamps/clears
@@ -1499,23 +1510,33 @@ function ExerciseCard({
   const scale = useEffortScale()
   const openAsk = useContext(AskTrainerContext)
   const lastDone = lastDoneIdx >= 0 ? sets[lastDoneIdx] : null
-  const coach =
-    lastDone && !done
-      ? suggestNextSet(lastDone, {
-          goal: goalMap?.get(ex.exercise_key) ?? null,
-          fallbackReps:
-            routineTargets?.get(ex.exercise_key) ?? sets[0]?.reps ?? null,
-          setsDone: lastDoneIdx + 1,
-          scale,
-        })
-      : null
+  const goal = goalMap?.get(ex.exercise_key) ?? null
+  const templateReps = routineTargets?.get(ex.exercise_key)
+  const coachCtx = {
+    goal,
+    fallbackReps: templateReps ?? sets[0]?.reps ?? null,
+    setsDone: lastDoneIdx + 1,
+    scale,
+  }
+  const coach = lastDone && !done ? suggestNextSet(lastDone, coachCtx) : null
   // "Ask why" only where the advice changes course — a back-off, a stop, or a
   // form hold. Routine holds and load increases stay quiet.
   const askWhy =
     coach &&
     lastDone &&
     (coach.action === 'backoff' || coach.action === 'stop' || coach.caution)
-      ? () => openAsk(askWhyDraft(ex.exercise_name, lastDone, coach, scale))
+      ? () =>
+          openAsk(
+            askWhyDraft(ex.exercise_name, lastDone, coach, scale),
+            {
+              note: askWhyNote(ex.exercise_name, lastDone, coach, scale, {
+                reps: nextSetTarget(lastDone.reps ?? 0, coachCtx),
+                goal,
+                fromTemplate: templateReps != null,
+              }),
+              label: `Coach card: ${ex.exercise_name} → ${coach.headline}`,
+            },
+          )
       : undefined
 
   // Load the suggestion into the next row: the first empty one after the set it
@@ -1853,6 +1874,14 @@ function askWhyDraft(
   s: NextSetSuggestion,
   scale: EffortScale,
 ): string {
+  const set = loggedSetText(last, scale)
+  return s.action === 'stop'
+    ? `Why should I stop ${name} for today after ${set}?`
+    : `Why is my next ${name} set ${s.headline} after ${set}?`
+}
+
+// "195 × 13 at RPE 10 with form off" — a logged set, in your effort scale.
+function loggedSetText(last: WorkoutSet, scale: EffortScale): string {
   let set = last.weight_lb ? `${last.weight_lb} × ${last.reps}` : `${last.reps} reps`
   if (last.effort != null) set += ` at ${effortText(last.effort, scale)}`
   const flags = [
@@ -1860,9 +1889,35 @@ function askWhyDraft(
     last.pain ? `${last.pain} pain` : '',
   ].filter(Boolean)
   if (flags.length) set += ` with ${flags.join(' and ')}`
-  return s.action === 'stop'
-    ? `Why should I stop ${name} for today after ${set}?`
-    : `Why is my next ${name} set ${s.headline} after ${set}?`
+  return set
+}
+
+// What the trainer is told about the card behind an "Ask why": the advice, the
+// reason the card showed, where its rep target came from, and the rules that
+// produced it. Without this it saw only the question and guessed — it once
+// called a back-off "a template error" and contradicted it.
+function askWhyNote(
+  name: string,
+  last: WorkoutSet,
+  s: NextSetSuggestion,
+  scale: EffortScale,
+  target: { reps: number; goal: StrengthGoal | null; fromTemplate: boolean },
+): string {
+  const { goal } = target
+  const from = goal
+    ? `their ${name} strength goal (${goal.rep_low}–${goal.rep_high} reps, ${
+        goal.method === 'double' ? 'top' : 'bottom'
+      } of the range)`
+    : target.fromTemplate
+      ? "today's template target"
+      : 'their first set today (no goal or template target)'
+  return [
+    `COACH CARD they tapped "Ask why" on — the app's own next-set coach, applied as written:`,
+    `- ${name}: they just logged ${loggedSetText(last, scale)}. The card says next: ${s.headline}.`,
+    `- The reason it showed: "${s.rationale}"`,
+    `- Rep target it measured the set against: ${target.reps}, from ${from}.`,
+    `- Its rules: ${NEXT_SET_RULES}`,
+  ].join('\n')
 }
 
 // Pain-site options for the post-set feedback strip (stored lowercase on

@@ -21,7 +21,7 @@ import {
   Gauge,
 } from 'lucide-react'
 import { useEffortScale, useUpdateProfile } from '@/features/profile/useProfile'
-import type { EffortScale } from '@/lib/effort'
+import { effortName, type EffortScale } from '@/lib/effort'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -295,6 +295,14 @@ export function MorePage() {
                   ? 'Reps left before failure, with good form'
                   : 'Rate each set 1 (easy) to 10 (max)'}
               </p>
+              {/* A failed save used to snap back to the old scale with no
+                  word why (e.g. the effort_scale column not migrated yet). */}
+              {updateProfile.isError && (
+                <p role="alert" className="mt-1 text-xs text-destructive">
+                  Couldn't switch to {effortName(updateProfile.variables?.effort_scale === 'rir' ? 'rir' : 'rpe')}.
+                  Still using {effortName(effortScale)} — try again.
+                </p>
+              )}
             </div>
             <div
               role="group"

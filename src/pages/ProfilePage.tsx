@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useBlocker, useNavigate } from 'react-router-dom'
 import { ChevronLeft, Plus, X } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { SaveChangesSheet } from '@/components/SaveChangesSheet'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,6 +37,7 @@ import type {
   DailySupplement,
   MacroMode,
   MacroTargets,
+  Profile,
   Sex,
 } from '@/lib/database.types'
 
@@ -56,6 +58,92 @@ const ACTIVITY_ORDER: ActivityLevel[] = [
   'active',
   'very_active',
 ]
+
+// The main form's editable fields (everything the Save button writes except
+// the weigh-in, which is a measurement, not a profile field).
+interface ProfileForm {
+  sex: Sex | ''
+  birthDate: string
+  ft: string
+  inch: string
+  activity: ActivityLevel
+  maxHrMode: 'age' | 'manual'
+  maxHr: string
+  restingHr: string
+  stepGoal: string
+  rate: string
+  goalWeight: string
+  manualMode: boolean
+  manualCal: string
+  proteinMode: MacroMode
+  proteinVal: string
+  fatMode: MacroMode
+  fatVal: string
+  carbMode: MacroMode
+  carbVal: string
+}
+
+function formFromProfile(p: Profile): ProfileForm {
+  const h = p.height_cm ? cmToFtIn(p.height_cm) : null
+  const mt = p.macro_targets
+  return {
+    sex: p.sex ?? '',
+    birthDate: p.birth_date ?? '',
+    ft: h ? String(h.ft) : '',
+    inch: h ? String(h.inch) : '',
+    activity: p.activity_level,
+    maxHrMode: p.max_hr != null ? 'manual' : 'age',
+    maxHr: p.max_hr != null ? String(p.max_hr) : '',
+    restingHr: p.resting_hr != null ? String(p.resting_hr) : '',
+    stepGoal: p.step_goal != null ? String(p.step_goal) : '',
+    rate: String(p.goal_rate_lb_per_week),
+    goalWeight: p.goal_weight_lb != null ? String(p.goal_weight_lb) : '',
+    manualMode: p.calorie_goal_mode === 'manual',
+    manualCal:
+      p.manual_calorie_goal != null ? String(p.manual_calorie_goal) : '',
+    proteinMode: mt?.protein?.mode ?? 'g_per_lb',
+    proteinVal:
+      mt?.protein?.value != null ? String(mt.protein.value) : '0.9',
+    fatMode: mt?.fat?.mode ?? 'pct',
+    fatVal: mt?.fat?.value != null ? String(mt.fat.value) : '30',
+    carbMode: mt?.carb?.mode ?? 'remainder',
+    carbVal: mt?.carb?.value != null ? String(mt.carb.value) : '40',
+  }
+}
+
+// What Save writes to the profile for these form values. Also the yardstick for
+// "unsaved changes": two forms that would save the same thing count as equal.
+function toProfileUpdate(f: ProfileForm) {
+  const r = parseFloat(f.rate) || 0
+  const macroTargets: MacroTargets = {
+    protein: { mode: f.proteinMode, value: parseFloat(f.proteinVal) || 0 },
+    fat: { mode: f.fatMode, value: parseFloat(f.fatVal) || 0 },
+    carb:
+      f.carbMode === 'remainder'
+        ? { mode: 'remainder' }
+        : { mode: f.carbMode, value: parseFloat(f.carbVal) || 0 },
+  }
+  return {
+    sex: f.sex || null,
+    birth_date: f.birthDate || null,
+    height_cm:
+      f.ft || f.inch
+        ? ftInToCm(parseInt(f.ft) || 0, parseInt(f.inch) || 0)
+        : null,
+    activity_level: f.activity,
+    goal_rate_lb_per_week: r,
+    goal_type: r < 0 ? 'lose' : r > 0 ? 'gain' : 'maintain',
+    goal_weight_lb: f.goalWeight ? parseFloat(f.goalWeight) : null,
+    calorie_goal_mode: f.manualMode ? 'manual' : 'calculated',
+    manual_calorie_goal: f.manualMode ? parseInt(f.manualCal) || null : null,
+    macro_targets: macroTargets,
+    max_hr: f.maxHrMode === 'manual' ? parseInt(f.maxHr) || null : null,
+    resting_hr: f.restingHr.trim() ? parseInt(f.restingHr) || null : null,
+    step_goal: f.stepGoal.trim() ? parseInt(f.stepGoal) || null : null,
+  } satisfies Partial<Profile>
+}
+
+const profileSig = (f: ProfileForm) => JSON.stringify(toProfileUpdate(f))
 
 export function ProfilePage() {
   const nav = useNavigate()
@@ -95,51 +183,75 @@ export function ProfilePage() {
     'idle' | 'saving' | 'saved' | 'error'
   >('idle')
   const [pwError, setPwError] = useState('')
+  // Last weigh-in this form knows is stored (moves on Save without waiting for
+  // the latest-weight refetch).
+  const [weightBase, setWeightBase] = useState<number | null>(null)
+  const [leaveError, setLeaveError] = useState('')
+
+  const form: ProfileForm = {
+    sex, birthDate, ft, inch, activity, maxHrMode, maxHr, restingHr, stepGoal,
+    rate, goalWeight, manualMode, manualCal, proteinMode, proteinVal, fatMode,
+    fatVal, carbMode, carbVal,
+  }
+  const update = toProfileUpdate(form)
+  const formSig = JSON.stringify(update)
+  const formSigRef = useRef(formSig)
+  const baselineSigRef = useRef<string | null>(null)
+  useEffect(() => {
+    formSigRef.current = formSig
+  })
 
   useEffect(() => {
     if (!profile) return
-    setSex(profile.sex ?? '')
-    setBirthDate(profile.birth_date ?? '')
-    if (profile.height_cm) {
-      const { ft: f, inch: i } = cmToFtIn(profile.height_cm)
-      setFt(String(f))
-      setInch(String(i))
-    }
-    setActivity(profile.activity_level)
-    setMaxHrMode(profile.max_hr != null ? 'manual' : 'age')
-    setMaxHr(profile.max_hr != null ? String(profile.max_hr) : '')
-    setRestingHr(profile.resting_hr != null ? String(profile.resting_hr) : '')
-    setStepGoal(profile.step_goal != null ? String(profile.step_goal) : '')
-    setRate(String(profile.goal_rate_lb_per_week))
-    setGoalWeight(profile.goal_weight_lb != null ? String(profile.goal_weight_lb) : '')
-    setManualMode(profile.calorie_goal_mode === 'manual')
-    setManualCal(
-      profile.manual_calorie_goal != null
-        ? String(profile.manual_calorie_goal)
-        : '',
-    )
-    const mt = profile.macro_targets
-    if (mt?.protein) {
-      setProteinMode(mt.protein.mode)
-      if (mt.protein.value != null) setProteinVal(String(mt.protein.value))
-    }
-    if (mt?.fat) {
-      setFatMode(mt.fat.mode)
-      if (mt.fat.value != null) setFatVal(String(mt.fat.value))
-    }
-    if (mt?.carb) {
-      setCarbMode(mt.carb.mode)
-      if (mt.carb.value != null) setCarbVal(String(mt.carb.value))
-    }
+    const next = formFromProfile(profile)
+    const nextSig = profileSig(next)
+    const prev = baselineSigRef.current
+    baselineSigRef.current = nextSig
+    // The profile also changes from elsewhere on this page (a supplement add,
+    // the adaptive-goal button); don't let that wipe edits still awaiting Save.
+    const cur = formSigRef.current
+    if (prev != null && cur !== prev && cur !== nextSig) return
+    setSex(next.sex)
+    setBirthDate(next.birthDate)
+    setFt(next.ft)
+    setInch(next.inch)
+    setActivity(next.activity)
+    setMaxHrMode(next.maxHrMode)
+    setMaxHr(next.maxHr)
+    setRestingHr(next.restingHr)
+    setStepGoal(next.stepGoal)
+    setRate(next.rate)
+    setGoalWeight(next.goalWeight)
+    setManualMode(next.manualMode)
+    setManualCal(next.manualCal)
+    setProteinMode(next.proteinMode)
+    setProteinVal(next.proteinVal)
+    setFatMode(next.fatMode)
+    setFatVal(next.fatVal)
+    setCarbMode(next.carbMode)
+    setCarbVal(next.carbVal)
   }, [profile])
 
   useEffect(() => {
-    if (latestWeight != null) setWeight(String(latestWeight))
+    if (latestWeight != null) {
+      setWeight(String(latestWeight))
+      setWeightBase(latestWeight)
+    }
   }, [latestWeight])
 
   const weightNum = parseFloat(weight) || null
-  const heightCm =
-    ft || inch ? ftInToCm(parseInt(ft) || 0, parseInt(inch) || 0) : null
+  const heightCm = update.height_cm
+
+  // Unsaved edits → leaving (back arrow, Android back, bottom nav) asks to
+  // save or discard instead of silently dropping them.
+  const dirty =
+    profile != null &&
+    (formSig !== profileSig(formFromProfile(profile)) ||
+      (weightNum != null && weightNum !== weightBase))
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      dirty && currentLocation.pathname !== nextLocation.pathname,
+  )
 
   // Live HR-zone preview from the in-form values (before save).
   const ageForHr = ageFromBirthDate(birthDate || null)
@@ -173,21 +285,13 @@ export function ProfilePage() {
       ? Math.round(adaptive.tdee + caloriesForRate(parseFloat(rate) || 0))
       : null
 
-  const macroTargets: MacroTargets = {
-    protein: { mode: proteinMode, value: parseFloat(proteinVal) || 0 },
-    fat: { mode: fatMode, value: parseFloat(fatVal) || 0 },
-    carb:
-      carbMode === 'remainder'
-        ? { mode: 'remainder' }
-        : { mode: carbMode, value: parseFloat(carbVal) || 0 },
-  }
+  const macroTargets = update.macro_targets
   const macros = resolveMacroTargets(calories, weightNum, macroTargets)
   const macroKcal = macros.protein.kcal + macros.carb.kcal + macros.fat.kcal
   const over = calories > 0 && macroKcal > calories + 5
 
   const onSave = async () => {
     setSaved(false)
-    const r = parseFloat(rate) || 0
     // Record the change into the dated goal history so past days keep the goal
     // that was in effect then. `goal.goal` is the new goal from the form values.
     const oldGoal = profile
@@ -199,28 +303,29 @@ export function ProfilePage() {
       newGoal: goal.goal,
     })
     await updateProfile.mutateAsync({
-      sex: sex || null,
-      birth_date: birthDate || null,
-      height_cm: heightCm,
-      activity_level: activity,
-      goal_rate_lb_per_week: r,
-      goal_type: r < 0 ? 'lose' : r > 0 ? 'gain' : 'maintain',
-      goal_weight_lb: goalWeight ? parseFloat(goalWeight) : null,
-      calorie_goal_mode: manualMode ? 'manual' : 'calculated',
-      manual_calorie_goal: manualMode ? parseInt(manualCal) || null : null,
+      ...update,
       calorie_goal_history: nextGoalHistory,
-      macro_targets: macroTargets,
-      max_hr: maxHrMode === 'manual' ? parseInt(maxHr) || null : null,
-      resting_hr: restingHr.trim() ? parseInt(restingHr) || null : null,
-      step_goal: stepGoal.trim() ? parseInt(stepGoal) || null : null,
     })
-    if (weightNum != null && weightNum !== latestWeight) {
+    if (weightNum != null && weightNum !== weightBase) {
       const m = { type: 'weight', value: weightNum, unit: 'lb', measured_on: todayISO() }
       await logWeight.mutateAsync({ ...m, id: weightSaveId.idFor(m) })
       weightSaveId.clear()
+      setWeightBase(weightNum)
     }
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
+  }
+
+  // "Save changes" from the leave sheet: save, then continue where they were going.
+  const saveAndLeave = async () => {
+    setLeaveError('')
+    try {
+      await onSave()
+    } catch {
+      setLeaveError("Couldn't save — check your connection and try again.")
+      return
+    }
+    blocker.proceed?.()
   }
 
   // One-tap: switch to manual mode at the data-driven goal and persist it.
@@ -788,6 +893,20 @@ export function ProfilePage() {
           </CardContent>
         </Card>
       </div>
+
+      {blocker.state === 'blocked' && (
+        <SaveChangesSheet
+          title="Save changes to your profile & goals?"
+          saving={updateProfile.isPending || logWeight.isPending}
+          error={leaveError}
+          onSave={saveAndLeave}
+          onDiscard={() => blocker.proceed?.()}
+          onCancel={() => {
+            setLeaveError('')
+            blocker.reset?.()
+          }}
+        />
+      )}
     </div>
   )
 }

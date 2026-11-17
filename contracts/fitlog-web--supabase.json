@@ -1146,6 +1146,26 @@
                   "null"
                 ]
               },
+              "step_goal_history": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    },
+                    "goal": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "goal"
+                  ],
+                  "additionalProperties": true
+                }
+              },
               "program": {
                 "type": [
                   "object",
@@ -1239,6 +1259,7 @@
               "max_hr",
               "resting_hr",
               "step_goal",
+              "step_goal_history",
               "program",
               "weekly_cardio_min_target",
               "cardio_goal",
@@ -1292,6 +1313,12 @@
             "max_hr": null,
             "resting_hr": 58,
             "step_goal": 8000,
+            "step_goal_history": [
+              {
+                "from": "2026-10-01",
+                "goal": 8000
+              }
+            ],
             "program": null,
             "weekly_cardio_min_target": null,
             "cardio_goal": null,
@@ -1561,6 +1588,26 @@
                 "null"
               ]
             },
+            "step_goal_history": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "goal": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "from",
+                  "goal"
+                ],
+                "additionalProperties": true
+              }
+            },
             "program": {
               "type": [
                 "object",
@@ -1654,6 +1701,7 @@
             "max_hr",
             "resting_hr",
             "step_goal",
+            "step_goal_history",
             "program",
             "weekly_cardio_min_target",
             "cardio_goal",
@@ -1705,6 +1753,12 @@
           "max_hr": null,
           "resting_hr": 58,
           "step_goal": 8000,
+          "step_goal_history": [
+            {
+              "from": "2026-10-01",
+              "goal": 8000
+            }
+          ],
           "program": null,
           "weekly_cardio_min_target": null,
           "cardio_goal": null,

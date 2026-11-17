@@ -198,6 +198,13 @@ export function ProfilePage() {
       oldGoal,
       newGoal: goal.goal,
     })
+    // Same for the step goal: changing it only applies from today onward.
+    const nextStepGoal = stepGoal.trim() ? parseInt(stepGoal) || null : null
+    const nextStepGoalHistory = recordGoalChange(profile?.step_goal_history, {
+      today: todayISO(),
+      oldGoal: profile?.step_goal ?? null,
+      newGoal: nextStepGoal,
+    })
     await updateProfile.mutateAsync({
       sex: sex || null,
       birth_date: birthDate || null,
@@ -212,7 +219,8 @@ export function ProfilePage() {
       macro_targets: macroTargets,
       max_hr: maxHrMode === 'manual' ? parseInt(maxHr) || null : null,
       resting_hr: restingHr.trim() ? parseInt(restingHr) || null : null,
-      step_goal: stepGoal.trim() ? parseInt(stepGoal) || null : null,
+      step_goal: nextStepGoal,
+      step_goal_history: nextStepGoalHistory,
     })
     if (weightNum != null && weightNum !== latestWeight) {
       const m = { type: 'weight', value: weightNum, unit: 'lb', measured_on: todayISO() }

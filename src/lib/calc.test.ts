@@ -28,6 +28,10 @@ import {
   resolveMaxHr,
   roundHalf,
   tdee,
+  treadmillMet,
+  treadmillWalkEstimate,
+  inclineDegrees,
+  DEFAULT_TREADMILL_MPH,
   warmupRamp,
   zoneForHr,
 } from './calc'
@@ -560,6 +564,75 @@ describe('paceAwareCalories', () => {
   it('returns 0 without distance or weight', () => {
     expect(paceAwareCalories(0, 20, 154)).toBe(0)
     expect(paceAwareCalories(2, 20, 0)).toBe(0)
+  })
+})
+
+describe('treadmillMet (ACSM)', () => {
+  it('prices a flat 3 mph walk at the walking equation', () => {
+    // S = 80.47 m/min → VO2 = 3.5 + 8.05 = 11.55 → 3.30 MET.
+    expect(treadmillMet(3, 0)).toBeCloseTo(3.299, 3)
+  })
+  it('adds 1.8·S·G of VO2 for incline while walking', () => {
+    // 3 mph @ 12%: 3.5 + 8.05 + 17.38 = 28.93 → 8.27 MET.
+    expect(treadmillMet(3, 12)).toBeCloseTo(8.265, 3)
+  })
+  it('switches to the running equation at 5 mph', () => {
+    // 6 mph flat: 3.5 + 0.2·160.93 = 35.69 → 10.20 MET.
+    expect(treadmillMet(6, 0)).toBeCloseTo(10.196, 3)
+    expect(treadmillMet(5, 0)).toBeGreaterThan(treadmillMet(4.9, 0))
+  })
+  it('floors declines at flat and caps runaway grades', () => {
+    expect(treadmillMet(3, -3)).toBe(treadmillMet(3, 0))
+    expect(treadmillMet(3, 99)).toBe(treadmillMet(3, 40))
+  })
+  it('climbs with every step of incline', () => {
+    for (let g = 0; g < 15; g++)
+      expect(treadmillMet(3, g + 1)).toBeGreaterThan(treadmillMet(3, g))
+  })
+})
+
+describe('treadmillWalkEstimate', () => {
+  it('matches the planning table (180 lb, 30 min)', () => {
+    // 12-3-30: 3 mph, 12%, 30 min → 354 kcal.
+    expect(treadmillWalkEstimate(1.5, 30, 12, 180).kcal).toBe(354)
+    expect(treadmillWalkEstimate(1.5, 30, 0, 180).kcal).toBe(141)
+    expect(treadmillWalkEstimate(1.75, 30, 8, 180).kcal).toBe(323)
+    expect(treadmillWalkEstimate(1.25, 30, 15, 180).kcal).toBe(347)
+  })
+  it('measures speed from distance over duration', () => {
+    const e = treadmillWalkEstimate(1.75, 30, 0, 180)
+    expect(e.mph).toBeCloseTo(3.5, 5)
+    expect(e.assumedSpeed).toBe(false)
+  })
+  it('assumes the default speed without a distance', () => {
+    const e = treadmillWalkEstimate(0, 30, 12, 180)
+    expect(e.mph).toBe(DEFAULT_TREADMILL_MPH)
+    expect(e.assumedSpeed).toBe(true)
+    expect(e.kcal).toBe(354)
+  })
+  it('times a distance with no duration at the default speed', () => {
+    // 1.5 mi at 3 mph = 30 min → same as the 30-minute entry.
+    const e = treadmillWalkEstimate(1.5, 0, 12, 180)
+    expect(e.assumedSpeed).toBe(true)
+    expect(e.kcal).toBe(354)
+  })
+  it('counts a carried load through the moved weight', () => {
+    const bare = treadmillWalkEstimate(1.5, 30, 6, 180).kcal
+    const loaded = treadmillWalkEstimate(1.5, 30, 6, 180 + 20).kcal
+    expect(loaded).toBeGreaterThan(bare)
+    expect(loaded / bare).toBeCloseTo(200 / 180, 2)
+  })
+  it('returns 0 kcal with no time, no distance or no weight', () => {
+    expect(treadmillWalkEstimate(0, 0, 10, 180).kcal).toBe(0)
+    expect(treadmillWalkEstimate(1.5, 30, 10, 0).kcal).toBe(0)
+  })
+})
+
+describe('inclineDegrees', () => {
+  it('converts grade to angle', () => {
+    expect(inclineDegrees(0)).toBe(0)
+    expect(inclineDegrees(12)).toBeCloseTo(6.84, 2)
+    expect(inclineDegrees(100)).toBeCloseTo(45, 5)
   })
 })
 

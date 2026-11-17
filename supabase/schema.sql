@@ -218,6 +218,8 @@ alter table public.exercise_entries add column if not exists avg_hr smallint;
 alter table public.exercise_entries add column if not exists zone smallint;
 -- Carried load in lb (added later; see migration_ruck_load.sql).
 alter table public.exercise_entries add column if not exists load_lb numeric;
+-- Treadmill incline % (added later; see migration_treadmill_incline.sql).
+alter table public.exercise_entries add column if not exists incline_pct numeric;
 -- Machine resistance level (added later; see migration_cardio_level.sql).
 alter table public.exercise_entries add column if not exists level smallint;
 alter table public.exercise_entries add column if not exists level_max smallint;

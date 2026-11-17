@@ -18,13 +18,17 @@ export interface BuiltinActivity {
   // the MET by measured cadence (calc.ts cadenceAdjustedMet) instead of pricing
   // miles like ground travel the way distanceBased does.
   machineDistance?: boolean
+  // Offers an incline (% grade) field and prices the session with the ACSM
+  // treadmill equation from speed (distance ÷ duration) and grade — see
+  // calc.ts treadmillWalkEstimate. The MET here is then only a label.
+  inclinable?: boolean
 }
 
 export const ACTIVITIES: BuiltinActivity[] = [
   // The pure walk/run entries moved to RECORDER_ACTIVITIES — log those via the
   // GPS walk/run recorder. Treadmill/indoor variants stay here because GPS
   // can't measure a walk/run you do without moving through space.
-  { key: 'walking_treadmill', name: 'Walking (treadmill)', met: 4.3, distanceBased: true, loadable: true },
+  { key: 'walking_treadmill', name: 'Walking (treadmill)', met: 4.3, distanceBased: true, loadable: true, inclinable: true },
   { key: 'running_treadmill', name: 'Running (treadmill)', met: 9.8, distanceBased: true },
   { key: 'hiking', name: 'Hiking', met: 6.0, distanceBased: true, loadable: true },
   { key: 'cycling_light', name: 'Cycling (light, 10–12 mph)', met: 6.8, distanceBased: false },

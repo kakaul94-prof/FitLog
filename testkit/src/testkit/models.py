@@ -116,6 +116,7 @@ class ExerciseEntry(Owned):
     load_lb: float | None
     level: int | None
     level_max: int | None
+    incline_pct: float | None
     max_hr: int | None
     hr_samples: Json | None
     zone_seconds: list[int] | None

@@ -139,6 +139,8 @@ export interface ReportDay {
   mobilitySec: number
   /** Health Connect steps; null when there's no reading. */
   steps: number | null
+  /** The step goal in effect that day (goal history), null when unset. */
+  stepGoal: number | null
 }
 
 export interface MuscleTarget {
@@ -154,7 +156,6 @@ export interface ReportInput {
   /** One row per date from period.start through coveredEnd, in order. */
   days: ReportDay[]
   cardioWeeklyMin: number | null
-  stepGoal: number | null
   mobilityWeeklySec: number
   /** Tracked muscle regions only (weekly set goal > 0). */
   muscles: MuscleTarget[]
@@ -351,14 +352,20 @@ const cardio: GoalBuilder = (input, buckets) => {
   }
 }
 
+// A day counts for steps when there's a reading AND a goal was in effect then.
+const hasStepGoal = (d: ReportDay): boolean =>
+  d.steps != null && d.stepGoal != null && d.stepGoal > 0
+
 const steps: GoalBuilder = (input, buckets) => {
-  const goal = input.stepGoal
-  if (!goal || goal <= 0) return null
-  const read = input.days.filter((d) => d.steps != null)
+  const read = input.days.filter(hasStepGoal)
   if (!read.length) return null
   const value = avg(read.map((d) => d.steps as number))
+  // Each day is scored against its own goal, so a mid-week change is honest.
+  const goal = avg(read.map((d) => d.stepGoal as number))
   const status = scoreFloor(value, goal)
-  const hitDays = read.filter((d) => scoreFloor(d.steps as number, goal) === 'hit').length
+  const hitDays = read.filter(
+    (d) => scoreFloor(d.steps as number, d.stepGoal as number) === 'hit',
+  ).length
   return {
     key: 'steps',
     label: 'Steps',
@@ -369,10 +376,10 @@ const steps: GoalBuilder = (input, buckets) => {
     ratio: value / goal,
     band: false,
     cells: cellsFor(input, buckets, (ds) => {
-      const s = ds.filter((d) => d.steps != null)
+      const s = ds.filter(hasStepGoal)
       if (!s.length) return null
       const v = avg(s.map((d) => d.steps as number))
-      return { value: fmtSteps(v), tone: scoreFloor(v, goal) }
+      return { value: fmtSteps(v), tone: scoreFloor(v, avg(s.map((d) => d.stepGoal as number))) }
     }),
     summary: `Daily average · hit on ${hitDays} of ${plural(read.length, 'day')}`,
   }

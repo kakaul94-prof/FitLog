@@ -67,6 +67,8 @@ alter table public.profiles add column if not exists weekly_cardio_min_target in
 alter table public.profiles add column if not exists cardio_goal jsonb;
 -- Daily step goal (see migration_step_goal.sql). null = unset.
 alter table public.profiles add column if not exists step_goal integer;
+-- Dated step-goal history (see migration_step_goal_history.sql).
+alter table public.profiles add column if not exists step_goal_history jsonb not null default '[]'::jsonb;
 -- Next-set coach opt-in (see migration_coach_enabled.sql). Legacy: the app no
 -- longer reads it — the coach is always on.
 alter table public.profiles add column if not exists coach_enabled boolean not null default false;

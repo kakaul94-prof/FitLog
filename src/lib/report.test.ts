@@ -118,6 +118,7 @@ function day(i: number, over: Partial<ReportDay> = {}): ReportDay {
     workouts: 0,
     mobilitySec: 0,
     steps: null,
+    stepGoal: null,
     ...over,
   }
 }
@@ -128,7 +129,6 @@ function input(over: Partial<ReportInput> = {}): ReportInput {
     today: AFTER_WEEK,
     days: Array.from({ length: 7 }, (_, i) => day(i)),
     cardioWeeklyMin: null,
-    stepGoal: null,
     mobilityWeeklySec: 0,
     muscles: [],
     ...over,
@@ -174,17 +174,39 @@ describe('buildReport', () => {
   })
 
   it('hides steps when Health Connect returned nothing', () => {
-    expect(buildReport(input({ stepGoal: 10000 })).goals.some((g) => g.key === 'steps')).toBe(
+    const noReadings = Array.from({ length: 7 }, (_, i) => day(i, { stepGoal: 10000 }))
+    expect(buildReport(input({ days: noReadings })).goals.some((g) => g.key === 'steps')).toBe(
       false,
     )
     const r = buildReport(
-      input({ stepGoal: 10000, days: [day(0, { steps: 8400 }), day(1, { steps: 8400 })] }),
+      input({
+        days: [day(0, { steps: 8400, stepGoal: 10000 }), day(1, { steps: 8400, stepGoal: 10000 })],
+      }),
     )
     expect(r.goals.find((g) => g.key === 'steps')).toMatchObject({
       value: '8.4k',
       status: 'close',
       note: '1.6k short',
     })
+  })
+
+  it('hides steps when no goal was in effect on the days read', () => {
+    const days = [day(0, { steps: 9000 }), day(1, { steps: 9000 })]
+    expect(buildReport(input({ days })).goals.some((g) => g.key === 'steps')).toBe(false)
+  })
+
+  it('scores each day against the step goal in effect that day', () => {
+    // Goal dropped 10k -> 8k mid-week: 8.5k is a miss before, a hit after.
+    const days = [
+      day(0, { steps: 8500, stepGoal: 10000 }),
+      day(1, { steps: 8500, stepGoal: 10000 }),
+      day(2, { steps: 8500, stepGoal: 8000 }),
+      day(3, { steps: 8500, stepGoal: 8000 }),
+    ]
+    const g = buildReport(input({ days })).goals.find((x) => x.key === 'steps')
+    expect(g?.target).toBe('/ 9k')
+    expect(g?.summary).toBe('Daily average \u00b7 hit on 2 of 4 days')
+    expect(g?.cells.slice(0, 4).map((c) => c.tone)).toEqual(['close', 'close', 'hit', 'hit'])
   })
 
   it('pro-rates weekly targets to the days covered so far', () => {

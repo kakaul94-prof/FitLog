@@ -95,11 +95,13 @@ export function useReportGoals(period: ReportPeriod): {
     refetchOnMount: 'always',
   })
   const volume = useMuscleVolume(period.start, end)
-  const stepGoal = profile?.step_goal ?? null
+  const liveStepGoal = profile?.step_goal ?? null
+  // Read steps if a goal is set now or was set at some point in the past.
+  const anyStepGoal = !!liveStepGoal || (profile?.step_goal_history ?? []).length > 0
   const steps = useQuery({
     queryKey: ['reportSteps', period.start, end],
     queryFn: () => readStepsRange(period.start, end),
-    enabled: Capacitor.isNativePlatform() && !!stepGoal,
+    enabled: Capacitor.isNativePlatform() && anyStepGoal,
   })
 
   const isLoading = profileLoading || rows.isLoading || volume.isLoading || steps.isLoading
@@ -150,6 +152,7 @@ export function useReportGoals(period: ReportPeriod): {
       workouts: workouts.get(date) ?? 0,
       mobilitySec: mobilitySec.get(date) ?? 0,
       steps: steps.data?.[date] ?? null,
+      stepGoal: goalForDate(profile.step_goal_history, date, liveStepGoal, today),
     })
   }
 
@@ -161,7 +164,6 @@ export function useReportGoals(period: ReportPeriod): {
     today,
     days,
     cardioWeeklyMin: cardioGoal ? cardioGoalTotal(cardioGoal) : null,
-    stepGoal,
     mobilityWeeklySec: (mobility?.stretches ?? []).reduce(
       (s, st) => s + Math.max(0, st.targetMin) * 60,
       0,

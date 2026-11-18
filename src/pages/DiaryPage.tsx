@@ -966,7 +966,13 @@ function CardFooter({
   const connect = useConnectSteps(date)
   const { data: profile } = useProfile()
   const steps = data && data.status !== 'unavailable' ? data : null
-  const stepGoal = profile?.step_goal ?? null
+  // The goal in effect on the viewed day — a later change doesn't rewrite it.
+  const stepGoal = goalForDate(
+    profile?.step_goal_history,
+    date,
+    profile?.step_goal ?? null,
+    todayISO(),
+  )
   const stepCount = steps?.steps ?? 0
   const goalMet = stepGoal != null && stepGoal > 0 && stepCount >= stepGoal
   if (!steps && !showNutrients) return null

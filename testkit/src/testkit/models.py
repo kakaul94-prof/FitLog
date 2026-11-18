@@ -52,6 +52,7 @@ class Profile(Contract):
     weekly_cardio_min_target: int | None
     cardio_goal: Json | None
     step_goal: int | None
+    step_goal_history: list[Json]
     coach_enabled: bool
     effort_scale: Literal["rpe", "rir"]
     trainer_memory: list[Json]
@@ -116,6 +117,7 @@ class ExerciseEntry(Owned):
     load_lb: float | None
     level: int | None
     level_max: int | None
+    incline_pct: float | None
     max_hr: int | None
     hr_samples: Json | None
     zone_seconds: list[int] | None

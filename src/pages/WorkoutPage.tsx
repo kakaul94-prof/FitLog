@@ -1149,6 +1149,7 @@ function CardioItemCard({
     const parts = [
       entry.duration_min != null ? `${entry.duration_min} min` : null,
       entry.distance_mi != null ? `${entry.distance_mi} mi` : null,
+      entry.incline_pct ? `${entry.incline_pct}% incline` : null,
       entry.load_lb != null ? `${entry.load_lb} lb` : null,
       entry.level != null ? `L${entry.level}/${entry.level_max}` : null,
       `${entry.calories} cal`,

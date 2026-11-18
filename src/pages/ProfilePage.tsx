@@ -302,9 +302,16 @@ export function ProfilePage() {
       oldGoal,
       newGoal: goal.goal,
     })
+    // Same for the step goal: changing it only applies from today onward.
+    const nextStepGoalHistory = recordGoalChange(profile?.step_goal_history, {
+      today: todayISO(),
+      oldGoal: profile?.step_goal ?? null,
+      newGoal: update.step_goal,
+    })
     await updateProfile.mutateAsync({
       ...update,
       calorie_goal_history: nextGoalHistory,
+      step_goal_history: nextStepGoalHistory,
     })
     if (weightNum != null && weightNum !== weightBase) {
       const m = { type: 'weight', value: weightNum, unit: 'lb', measured_on: todayISO() }

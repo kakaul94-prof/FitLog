@@ -40,6 +40,10 @@ import {
   cadenceAdjustedMet,
   effectiveWeightLb,
   levelMet,
+  treadmillWalkEstimate,
+  inclineDegrees,
+  DEFAULT_TREADMILL_MPH,
+  MAX_INCLINE_PCT,
   resolveMaxHr,
   resolveHrZones,
   resolveZoneForHr,
@@ -68,6 +72,7 @@ interface PickActivity {
   loadable: boolean
   leveled: boolean
   machineDistance: boolean
+  inclinable: boolean
 }
 
 /** Fallback console scale when we've never seen one for this activity. */
@@ -75,6 +80,9 @@ const DEFAULT_LEVEL_MAX = 10
 
 /** Quick-pick plate/vest weights, mirroring the duration row's presets. */
 const LOAD_PRESETS = [10, 20, 35, 45]
+
+/** Quick-pick treadmill grades (%). Flat is the empty field. */
+const INCLINE_PRESETS = [3, 6, 9, 12, 15]
 
 /** Does a prefilled name (GPS recorder, or a cardio item on a workout) belong
  *  to an activity that offers a load? Prefills carry a name, not a key. */
@@ -90,6 +98,10 @@ const leveledByName = (n: string): boolean =>
 /** Same, for machine-distance (cadence-scaled) activities. */
 const machineDistanceByName = (n: string): boolean =>
   ACTIVITIES.some((a) => a.name === n && a.machineDistance)
+
+/** Same, for the treadmill incline field. */
+const inclinableByName = (n: string): boolean =>
+  ACTIVITIES.some((a) => a.name === n && a.inclinable)
 
 /** The recorder is deep-linked by key, but this page only tracks the name. */
 const keyByName = (n: string): string | null =>
@@ -138,6 +150,10 @@ export function ExerciseAddPage() {
   const [machineDistance, setMachineDistance] = useState(
     pf.name ? machineDistanceByName(pf.name) : false,
   )
+  const [inclinable, setInclinable] = useState(
+    pf.name ? inclinableByName(pf.name) : false,
+  )
+  const [incline, setIncline] = useState('')
   const [duration, setDuration] = useState(pf.dur ?? '')
   const [distance, setDistance] = useState(pf.dist ?? '')
   const [load, setLoad] = useState('')
@@ -170,7 +186,7 @@ export function ExerciseAddPage() {
   const [renaming, setRenaming] = useState(false)
   const [editingKcal, setEditingKcal] = useState(false)
   const [activeTile, setActiveTile] = useState<
-    'duration' | 'distance' | 'load' | 'level' | 'hr' | null
+    'duration' | 'distance' | 'incline' | 'load' | 'level' | 'hr' | null
   >(null)
 
   const allActivities: PickActivity[] = [
@@ -186,6 +202,7 @@ export function ExerciseAddPage() {
       // classes, and a stray tile on those is worse than a missing one.
       leveled: false,
       machineDistance: false,
+      inclinable: false,
     })),
     ...ACTIVITIES.map((a) => ({
       key: a.key,
@@ -195,6 +212,7 @@ export function ExerciseAddPage() {
       loadable: !!a.loadable,
       leveled: !!a.leveled,
       machineDistance: !!a.machineDistance,
+      inclinable: !!a.inclinable,
     })),
   ]
   const q = search.trim().toLowerCase()
@@ -219,15 +237,28 @@ export function ExerciseAddPage() {
   // far more about the effort than "elliptical" does. On machine-distance
   // activities a logged distance then scales that MET by measured cadence.
   const levelBasedMet = (leveled ? levelMet(lvl, lvlMax) : null) ?? met
-  const effMet = machineDistance
-    ? cadenceAdjustedMet(levelBasedMet, dist, dur)
-    : levelBasedMet
+  // A treadmill walk is priced from speed (distance ÷ duration) and grade by
+  // the ACSM equation — flat included, so 0% and 1% sit on one curve.
+  const inclinePct = inclinable
+    ? Math.min(MAX_INCLINE_PCT, Math.max(0, parseFloat(incline) || 0))
+    : 0
+  const tread = inclinable
+    ? treadmillWalkEstimate(dist, dur, inclinePct, movedLb)
+    : null
+  const effMet = tread
+    ? tread.met
+    : machineDistance
+      ? cadenceAdjustedMet(levelBasedMet, dist, dur)
+      : levelBasedMet
   const est =
     w == null
       ? 0
-      : distanceBased && dist
-        ? distanceCalories(dist, movedLb, effMet)
-        : metCalories(effMet, dur, movedLb)
+      : tread
+        ? tread.kcal
+        : distanceBased && dist
+          ? distanceCalories(dist, movedLb, effMet)
+          : metCalories(effMet, dur, movedLb)
+  const treadMph = tread ? tread.mph.toFixed(1) : ''
   const calories = override ? parseInt(override) || 0 : est
   // Keytel burn from the recorded average — offered, never forced, so nothing
   // silently rewrites the diary's eat-back number.
@@ -302,6 +333,8 @@ export function ExerciseAddPage() {
     setLeveled((match ? match.leveled : false) || entry.level != null)
     setLevel(entry.level != null ? String(entry.level) : '')
     if (entry.level_max != null) setLevelMax(String(entry.level_max))
+    setInclinable((match ? match.inclinable : false) || entry.incline_pct != null)
+    setIncline(entry.incline_pct ? String(entry.incline_pct) : '')
     setName(entry.name)
     setDuration(entry.duration_min != null ? String(entry.duration_min) : '')
     setDistance(entry.distance_mi != null ? String(entry.distance_mi) : '')
@@ -330,12 +363,22 @@ export function ExerciseAddPage() {
           : entry.met ?? 0
     const db = match ? match.distanceBased : entry.distance_mi != null
     const mv = effectiveWeightLb(w, entry.load_lb)
+    // An entry with an incline was priced by the treadmill equation; one from
+    // before it (incline null) by the old formula, so it reopens unflagged and
+    // then re-estimates on the new curve.
     const e0 =
       w == null
         ? 0
-        : db && di
-          ? distanceCalories(di, mv, m)
-          : metCalories(m, entry.duration_min ?? 0, mv)
+        : entry.incline_pct != null
+          ? treadmillWalkEstimate(
+              di,
+              entry.duration_min ?? 0,
+              entry.incline_pct,
+              mv,
+            ).kcal
+          : db && di
+            ? distanceCalories(di, mv, m)
+            : metCalories(m, entry.duration_min ?? 0, mv)
     if (Math.round(e0) !== Math.round(entry.calories))
       setOverride(String(entry.calories))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -369,6 +412,19 @@ export function ExerciseAddPage() {
     setLevelMax(String(lastLevelMax))
   }, [editing, leveled, lastLevelMax, name])
 
+  // And the incline you walked at last time — most sessions repeat it.
+  const { data: lastIncline } = useLastCardioField(
+    !editing && inclinable && name ? name : null,
+    'incline_pct',
+  )
+  const inclinePrefilledFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (editing || !inclinable || lastIncline == null) return
+    if (inclinePrefilledFor.current === name) return
+    inclinePrefilledFor.current = name
+    setIncline(lastIncline > 0 ? String(lastIncline) : '')
+  }, [editing, inclinable, lastIncline, name])
+
   const pickActivity = (a: PickActivity) => {
     setName(a.name)
     setMet(a.met)
@@ -378,12 +434,15 @@ export function ExerciseAddPage() {
     if (!a.loadable) setLoad('')
     setLeveled(a.leveled)
     if (!a.leveled) setLevel('')
+    setInclinable(a.inclinable)
+    if (!a.inclinable) setIncline('')
     setSearch('')
     setChanging(false)
     // Straight into duration once an activity is chosen.
     setActiveTile((t) =>
       t == null ||
       (t === 'distance' && !(a.distanceBased || a.machineDistance)) ||
+      (t === 'incline' && !a.inclinable) ||
       (t === 'load' && !a.loadable) ||
       (t === 'level' && !a.leveled)
         ? 'duration'
@@ -405,6 +464,8 @@ export function ExerciseAddPage() {
     setMachineDistance(match ? match.machineDistance : false)
     setLoadable((match ? match.loadable : false) || e.load_lb != null)
     setLeveled((match ? match.leveled : false) || e.level != null)
+    setInclinable((match ? match.inclinable : false) || e.incline_pct != null)
+    setIncline(e.incline_pct ? String(e.incline_pct) : '')
     setDuration(e.duration_min != null ? String(e.duration_min) : '')
     setDistance(e.distance_mi != null ? String(e.distance_mi) : '')
     setLoad(e.load_lb != null ? String(e.load_lb) : '')
@@ -418,6 +479,7 @@ export function ExerciseAddPage() {
     // The last-used prefill effects must not clobber what this session recorded.
     loadPrefilledFor.current = e.name
     maxPrefilledFor.current = e.name
+    inclinePrefilledFor.current = e.name
     setSearch('')
     setChanging(false)
     setActiveTile(null)
@@ -435,6 +497,8 @@ export function ExerciseAddPage() {
       load_lb: e.load_lb,
       level: e.level,
       level_max: e.level_max,
+      // Only when it was recorded, so non-treadmill copies never name the column.
+      ...(e.incline_pct != null ? { incline_pct: e.incline_pct } : {}),
       calories: e.calories,
       avg_hr: e.avg_hr,
       zone: e.zone,
@@ -491,6 +555,7 @@ export function ExerciseAddPage() {
       loadable: next.distance_based,
       leveled: false,
       machineDistance: false,
+      inclinable: false,
     })
     closeForm()
   }
@@ -513,6 +578,10 @@ export function ExerciseAddPage() {
       load_lb: loadLb || null,
       level: lvl || null,
       level_max: lvl ? lvlMax || null : null,
+      // 0 for a flat walk, not null — a set incline marks the entry as priced
+      // by the treadmill equation (see the edit prefill). Omitted elsewhere so
+      // other cardio saves don't depend on the column.
+      ...(inclinable ? { incline_pct: inclinePct } : {}),
       calories,
       avg_hr: avgHr.trim() ? parseInt(avgHr) || null : null,
       zone,
@@ -875,6 +944,10 @@ export function ExerciseAddPage() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {editingKcal
                       ? "Enter your watch's number"
+                      : tread
+                        ? `Auto-estimate · ${tread.assumedSpeed ? 'assumes ' : ''}${treadMph} mph${
+                            inclinePct ? ` @ ${inclinePct}% incline` : ' · flat'
+                          }${loadLb ? ` · +${loadLb} lb` : ''}`
                       : loadLb
                         ? `Auto-estimate · includes ${loadLb} lb load`
                         : lvl
@@ -897,20 +970,20 @@ export function ExerciseAddPage() {
               <div
                 className={cn(
                   'grid gap-2',
-                  // Duration + HR are always there; distance/load/level are
-                  // per-activity. 4+ wraps to two columns — a single row of four
-                  // is too tight to tap.
-                  2 +
-                    [
-                      distanceBased || machineDistance,
-                      loadable,
-                      leveled,
-                    ].filter(Boolean).length >
-                    3
-                    ? 'grid-cols-2'
-                    : distanceBased || machineDistance || loadable || leveled
-                      ? 'grid-cols-3'
-                      : 'grid-cols-2',
+                  // Duration + HR are always there; distance/incline/load/level
+                  // are per-activity. Three or five-plus fit rows of three; two
+                  // or four sit two-up — a single row of four is too tight to tap.
+                  (() => {
+                    const n =
+                      2 +
+                      [
+                        distanceBased || machineDistance,
+                        inclinable,
+                        loadable,
+                        leveled,
+                      ].filter(Boolean).length
+                    return n === 3 || n >= 5 ? 'grid-cols-3' : 'grid-cols-2'
+                  })(),
                 )}
               >
                 {[
@@ -925,6 +998,15 @@ export function ExerciseAddPage() {
                           key: 'distance' as const,
                           value: dist ? `${dist} mi` : null,
                           label: 'Distance',
+                        },
+                      ]
+                    : []),
+                  ...(inclinable
+                    ? [
+                        {
+                          key: 'incline' as const,
+                          value: inclinePct ? `${inclinePct}%` : null,
+                          label: 'Incline',
                         },
                       ]
                     : []),
@@ -1063,6 +1145,62 @@ export function ExerciseAddPage() {
                     resistance scales the estimate up.
                   </p>
                 )}
+                {tread && (
+                  <p className="text-xs text-muted-foreground">
+                    {tread.assumedSpeed
+                      ? `With your duration this sets your speed — until then the estimate assumes ${DEFAULT_TREADMILL_MPH.toFixed(1)} mph.`
+                      : `≈ ${treadMph} mph — the speed the incline estimate uses.`}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTile === 'incline' && inclinable && (
+            <Card>
+              <CardContent className="space-y-2 p-4">
+                <Label htmlFor="incline">Incline (%)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="incline"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={MAX_INCLINE_PCT}
+                    step={0.5}
+                    className="w-20 text-center"
+                    value={incline}
+                    onChange={(e) => setIncline(e.target.value)}
+                  />
+                  {INCLINE_PRESETS.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() =>
+                        setIncline((i) =>
+                          parseFloat(i) === v ? '' : String(v),
+                        )
+                      }
+                      className={cn(
+                        'flex-1 rounded-full border py-1.5 text-sm transition-colors',
+                        inclinePct === v
+                          ? 'border-primary bg-primary/10 font-medium text-primary'
+                          : 'border-border',
+                      )}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {inclinePct
+                    ? `≈ ${inclineDegrees(inclinePct).toFixed(1)}° · `
+                    : 'Empty = flat. '}
+                  The grade your treadmill shows.{' '}
+                  {tread?.assumedSpeed
+                    ? `Add the distance for your real speed — this assumes ${DEFAULT_TREADMILL_MPH.toFixed(1)} mph.`
+                    : `Priced at ${treadMph} mph from your distance.`}
+                </p>
               </CardContent>
             </Card>
           )}

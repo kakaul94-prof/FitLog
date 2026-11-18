@@ -144,6 +144,7 @@ const CARDIO: ExerciseEntry = {
   load_lb: null,
   level: null,
   level_max: null,
+  incline_pct: null,
   created_at: '2026-10-21T07:30:00+00:00',
 }
 
@@ -172,6 +173,7 @@ const PROFILE: Profile = {
   max_hr: null,
   resting_hr: 58,
   step_goal: 8000,
+  step_goal_history: [{ from: '2026-10-01', goal: 8000 }],
   program: null,
   weekly_cardio_min_target: null,
   cardio_goal: null,
@@ -242,6 +244,7 @@ const CARDIO_ROW = t.object({
   load_lb: t.nullable(t.number()),
   level: t.nullable(t.number()),
   level_max: t.nullable(t.number()),
+  incline_pct: t.nullable(t.number()),
   created_at: t.timestamp(),
 })
 
@@ -270,6 +273,7 @@ const PROFILE_PROPS = {
   max_hr: t.nullable(t.number()),
   resting_hr: t.nullable(t.number()),
   step_goal: t.nullable(t.number()),
+  step_goal_history: t.array(t.object({ from: t.date(), goal: t.number() })),
   program: t.nullable(t.json()),
   weekly_cardio_min_target: t.nullable(t.number()),
   cardio_goal: t.nullable(t.json()),

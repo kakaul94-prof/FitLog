@@ -76,7 +76,7 @@ export interface DailySupplement {
   servings: number
 }
 
-// A dated calorie-goal change: `goal` applies from `from` (ISO date) until the
+// A dated goal change (calorie or step): `goal` applies from `from` (ISO date) until the
 // next entry's date. Lets past diary days keep the goal that was in effect then
 // instead of retroactively adopting the current one — see goalForDate /
 // recordGoalChange in calc.ts. Empty history = fall back to the live goal.
@@ -125,6 +125,9 @@ export interface Profile {
   // Daily step goal, shown next to the Health Connect step count on the diary
   // card. null = no goal, in which case the count renders on its own.
   step_goal: number | null
+  // Dated log of step-goal changes (same shape + helpers as
+  // calorie_goal_history), so past days keep the step goal in effect then.
+  step_goal_history: GoalHistoryEntry[]
   // Workout program: ordered rotation of templates + rest days (sequential
   // model). null / empty sequence = no program set up yet.
   program: ProgramState | null
@@ -512,6 +515,10 @@ export interface ExerciseEntry {
   // pair for display; the burn it implies is snapshotted into `met` at save.
   level: number | null
   level_max: number | null
+  // Treadmill grade in % (migration_treadmill_incline.sql). Set — 0 for flat —
+  // on every treadmill walk priced by the ACSM equation; null = an entry
+  // logged before that (or an activity with no incline).
+  incline_pct: number | null
   created_at: string
 }
 

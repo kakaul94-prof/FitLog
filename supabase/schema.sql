@@ -67,6 +67,8 @@ alter table public.profiles add column if not exists weekly_cardio_min_target in
 alter table public.profiles add column if not exists cardio_goal jsonb;
 -- Daily step goal (see migration_step_goal.sql). null = unset.
 alter table public.profiles add column if not exists step_goal integer;
+-- Dated step-goal history (see migration_step_goal_history.sql).
+alter table public.profiles add column if not exists step_goal_history jsonb not null default '[]'::jsonb;
 -- Next-set coach opt-in (see migration_coach_enabled.sql). Legacy: the app no
 -- longer reads it — the coach is always on.
 alter table public.profiles add column if not exists coach_enabled boolean not null default false;
@@ -218,6 +220,8 @@ alter table public.exercise_entries add column if not exists avg_hr smallint;
 alter table public.exercise_entries add column if not exists zone smallint;
 -- Carried load in lb (added later; see migration_ruck_load.sql).
 alter table public.exercise_entries add column if not exists load_lb numeric;
+-- Treadmill incline % (added later; see migration_treadmill_incline.sql).
+alter table public.exercise_entries add column if not exists incline_pct numeric;
 -- Machine resistance level (added later; see migration_cardio_level.sql).
 alter table public.exercise_entries add column if not exists level smallint;
 alter table public.exercise_entries add column if not exists level_max smallint;

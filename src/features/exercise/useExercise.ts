@@ -84,6 +84,9 @@ export interface NewExercise {
   load_lb: number | null
   level: number | null
   level_max: number | null
+  /** Sent only for inclinable activities, so other cardio saves don't depend
+   *  on the incline column existing yet. */
+  incline_pct?: number | null
   calories: number
   avg_hr: number | null
   zone: number | null
@@ -93,14 +96,14 @@ export interface NewExercise {
 }
 
 /**
- * The value you last used for this activity — the ruck weight you carried, or
- * how many resistance levels your machine has. Prefills the add form the way
- * strength prefills "last time". Null name = disabled, so it costs nothing on
- * an ordinary cardio entry.
+ * The value you last used for this activity — the ruck weight you carried,
+ * how many resistance levels your machine has, or the treadmill incline.
+ * Prefills the add form the way strength prefills "last time". Null name =
+ * disabled, so it costs nothing on an ordinary cardio entry.
  */
 export function useLastCardioField(
   name: string | null,
-  field: 'load_lb' | 'level_max',
+  field: 'load_lb' | 'level_max' | 'incline_pct',
 ) {
   return useQuery({
     queryKey: ['exerciseLastField', field, name],

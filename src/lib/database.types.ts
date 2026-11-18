@@ -512,6 +512,10 @@ export interface ExerciseEntry {
   // pair for display; the burn it implies is snapshotted into `met` at save.
   level: number | null
   level_max: number | null
+  // Treadmill grade in % (migration_treadmill_incline.sql). Set — 0 for flat —
+  // on every treadmill walk priced by the ACSM equation; null = an entry
+  // logged before that (or an activity with no incline).
+  incline_pct: number | null
   created_at: string
 }
 

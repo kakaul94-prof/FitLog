@@ -619,6 +619,71 @@ export function paceAwareCalories(
   return Math.round(distanceCoef(speedMph) * lbToKg(weightLb) * km)
 }
 
+/** Speed a treadmill walk is priced at when no distance is logged (mph). */
+export const DEFAULT_TREADMILL_MPH = 3.0
+/** Steepest grade the estimate accepts (%) — incline trainers top out ~40. */
+export const MAX_INCLINE_PCT = 40
+/** m/min per mph — the ACSM equations take speed in metres per minute. */
+const M_PER_MIN_PER_MPH = 26.8224
+
+/**
+ * Treadmill MET from speed and incline, via the ACSM metabolic equations
+ * (the ones treadmill consoles use). S = speed in m/min, G = grade fraction:
+ *   walking  VO2 = 3.5 + 0.1·S + 1.8·S·G   (validated ~1.9–3.7 mph)
+ *   running  VO2 = 3.5 + 0.2·S + 0.9·S·G   (≥ 5 mph, the walk→run switch
+ *                                            distanceCoef also uses)
+ * MET = VO2 / 3.5, so metCalories on it is the gross ACSM burn
+ * (VO2 · kg · min / 200 kcal). Declines aren't covered by the equations, so
+ * the grade is floored at 0.
+ */
+export function treadmillMet(speedMph: number, inclinePct: number): number {
+  const s = Math.max(0, speedMph) * M_PER_MIN_PER_MPH
+  const g = Math.min(MAX_INCLINE_PCT, Math.max(0, inclinePct || 0)) / 100
+  const vo2 =
+    speedMph >= 5 ? 3.5 + 0.2 * s + 0.9 * s * g : 3.5 + 0.1 * s + 1.8 * s * g
+  return vo2 / 3.5
+}
+
+export interface TreadmillEstimate {
+  /** Speed priced — measured from distance ÷ duration, else the default. */
+  mph: number
+  /** True when no distance+duration pair was logged to measure speed from. */
+  assumedSpeed: boolean
+  met: number
+  kcal: number
+}
+
+/**
+ * Treadmill-walk burn from what was logged. Speed comes from the console's
+ * distance over the duration; without both it falls back to
+ * DEFAULT_TREADMILL_MPH (and a distance with no duration is timed at it).
+ * `weightLb` is the MOVED weight — body plus any carried load.
+ */
+export function treadmillWalkEstimate(
+  distanceMi: number,
+  durationMin: number,
+  inclinePct: number,
+  weightLb: number,
+): TreadmillEstimate {
+  const measured = distanceMi > 0 && durationMin > 0
+  const mph = measured
+    ? distanceMi / (durationMin / 60)
+    : DEFAULT_TREADMILL_MPH
+  const minutes =
+    durationMin > 0 ? durationMin : distanceMi > 0 ? (distanceMi / mph) * 60 : 0
+  const met = treadmillMet(mph, inclinePct)
+  return {
+    mph,
+    assumedSpeed: !measured,
+    met,
+    kcal: metCalories(met, minutes, weightLb),
+  }
+}
+
+/** Treadmill grade (%) as the angle in degrees — 12% ≈ 6.8°. */
+export const inclineDegrees = (pct: number): number =>
+  (Math.atan(pct / 100) * 180) / Math.PI
+
 // ---------- body ----------
 /** Body Mass Index from weight (lb) and height (cm). */
 export function bmi(weightLb: number, heightCm: number): number {

@@ -831,6 +831,7 @@ function ExerciseEntryRow({
   const meta = [
     entry.duration_min ? `${entry.duration_min} min` : null,
     entry.distance_mi ? `${entry.distance_mi} mi` : null,
+    entry.incline_pct ? `${entry.incline_pct}% incline` : null,
     entry.load_lb ? `${entry.load_lb} lb` : null,
     entry.level ? `L${entry.level}/${entry.level_max}` : null,
   ].filter(Boolean)

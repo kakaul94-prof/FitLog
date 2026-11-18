@@ -87,6 +87,8 @@ export interface NewExercise {
   /** Sent only for inclinable activities, so other cardio saves don't depend
    *  on the incline column existing yet. */
   incline_pct?: number | null
+  /** Sent only when a treadmill speed is typed (or cleared), for the same reason. */
+  speed_mph?: number | null
   calories: number
   avg_hr: number | null
   zone: number | null

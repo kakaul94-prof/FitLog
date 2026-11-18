@@ -118,6 +118,7 @@ class ExerciseEntry(Owned):
     level: int | None
     level_max: int | None
     incline_pct: float | None
+    speed_mph: float | None
     max_hr: int | None
     hr_samples: Json | None
     zone_seconds: list[int] | None

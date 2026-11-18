@@ -616,6 +616,35 @@ describe('treadmillWalkEstimate', () => {
     expect(e.assumedSpeed).toBe(true)
     expect(e.kcal).toBe(354)
   })
+  it('prices a typed average speed with no distance', () => {
+    // 3.5 mph @ 8% for 30 min at 180 lb → 323, same as 1.75 mi in 30 min.
+    const e = treadmillWalkEstimate(0, 30, 8, 180, 3.5)
+    expect(e.speedSource).toBe('typed')
+    expect(e.assumedSpeed).toBe(false)
+    expect(e.mph).toBe(3.5)
+    expect(e.measuredMph).toBeNull()
+    expect(e.kcal).toBe(323)
+  })
+  it('lets a typed speed win over distance ÷ duration', () => {
+    // 1.6 mi in 30 min = 3.2 mph, but the console said 3.0 average.
+    const e = treadmillWalkEstimate(1.6, 30, 12, 180, 3)
+    expect(e.speedSource).toBe('typed')
+    expect(e.mph).toBe(3)
+    expect(e.measuredMph).toBeCloseTo(3.2, 5)
+    expect(e.kcal).toBe(354)
+  })
+  it('times a distance with no duration at the typed speed', () => {
+    // 1.75 mi at 3.5 mph = 30 min.
+    expect(treadmillWalkEstimate(1.75, 0, 8, 180, 3.5).kcal).toBe(323)
+  })
+  it('falls back to measured speed when the typed one is blank', () => {
+    const e = treadmillWalkEstimate(1.75, 30, 0, 180, 0)
+    expect(e.speedSource).toBe('measured')
+    expect(e.mph).toBeCloseTo(3.5, 5)
+  })
+  it('caps a runaway typed speed', () => {
+    expect(treadmillWalkEstimate(0, 30, 0, 180, 99).mph).toBe(15)
+  })
   it('counts a carried load through the moved weight', () => {
     const bare = treadmillWalkEstimate(1.5, 30, 6, 180).kcal
     const loaded = treadmillWalkEstimate(1.5, 30, 6, 180 + 20).kcal

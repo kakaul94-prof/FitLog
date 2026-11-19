@@ -145,6 +145,7 @@ const CARDIO: ExerciseEntry = {
   level: null,
   level_max: null,
   incline_pct: null,
+  speed_mph: null,
   created_at: '2026-10-21T07:30:00+00:00',
 }
 
@@ -245,6 +246,7 @@ const CARDIO_ROW = t.object({
   level: t.nullable(t.number()),
   level_max: t.nullable(t.number()),
   incline_pct: t.nullable(t.number()),
+  speed_mph: t.nullable(t.number()),
   created_at: t.timestamp(),
 })
 

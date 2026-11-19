@@ -644,19 +644,26 @@ export function treadmillMet(speedMph: number, inclinePct: number): number {
   return vo2 / 3.5
 }
 
+/** Fastest average speed the treadmill fields accept (mph). */
+export const MAX_TREADMILL_MPH = 15
+
 export interface TreadmillEstimate {
-  /** Speed priced — measured from distance ÷ duration, else the default. */
+  /** Speed priced — typed average, else distance ÷ duration, else default. */
   mph: number
-  /** True when no distance+duration pair was logged to measure speed from. */
+  /** Where `mph` came from. */
+  speedSource: 'typed' | 'measured' | 'assumed'
+  /** True when neither a typed speed nor a distance+duration pair exists. */
   assumedSpeed: boolean
+  /** Distance ÷ duration when both are logged — shown beside a typed speed. */
+  measuredMph: number | null
   met: number
   kcal: number
 }
 
 /**
- * Treadmill-walk burn from what was logged. Speed comes from the console's
- * distance over the duration; without both it falls back to
- * DEFAULT_TREADMILL_MPH (and a distance with no duration is timed at it).
+ * Treadmill-walk burn from what was logged. Speed is the console's average
+ * when typed (`speedMph`), else distance over duration, else
+ * DEFAULT_TREADMILL_MPH. A distance with no duration is timed at that speed.
  * `weightLb` is the MOVED weight — body plus any carried load.
  */
 export function treadmillWalkEstimate(
@@ -664,17 +671,25 @@ export function treadmillWalkEstimate(
   durationMin: number,
   inclinePct: number,
   weightLb: number,
+  speedMph = 0,
 ): TreadmillEstimate {
-  const measured = distanceMi > 0 && durationMin > 0
-  const mph = measured
-    ? distanceMi / (durationMin / 60)
-    : DEFAULT_TREADMILL_MPH
+  const measuredMph =
+    distanceMi > 0 && durationMin > 0 ? distanceMi / (durationMin / 60) : null
+  const typed = speedMph > 0 ? Math.min(MAX_TREADMILL_MPH, speedMph) : 0
+  const speedSource = typed
+    ? 'typed'
+    : measuredMph != null
+      ? 'measured'
+      : 'assumed'
+  const mph = typed || (measuredMph ?? DEFAULT_TREADMILL_MPH)
   const minutes =
     durationMin > 0 ? durationMin : distanceMi > 0 ? (distanceMi / mph) * 60 : 0
   const met = treadmillMet(mph, inclinePct)
   return {
     mph,
-    assumedSpeed: !measured,
+    speedSource,
+    assumedSpeed: speedSource === 'assumed',
+    measuredMph,
     met,
     kcal: metCalories(met, minutes, weightLb),
   }

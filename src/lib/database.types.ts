@@ -519,6 +519,10 @@ export interface ExerciseEntry {
   // on every treadmill walk priced by the ACSM equation; null = an entry
   // logged before that (or an activity with no incline).
   incline_pct: number | null
+  // Treadmill average speed in mph as typed off the console
+  // (migration_treadmill_speed.sql). Overrides distance ÷ duration in the
+  // estimate; null = not entered.
+  speed_mph: number | null
   created_at: string
 }
 

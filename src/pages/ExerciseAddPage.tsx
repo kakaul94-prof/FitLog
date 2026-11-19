@@ -44,6 +44,7 @@ import {
   inclineDegrees,
   DEFAULT_TREADMILL_MPH,
   MAX_INCLINE_PCT,
+  MAX_TREADMILL_MPH,
   resolveMaxHr,
   resolveHrZones,
   resolveZoneForHr,
@@ -83,6 +84,9 @@ const LOAD_PRESETS = [10, 20, 35, 45]
 
 /** Quick-pick treadmill grades (%). Flat is the empty field. */
 const INCLINE_PRESETS = [3, 6, 9, 12, 15]
+
+/** Quick-pick treadmill average speeds (mph) — the usual walking range. */
+const SPEED_PRESETS = [2.5, 3, 3.5, 4]
 
 /** Does a prefilled name (GPS recorder, or a cardio item on a workout) belong
  *  to an activity that offers a load? Prefills carry a name, not a key. */
@@ -154,6 +158,8 @@ export function ExerciseAddPage() {
     pf.name ? inclinableByName(pf.name) : false,
   )
   const [incline, setIncline] = useState('')
+  // The console's average speed — overrides distance ÷ duration when set.
+  const [speed, setSpeed] = useState('')
   const [duration, setDuration] = useState(pf.dur ?? '')
   const [distance, setDistance] = useState(pf.dist ?? '')
   const [load, setLoad] = useState('')
@@ -186,7 +192,14 @@ export function ExerciseAddPage() {
   const [renaming, setRenaming] = useState(false)
   const [editingKcal, setEditingKcal] = useState(false)
   const [activeTile, setActiveTile] = useState<
-    'duration' | 'distance' | 'incline' | 'load' | 'level' | 'hr' | null
+    | 'duration'
+    | 'distance'
+    | 'speed'
+    | 'incline'
+    | 'load'
+    | 'level'
+    | 'hr'
+    | null
   >(null)
 
   const allActivities: PickActivity[] = [
@@ -237,14 +250,21 @@ export function ExerciseAddPage() {
   // far more about the effort than "elliptical" does. On machine-distance
   // activities a logged distance then scales that MET by measured cadence.
   const levelBasedMet = (leveled ? levelMet(lvl, lvlMax) : null) ?? met
-  // A treadmill walk is priced from speed (distance ÷ duration) and grade by
-  // the ACSM equation — flat included, so 0% and 1% sit on one curve.
+  // A treadmill walk is priced from speed and grade by the ACSM equation —
+  // flat included, so 0% and 1% sit on one curve. Speed is the typed average,
+  // else distance ÷ duration, else the default.
   const inclinePct = inclinable
     ? Math.min(MAX_INCLINE_PCT, Math.max(0, parseFloat(incline) || 0))
     : 0
+  const speedMph = inclinable
+    ? Math.min(MAX_TREADMILL_MPH, Math.max(0, parseFloat(speed) || 0))
+    : 0
   const tread = inclinable
-    ? treadmillWalkEstimate(dist, dur, inclinePct, movedLb)
+    ? treadmillWalkEstimate(dist, dur, inclinePct, movedLb, speedMph)
     : null
+  // Distance a typed speed implies — a hint only, never saved as distance.
+  const impliedDistMi =
+    tread && speedMph && !dist && dur ? (speedMph * dur) / 60 : 0
   const effMet = tread
     ? tread.met
     : machineDistance
@@ -335,6 +355,7 @@ export function ExerciseAddPage() {
     if (entry.level_max != null) setLevelMax(String(entry.level_max))
     setInclinable((match ? match.inclinable : false) || entry.incline_pct != null)
     setIncline(entry.incline_pct ? String(entry.incline_pct) : '')
+    setSpeed(entry.speed_mph ? String(entry.speed_mph) : '')
     setName(entry.name)
     setDuration(entry.duration_min != null ? String(entry.duration_min) : '')
     setDistance(entry.distance_mi != null ? String(entry.distance_mi) : '')
@@ -375,6 +396,7 @@ export function ExerciseAddPage() {
               entry.duration_min ?? 0,
               entry.incline_pct,
               mv,
+              entry.speed_mph ?? 0,
             ).kcal
           : db && di
             ? distanceCalories(di, mv, m)
@@ -435,14 +457,17 @@ export function ExerciseAddPage() {
     setLeveled(a.leveled)
     if (!a.leveled) setLevel('')
     setInclinable(a.inclinable)
-    if (!a.inclinable) setIncline('')
+    if (!a.inclinable) {
+      setIncline('')
+      setSpeed('')
+    }
     setSearch('')
     setChanging(false)
     // Straight into duration once an activity is chosen.
     setActiveTile((t) =>
       t == null ||
       (t === 'distance' && !(a.distanceBased || a.machineDistance)) ||
-      (t === 'incline' && !a.inclinable) ||
+      ((t === 'incline' || t === 'speed') && !a.inclinable) ||
       (t === 'load' && !a.loadable) ||
       (t === 'level' && !a.leveled)
         ? 'duration'
@@ -466,6 +491,7 @@ export function ExerciseAddPage() {
     setLeveled((match ? match.leveled : false) || e.level != null)
     setInclinable((match ? match.inclinable : false) || e.incline_pct != null)
     setIncline(e.incline_pct ? String(e.incline_pct) : '')
+    setSpeed(e.speed_mph ? String(e.speed_mph) : '')
     setDuration(e.duration_min != null ? String(e.duration_min) : '')
     setDistance(e.distance_mi != null ? String(e.distance_mi) : '')
     setLoad(e.load_lb != null ? String(e.load_lb) : '')
@@ -499,6 +525,7 @@ export function ExerciseAddPage() {
       level_max: e.level_max,
       // Only when it was recorded, so non-treadmill copies never name the column.
       ...(e.incline_pct != null ? { incline_pct: e.incline_pct } : {}),
+      ...(e.speed_mph != null ? { speed_mph: e.speed_mph } : {}),
       calories: e.calories,
       avg_hr: e.avg_hr,
       zone: e.zone,
@@ -582,6 +609,11 @@ export function ExerciseAddPage() {
       // by the treadmill equation (see the edit prefill). Omitted elsewhere so
       // other cardio saves don't depend on the column.
       ...(inclinable ? { incline_pct: inclinePct } : {}),
+      // Only when a speed is typed — or cleared from an entry that had one — so
+      // a walk without one still saves before the speed migration has run.
+      ...(inclinable && (speedMph > 0 || entry?.speed_mph != null)
+        ? { speed_mph: speedMph || null }
+        : {}),
       calories,
       avg_hr: avgHr.trim() ? parseInt(avgHr) || null : null,
       zone,
@@ -970,15 +1002,16 @@ export function ExerciseAddPage() {
               <div
                 className={cn(
                   'grid gap-2',
-                  // Duration + HR are always there; distance/incline/load/level
-                  // are per-activity. Three or five-plus fit rows of three; two
-                  // or four sit two-up — a single row of four is too tight to tap.
+                  // Duration + HR are always there; distance/speed/incline/load/
+                  // level are per-activity. Three or five-plus fit rows of three;
+                  // two or four sit two-up — a single row of four is too tight.
                   (() => {
                     const n =
                       2 +
                       [
                         distanceBased || machineDistance,
-                        inclinable,
+                        inclinable, // speed
+                        inclinable, // incline
                         loadable,
                         leveled,
                       ].filter(Boolean).length
@@ -1003,6 +1036,11 @@ export function ExerciseAddPage() {
                     : []),
                   ...(inclinable
                     ? [
+                        {
+                          key: 'speed' as const,
+                          value: speedMph ? `${speedMph.toFixed(1)} mph` : null,
+                          label: 'Speed',
+                        },
                         {
                           key: 'incline' as const,
                           value: inclinePct ? `${inclinePct}%` : null,
@@ -1147,11 +1185,61 @@ export function ExerciseAddPage() {
                 )}
                 {tread && (
                   <p className="text-xs text-muted-foreground">
-                    {tread.assumedSpeed
-                      ? `With your duration this sets your speed — until then the estimate assumes ${DEFAULT_TREADMILL_MPH.toFixed(1)} mph.`
-                      : `≈ ${treadMph} mph — the speed the incline estimate uses.`}
+                    {tread.speedSource === 'typed'
+                      ? tread.measuredMph != null
+                        ? `Using your ${treadMph} mph · distance works out to ${tread.measuredMph.toFixed(1)}.`
+                        : impliedDistMi
+                          ? `≈ ${impliedDistMi.toFixed(2)} mi at ${treadMph} mph.`
+                          : `Optional — your ${treadMph} mph sets the estimate.`
+                      : tread.speedSource === 'measured'
+                        ? `≈ ${treadMph} mph — the speed the incline estimate uses.`
+                        : `With your duration this sets your speed (or enter it under Speed) — until then the estimate assumes ${DEFAULT_TREADMILL_MPH.toFixed(1)} mph.`}
                   </p>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {activeTile === 'speed' && inclinable && (
+            <Card>
+              <CardContent className="space-y-2 p-4">
+                <Label htmlFor="speed">Avg speed (mph)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="speed"
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={MAX_TREADMILL_MPH}
+                    step={0.1}
+                    className="w-20 text-center"
+                    value={speed}
+                    onChange={(e) => setSpeed(e.target.value)}
+                  />
+                  {SPEED_PRESETS.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() =>
+                        setSpeed((s) => (parseFloat(s) === v ? '' : String(v)))
+                      }
+                      className={cn(
+                        'flex-1 rounded-full border py-1.5 text-sm transition-colors',
+                        speedMph === v
+                          ? 'border-primary bg-primary/10 font-medium text-primary'
+                          : 'border-border',
+                      )}
+                    >
+                      {v.toFixed(1)}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The average your treadmill shows. Overrides distance ÷ time.
+                  {tread?.measuredMph != null
+                    ? ` Your distance works out to ${tread.measuredMph.toFixed(1)} mph.`
+                    : ''}
+                </p>
               </CardContent>
             </Card>
           )}
@@ -1197,9 +1285,11 @@ export function ExerciseAddPage() {
                     ? `≈ ${inclineDegrees(inclinePct).toFixed(1)}° · `
                     : 'Empty = flat. '}
                   The grade your treadmill shows.{' '}
-                  {tread?.assumedSpeed
-                    ? `Add the distance for your real speed — this assumes ${DEFAULT_TREADMILL_MPH.toFixed(1)} mph.`
-                    : `Priced at ${treadMph} mph from your distance.`}
+                  {tread?.speedSource === 'assumed'
+                    ? `Add your speed or distance for your real pace — this assumes ${DEFAULT_TREADMILL_MPH.toFixed(1)} mph.`
+                    : tread?.speedSource === 'typed'
+                      ? `Priced at your ${treadMph} mph average.`
+                      : `Priced at ${treadMph} mph from your distance.`}
                 </p>
               </CardContent>
             </Card>

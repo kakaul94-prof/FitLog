@@ -167,7 +167,7 @@ describe('findSimilarFoods', () => {
   })
   it('lists each food once under its strongest reason: barcode, then name, then nutrition', () => {
     const byNutrition = food({
-      name: 'Quest bar',
+      name: 'Nonfat yogurt',
       brand: null,
       nutrients: { kcal: 92, protein: 16, carb: 6, fat: 0 },
     })
@@ -179,6 +179,35 @@ describe('findSimilarFoods', () => {
       [byName.id, 'name'],
       [byNutrition.id, 'nutrition'],
     ])
+  })
+  it('needs a shared name word before close nutrition counts', () => {
+    // Low-calorie, nearly all-carb foods line up on macros by coincidence.
+    const coconutWater = food({
+      name: 'Coconut water',
+      brand: 'Vita Coco',
+      serving_grams: 330,
+      nutrients: { kcal: 60, protein: 0, carb: 15, fat: 0 },
+    })
+    const pieFilling = scan({
+      name: 'Sugar free apple pie filling',
+      brand: 'Lucky Leaf',
+      barcode: '041100000000',
+      serving_grams: 330,
+      nutrients: { kcal: 62, protein: 0.3, carb: 15.5, fat: 0 },
+    })
+    expect(nutritionMatch(pieFilling, coconutWater)).toBe(true)
+    expect(findSimilarFoods(pieFilling, [coconutWater])).toEqual([])
+    // Filler words ("sugar free") don't count as shared.
+    expect(findSimilarFoods(pieFilling, [{ ...coconutWater, name: 'Sugar free cola' }])).toEqual(
+      [],
+    )
+    // A real overlap ("croutons" vs "crouton") still flags it.
+    const croutons = food({ name: 'Garlic croutons', brand: null, nutrients: { kcal: 30 } })
+    expect(
+      findSimilarFoods(scan({ name: 'Crouton bites', brand: null, nutrients: { kcal: 31 } }), [
+        croutons,
+      ]),
+    ).toEqual([{ food: croutons, reason: 'nutrition' }])
   })
   it('caps the list', () => {
     const lib = [food(), food(), food(), food(), food()]

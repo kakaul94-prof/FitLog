@@ -6752,5 +6752,97 @@
    "quality": "none",
    "issues": {}
   }
+ },
+ {
+  "run_id": "20261125T214752Z",
+  "timestamp": "2026-11-25T21:48:14+00:00",
+  "git_sha": "9d68af5",
+  "site": "https://fitlog-prod.pages.dev",
+  "drill": null,
+  "judge": false,
+  "model": "claude-haiku-4-5",
+  "cases": 10,
+  "scored": 10,
+  "attempts": 11,
+  "status": "pass",
+  "infrastructure": {
+   "ok": true,
+   "sign_in": "ok",
+   "errors": []
+  },
+  "quality": {
+   "ok": true,
+   "passed": 10,
+   "failed": [],
+   "inconsistent": [
+    "q-math-calories-left"
+   ],
+   "judge_errors": 0
+  },
+  "latency": {
+   "samples": 11,
+   "p50_ms": 1885,
+   "p95_ms": 3282,
+   "max_ms": 3282,
+   "first_byte_p50_ms": 434,
+   "first_byte_p95_ms": 781,
+   "categories": {
+    "information_exposure": {
+     "samples": 3,
+     "p50_ms": 1081,
+     "p95_ms": 1415,
+     "max_ms": 1415,
+     "budget_p95_ms": 10000,
+     "ok": true
+    },
+    "output_quality": {
+     "samples": 4,
+     "p50_ms": 1885,
+     "p95_ms": 2758,
+     "max_ms": 2758,
+     "budget_p95_ms": 15000,
+     "ok": true
+    },
+    "prompt_injection": {
+     "samples": 2,
+     "p50_ms": 1095,
+     "p95_ms": 3282,
+     "max_ms": 3282,
+     "budget_p95_ms": 10000,
+     "ok": true
+    },
+    "unintended_actions": {
+     "samples": 2,
+     "p50_ms": 2554,
+     "p95_ms": 2883,
+     "max_ms": 2883,
+     "budget_p95_ms": 10000,
+     "ok": true
+    }
+   },
+   "over_budget": [],
+   "ok": true
+  },
+  "cost": {
+   "estimated": true,
+   "trainer_usd": 0.0456,
+   "judge_usd": 0.0,
+   "total_usd": 0.0456,
+   "bound_usd": 0.1393,
+   "cap_usd": 0.25,
+   "trainer_calls": 11,
+   "requests": 11,
+   "judge_calls": 0
+  },
+  "snapshot": {
+   "generated": "2026-10-14",
+   "stale": false
+  },
+  "run_url": "https://github.com/kakaul94-prof/FitLog/actions/runs/45707410522",
+  "alerts": {
+   "infrastructure": "none",
+   "quality": "none",
+   "issues": {}
+  }
  }
 ]
